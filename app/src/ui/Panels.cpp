@@ -1053,7 +1053,9 @@ void DrawClipPanel( App& app )
 		else
 			ImGui::TextDisabled( "%s  %dx%d  %.2f fps  %zu frames  %s", source.CodecName().c_str(), clip->player->Width(), clip->player->Height(),
 			                     source.FrameRate(), source.FrameCount(), source.Details().c_str() );
-		if( !source.IsHap() && !source.IsStill() )
+		if( !source.IsHap() && !source.IsStill() && source.IsHardwareDecoded() )
+			ImGui::TextColored( ImVec4( 0.95f, 0.7f, 0.3f, 1 ), "Not HAP: decoded by the graphics chip. HAP is still faster to jump around and layer." );
+		else if( !source.IsHap() && !source.IsStill() )
 			ImGui::TextColored( ImVec4( 0.95f, 0.7f, 0.3f, 1 ), "Not HAP: decoded on the CPU. Convert to HAP for the best performance." );
 	}
 
@@ -1272,6 +1274,17 @@ void DrawPerformancePanel( App& app )
 	ImGui::TextDisabled( "GPU: %s", Caps().renderer );
 	ImGui::TextDisabled( "OpenGL %s   DXT %s   BPTC %s   decode threads %u", Caps().version, Caps().s3tc ? "yes" : "NO", Caps().bptc ? "yes" : "no",
 	                     ThreadPool::Shared().WorkerCount() + 1 );
+	if( HasFfmpeg() )
+	{
+		bool hardware = HardwareDecoding();
+		if( ImGui::Checkbox( "Hardware decoding (H.264, HEVC, VP9...)", &hardware ) )
+		{
+			SetHardwareDecoding( hardware );
+			app.SetStatus( hardware ? "Clips loaded from now on use the video hardware when they can" : "Clips loaded from now on decode on the CPU" );
+		}
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "The graphics chip decodes non-HAP video (VideoToolbox, D3D11, VA-API), sparing the CPU.\nApplies to clips loaded from now on." );
+	}
 
 	if( ImGui::BeginTable( "##layers", 6, ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerV | ImGuiTableFlags_SizingStretchProp ) )
 	{

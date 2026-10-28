@@ -206,6 +206,34 @@ static void TestFrameSourceFfmpeg()
 		}
 	}
 
+	// NV12 (a Y plane and interleaved UV, what hardware decoders hand back) goes up as two textures, unconverted.
+	std::unique_ptr< FrameSource > nv12 = OpenFrameSource( Fixture( "nv12_raw.mkv" ), error );
+	CHECK( nv12 != nullptr );
+	if( nv12 )
+	{
+		const FrameLayout& layout = nv12->Layout();
+		CHECK( layout.shading == Shading::Nv12 && layout.planeCount == 2 );
+		CHECK( layout.planes[ 0 ].format == PlaneFormat::R8 && layout.planes[ 0 ].width == 16 && layout.planes[ 0 ].height == 8 );
+		CHECK( layout.planes[ 1 ].format == PlaneFormat::RG8 && layout.planes[ 1 ].width == 8 && layout.planes[ 1 ].height == 4 );
+		CHECK( layout.planes[ 1 ].bytes == 8 * 4 * 2 );
+		std::vector< uint8_t > pixels( layout.totalBytes );
+		CHECK( nv12->Decode( 1, pixels.data() ) );
+		const uint8_t* uv = pixels.data() + layout.planes[ 1 ].offset;
+		CHECK( pixels[ 0 ] == 100 && uv[ 0 ] == 100 && uv[ 1 ] == 180 && uv[ 2 ] == 100 );
+		CHECK( !nv12->IsHardwareDecoded() ); // raw video never goes to the hardware
+	}
+
+	// Hardware decoding falls back to the CPU where there is no video hardware (as on the test machines).
+	SetHardwareDecoding( true );
+	std::unique_ptr< FrameSource > hw = OpenFrameSource( Fixture( "ramp_h264.mp4" ), error );
+	CHECK( hw != nullptr );
+	if( hw )
+	{
+		std::vector< uint8_t > pixels( hw->Layout().totalBytes );
+		CHECK( hw->Decode( 3, pixels.data() ) && std::abs( pixels[ 0 ] - 64 ) <= 1 );
+		std::printf( "H.264 %s\n", hw->Details().c_str() );
+	}
+
 	std::unique_ptr< FrameSource > png = OpenFrameSource( Fixture( "still_rgba.png" ), error );
 	CHECK( png != nullptr );
 	if( png )

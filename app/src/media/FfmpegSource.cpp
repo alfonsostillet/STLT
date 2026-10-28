@@ -1,11 +1,13 @@
 // Every format that is not HAP, through FFmpeg: H.264, HEVC, ProRes, DXV, DNxHD, VP8/9, PNG, JPEG, GIF, ...
-// Planar YUV frames go to the GPU as they are (three single-channel textures, converted in the shader);
-// anything else is converted to RGBA on the CPU.
+// H.264, HEVC and the other codecs the computer's video hardware knows decode there when it can (VideoToolbox,
+// D3D11, DXVA2, VA-API, VDPAU), falling back to the CPU. Planar YUV and NV12 frames go to the GPU as they are
+// (single and two-channel textures, converted in the shader); anything else is converted to RGBA on the CPU.
 #ifdef STLTVJ_WITH_FFMPEG
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstring>
+#include <map>
 #include <mutex>
 #include <vector>
 #include "media/FrameSource.h"
@@ -14,6 +16,7 @@ extern "C"
 {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/hwcontext.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/pixdesc.h>
 #include <libswscale/swscale.h>
@@ -58,7 +61,8 @@ AVPixelFormat YuvTarget( AVPixelFormat format )
 	case AV_PIX_FMT_YUV422P:
 	case AV_PIX_FMT_YUVJ422P:
 	case AV_PIX_FMT_YUV444P:
-	case AV_PIX_FMT_YUVJ444P: return format;
+	case AV_PIX_FMT_YUVJ444P:
+	case AV_PIX_FMT_NV12: return format;
 	default: break;
 	}
 	const AVPixFmtDescriptor* d = av_pix_fmt_desc_get( format );
@@ -74,6 +78,69 @@ AVPixelFormat YuvTarget( AVPixelFormat format )
 	return AV_PIX_FMT_NONE;
 }
 
+// The hardware decoders worth trying here, best first.
+const AVHWDeviceType kHardware[] = {
+#if defined( _WIN32 )
+	AV_HWDEVICE_TYPE_D3D11VA, AV_HWDEVICE_TYPE_DXVA2,
+#elif defined( __APPLE__ )
+	AV_HWDEVICE_TYPE_VIDEOTOOLBOX,
+#else
+	AV_HWDEVICE_TYPE_VAAPI, AV_HWDEVICE_TYPE_VDPAU,
+#endif
+};
+
+// Long-GOP codecs gain from the hardware; intra codecs (ProRes aside, on Apple) and images decode fine on the CPU.
+bool WorthHardware( AVCodecID id )
+{
+	switch( id )
+	{
+	case AV_CODEC_ID_H264:
+	case AV_CODEC_ID_HEVC:
+	case AV_CODEC_ID_VP9:
+	case AV_CODEC_ID_AV1:
+	case AV_CODEC_ID_MPEG2VIDEO:
+	case AV_CODEC_ID_MPEG4: return true;
+#ifdef __APPLE__
+	case AV_CODEC_ID_PRORES: return true;
+#endif
+	default: return false;
+	}
+}
+
+std::string HardwareName( AVHWDeviceType type )
+{
+	switch( type )
+	{
+	case AV_HWDEVICE_TYPE_D3D11VA: return "D3D11";
+	case AV_HWDEVICE_TYPE_DXVA2: return "DXVA2";
+	case AV_HWDEVICE_TYPE_VIDEOTOOLBOX: return "VideoToolbox";
+	case AV_HWDEVICE_TYPE_VAAPI: return "VA-API";
+	case AV_HWDEVICE_TYPE_VDPAU: return "VDPAU";
+	default: return av_hwdevice_get_type_name( type );
+	}
+}
+
+// One device of each kind for the whole program: making one takes a moment, and a missing one (no such
+// hardware, no driver) is not looked for again. Returns a new reference, or null.
+AVBufferRef* SharedDevice( AVHWDeviceType type )
+{
+	static std::mutex mutex;
+	static std::map< int, AVBufferRef* > devices; // null: not available
+	std::lock_guard< std::mutex > lock( mutex );
+	auto known = devices.find( (int)type );
+	if( known == devices.end() )
+	{
+		int level = av_log_get_level();
+		av_log_set_level( AV_LOG_QUIET ); // its absence is no error worth printing
+		AVBufferRef* device = nullptr;
+		if( av_hwdevice_ctx_create( &device, type, nullptr, nullptr, 0 ) < 0 )
+			device = nullptr;
+		av_log_set_level( level );
+		known = devices.emplace( (int)type, device ).first;
+	}
+	return known->second ? av_buffer_ref( known->second ) : nullptr;
+}
+
 bool IsFullRangeFormat( AVPixelFormat f )
 {
 	return f == AV_PIX_FMT_YUVJ420P || f == AV_PIX_FMT_YUVJ422P || f == AV_PIX_FMT_YUVJ444P;
@@ -86,6 +153,7 @@ public:
 	~FfmpegSource() override
 	{
 		sws_freeContext( sws );
+		av_frame_free( &transfer );
 		av_frame_free( &frame );
 		av_packet_free( &packet );
 		avcodec_free_context( &codec );
@@ -113,15 +181,9 @@ public:
 			return false;
 		}
 		AVStream* st = format->streams[ stream ];
-		codec        = avcodec_alloc_context3( decoder );
-		avcodec_parameters_to_context( codec, st->codecpar );
-		codec->thread_count = 0; // one per core
-		codec->thread_type  = FF_THREAD_FRAME | FF_THREAD_SLICE;
-		if( ( result = avcodec_open2( codec, decoder, nullptr ) ) < 0 )
-		{
-			error = "Cannot start the decoder: " + ErrorText( result );
+		bool hardware = HardwareDecoding() && WorthHardware( decoder->id );
+		if( !StartDecoder( decoder, st, hardware, error ) )
 			return false;
-		}
 		codecName = FriendlyCodecName( decoder );
 		timeBase  = st->time_base;
 		AVRational rate = st->avg_frame_rate.num && st->avg_frame_rate.den ? st->avg_frame_rate : st->r_frame_rate;
@@ -141,9 +203,21 @@ public:
 		else if( duration <= 0 )
 			duration = frameCount / fps;
 
-		frame  = av_frame_alloc();
-		packet = av_packet_alloc();
-		if( !ReadFrame() )
+		frame    = av_frame_alloc();
+		transfer = av_frame_alloc();
+		packet   = av_packet_alloc();
+		bool first = ReadFrame();
+		if( !first && hardwareName.size() )
+		{
+			// The hardware took the file but cannot decode it (a profile it lacks): the CPU, from the start.
+			avcodec_free_context( &codec );
+			if( !StartDecoder( decoder, st, false, error ) )
+				return false;
+			av_seek_frame( format, stream, startPts, AVSEEK_FLAG_BACKWARD );
+			draining = ended = false;
+			first            = ReadFrame();
+		}
+		if( !first )
 		{
 			error = "Cannot decode the first frame";
 			return false;
@@ -169,7 +243,13 @@ public:
 		return std::min( frameCount - 1, (size_t)std::floor( seconds * fps + 1e-6 ) );
 	}
 	std::string CodecName() const override { return codecName; }
-	std::string Details() const override { return still ? "still image" : "decoded by FFmpeg"; }
+	std::string Details() const override
+	{
+		if( still )
+			return "still image";
+		return hardwareName.empty() ? "decoded by FFmpeg" : "decoded by the graphics chip (" + hardwareName + ")";
+	}
+	bool IsHardwareDecoded() const override { return !hardwareName.empty(); }
 	bool IsStill() const override { return still; }
 
 	bool Decode( size_t target, uint8_t* destination ) override
@@ -203,12 +283,84 @@ public:
 private:
 	static constexpr int64_t kUnknown = INT64_MIN;
 
+	// Opens the decoder, on the hardware when asked and available.
+	bool StartDecoder( const AVCodec* decoder, AVStream* st, bool hardware, std::string& error )
+	{
+		hardwareName.clear();
+		hardwareFormat = AV_PIX_FMT_NONE;
+		codec          = avcodec_alloc_context3( decoder );
+		avcodec_parameters_to_context( codec, st->codecpar );
+		codec->thread_count = 0; // one per core
+		codec->thread_type  = FF_THREAD_FRAME | FF_THREAD_SLICE;
+		if( hardware )
+			for( AVHWDeviceType type : kHardware )
+			{
+				for( int i = 0; const AVCodecHWConfig* config = avcodec_get_hw_config( decoder, i ); ++i )
+				{
+					if( !( config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX ) || config->device_type != type )
+						continue;
+					AVBufferRef* device = SharedDevice( type );
+					if( !device )
+						break;
+					codec->hw_device_ctx = device; // the codec owns it now
+					codec->opaque        = this;
+					codec->get_format    = &FfmpegSource::PickFormat;
+					codec->thread_count  = 1; // the hardware does the work
+					hardwareFormat       = config->pix_fmt;
+					hardwareName         = HardwareName( type );
+					break;
+				}
+				if( !hardwareName.empty() )
+					break;
+			}
+		int result = avcodec_open2( codec, decoder, nullptr );
+		if( result < 0 && !hardwareName.empty() )
+		{
+			avcodec_free_context( &codec );
+			return StartDecoder( decoder, st, false, error );
+		}
+		if( result < 0 )
+		{
+			error = "Cannot start the decoder: " + ErrorText( result );
+			return false;
+		}
+		return true;
+	}
+
+	// The decoder asks which output it may use: the hardware's when offered, else the first software one.
+	static AVPixelFormat PickFormat( AVCodecContext* context, const AVPixelFormat* formats )
+	{
+		FfmpegSource* self = (FfmpegSource*)context->opaque;
+		for( const AVPixelFormat* f = formats; *f != AV_PIX_FMT_NONE; ++f )
+			if( *f == self->hardwareFormat )
+				return *f;
+		self->hardwareName.clear(); // this stream is not for the hardware (profile, size...)
+		for( const AVPixelFormat* f = formats; *f != AV_PIX_FMT_NONE; ++f )
+		{
+			const AVPixFmtDescriptor* d = av_pix_fmt_desc_get( *f );
+			if( d && !( d->flags & AV_PIX_FMT_FLAG_HWACCEL ) )
+				return *f;
+		}
+		return AV_PIX_FMT_NONE;
+	}
+
 	// The next decoded frame into `frame`; false at the end of the stream or on an error.
 	bool ReadFrame()
 	{
 		for( ;; )
 		{
 			int result = avcodec_receive_frame( codec, frame );
+			if( result == 0 && frame->format == hardwareFormat && hardwareFormat != AV_PIX_FMT_NONE )
+			{
+				// From video memory to ours (NV12, or P010 for 10-bit), with the timing and colour information.
+				av_frame_unref( transfer );
+				if( av_hwframe_transfer_data( transfer, frame, 0 ) < 0 )
+					return false;
+				av_frame_copy_props( transfer, frame );
+				av_frame_unref( frame );
+				av_frame_move_ref( frame, transfer );
+				return true;
+			}
 			if( result == 0 )
 				return true;
 			if( result == AVERROR_EOF )
@@ -268,9 +420,17 @@ private:
 			const AVPixFmtDescriptor* d = av_pix_fmt_desc_get( target );
 			int cw = AV_CEIL_RSHIFT( w, d->log2_chroma_w ), ch = AV_CEIL_RSHIFT( h, d->log2_chroma_h );
 			layout.Add( { PlaneFormat::R8, 0, w, h, (size_t)w * h, 0 } );
-			layout.Add( { PlaneFormat::R8, 0, cw, ch, (size_t)cw * ch, 0 } );
-			layout.Add( { PlaneFormat::R8, 0, cw, ch, (size_t)cw * ch, 0 } );
-			layout.shading   = Shading::Yuv;
+			if( target == AV_PIX_FMT_NV12 )
+			{
+				layout.Add( { PlaneFormat::RG8, 0, cw, ch, (size_t)cw * ch * 2, 0 } );
+				layout.shading = Shading::Nv12;
+			}
+			else
+			{
+				layout.Add( { PlaneFormat::R8, 0, cw, ch, (size_t)cw * ch, 0 } );
+				layout.Add( { PlaneFormat::R8, 0, cw, ch, (size_t)cw * ch, 0 } );
+				layout.shading = Shading::Yuv;
+			}
 			layout.fullRange = frame->color_range == AVCOL_RANGE_JPEG || IsFullRangeFormat( src );
 			layout.bt709     = frame->colorspace == AVCOL_SPC_BT709 || ( frame->colorspace == AVCOL_SPC_UNSPECIFIED && h >= 720 );
 		}
@@ -290,7 +450,8 @@ private:
 		for( unsigned p = 0; p < layout.planeCount; ++p )
 		{
 			planes[ p ]  = destination + layout.planes[ p ].offset;
-			strides[ p ] = layout.planes[ p ].width * ( layout.planes[ p ].format == PlaneFormat::RGBA8 ? 4 : 1 );
+			PlaneFormat f = layout.planes[ p ].format;
+			strides[ p ]  = layout.planes[ p ].width * ( f == PlaneFormat::RGBA8 ? 4 : f == PlaneFormat::RG8 ? 2 : 1 );
 		}
 		if( frame->format == target && frame->width == layout.width && frame->height == layout.height )
 		{
@@ -308,6 +469,7 @@ private:
 	AVFormatContext* format = nullptr;
 	AVCodecContext* codec   = nullptr;
 	AVFrame* frame          = nullptr;
+	AVFrame* transfer       = nullptr; // a hardware frame's copy in memory
 	AVPacket* packet        = nullptr;
 	SwsContext* sws         = nullptr;
 	AVPixelFormat target    = AV_PIX_FMT_NONE;
@@ -324,6 +486,8 @@ private:
 	std::vector< uint8_t > cache; // a still image, decoded once
 	FrameLayout layout;
 	std::string codecName;
+	std::string hardwareName; // empty when decoding on the CPU
+	AVPixelFormat hardwareFormat = AV_PIX_FMT_NONE;
 };
 
 std::unique_ptr< FrameSource > OpenFfmpegSource( const std::string& path, std::string& error )

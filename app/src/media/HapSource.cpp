@@ -1,3 +1,6 @@
+#include <atomic>
+#include <cstdlib>
+#include <cstring>
 #include "HapSource.h"
 #include <hap.h>
 #include <algorithm>
@@ -114,6 +117,24 @@ std::unique_ptr< FrameSource > OpenFrameSource( const std::string& path, std::st
 	error = codec.empty() ? movie->Error() : "Codec " + codec + " needs FFmpeg, which this build does not include: convert the clip to HAP";
 	return nullptr;
 #endif
+}
+
+namespace
+{
+std::atomic< bool > hardwareDecoding{ [] {
+	const char* env = std::getenv( "STLTVJ_HWDEC" );
+	return !env || std::strcmp( env, "0" ) != 0;
+}() };
+}
+
+void SetHardwareDecoding( bool on )
+{
+	hardwareDecoding = on;
+}
+
+bool HardwareDecoding()
+{
+	return hardwareDecoding;
 }
 
 bool HasFfmpeg()

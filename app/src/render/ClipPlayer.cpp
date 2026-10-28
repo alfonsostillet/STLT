@@ -75,6 +75,10 @@ bool ClipPlayer::Activate()
 			internalFormats[ i ] = GL_R8;
 			glTexImage2D( GL_TEXTURE_2D, 0, GL_R8, plane.width, plane.height, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr );
 			break;
+		case PlaneFormat::RG8:
+			internalFormats[ i ] = GL_RG8;
+			glTexImage2D( GL_TEXTURE_2D, 0, GL_RG8, plane.width, plane.height, 0, GL_RG, GL_UNSIGNED_BYTE, nullptr );
+			break;
 		case PlaneFormat::RGBA8:
 			internalFormats[ i ] = GL_RGBA8;
 			glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA8, plane.width, plane.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr );
@@ -152,7 +156,8 @@ void ClipPlayer::Upload( Slot& slot )
 		if( plane.format == PlaneFormat::Compressed )
 			glCompressedTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, plane.width, plane.height, internalFormats[ i ], (GLsizei)plane.bytes, offset );
 		else
-			glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, plane.width, plane.height, plane.format == PlaneFormat::R8 ? GL_RED : GL_RGBA, GL_UNSIGNED_BYTE, offset );
+			glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, plane.width, plane.height,
+			                 plane.format == PlaneFormat::R8 ? GL_RED : plane.format == PlaneFormat::RG8 ? GL_RG : GL_RGBA, GL_UNSIGNED_BYTE, offset );
 	}
 	glBindTexture( GL_TEXTURE_2D, 0 );
 	glPixelStorei( GL_UNPACK_ALIGNMENT, 4 );

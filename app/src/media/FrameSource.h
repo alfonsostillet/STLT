@@ -11,6 +11,7 @@ enum class PlaneFormat
 {
 	Compressed, // DXT/RGTC/BPTC blocks (HAP): `compressedFormat` says which
 	R8,         // one 8-bit channel (a Y, U or V plane)
+	RG8,        // two 8-bit channels (the interleaved U and V of NV12)
 	RGBA8,
 };
 
@@ -32,6 +33,7 @@ enum class Shading
 	YCoCgAlpha, // HAP Q Alpha: YCoCg colour + RGTC1 alpha
 	AlphaOnly,  // HAP Alpha-Only (RGTC1)
 	Yuv,        // Y, U, V planes (H.264 and most other video): converted on the GPU
+	Nv12,       // a Y plane and an interleaved UV plane (what hardware decoders give)
 };
 
 struct FrameLayout
@@ -62,6 +64,7 @@ public:
 	virtual std::string CodecName() const = 0;
 	virtual std::string Details() const { return {}; }
 	virtual bool IsHap() const { return false; }
+	virtual bool IsHardwareDecoded() const { return false; } // by the graphics chip (VideoToolbox, D3D11, VA-API...)
 	virtual bool IsStill() const { return false; }
 
 	// Decodes `frame` into `destination` (Layout().totalBytes). Safe to call from several threads,
@@ -72,6 +75,10 @@ public:
 // Opens any supported file: HAP through the built-in decoder, the rest through FFmpeg when the app has it.
 std::unique_ptr< FrameSource > OpenFrameSource( const std::string& path, std::string& error );
 bool HasFfmpeg();
+// Whether files opened from now on may use the computer's hardware video decoder (on by default; the
+// STLTVJ_HWDEC=0 environment variable turns it off at start).
+void SetHardwareDecoding( bool on );
+bool HardwareDecoding();
 
 // Extensions the browser and drops accept (lower case, with the dot).
 bool IsMediaExtension( const std::string& extension );

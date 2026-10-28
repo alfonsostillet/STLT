@@ -304,6 +304,8 @@ void App::LoadClip( int layer, int column, const std::string& path )
 		const FrameSource& source = clip.player->Source();
 		if( source.IsHap() || source.IsStill() )
 			SetStatus( "Loaded " + clip.name );
+		else if( source.IsHardwareDecoded() )
+			SetStatus( "Loaded " + clip.name + " (" + source.CodecName() + ", " + source.Details() + "; HAP is still faster to jump around and layer)" );
 		else
 			SetStatus( "Loaded " + clip.name + " (" + source.CodecName() + ", decoded on the CPU: convert it to HAP for the best performance)" );
 	}

@@ -52,6 +52,11 @@ void main()
 	vec4 rgba;
 	if( uShading == 5 )
 		rgba = vec4( YuvToRgb( c.r, texture( uTex1, vUv ).r, texture( uTex2, vUv ).r ), 1.0 );
+	else if( uShading == 6 )
+	{
+		vec2 uv = texture( uTex1, vUv ).rg;
+		rgba = vec4( YuvToRgb( c.r, uv.x, uv.y ), 1.0 );
+	}
 	else if( uShading == 0 )
 		rgba = vec4( c.rgb, 1.0 );
 	else if( uShading == 1 )
