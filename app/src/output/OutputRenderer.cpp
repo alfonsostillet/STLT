@@ -160,15 +160,13 @@ void OutputRenderer::DrawSlice( const Slice& slice, int index, const Screen& scr
 		if( slice.input.size() != 4 )
 			return;
 		// Enough cells that perspective and curves stay smooth on a big screen.
-		int n = slice.warp == WarpMode::Perspective ? 24 : std::clamp( 8 * ( std::max( slice.gridColumns, slice.gridRows ) - 1 ), 16, 96 );
-		std::vector< Vec2 > positions( (size_t)( n + 1 ) * ( n + 1 ) ), sources( positions.size() );
+		int n = slice.warp == WarpMode::Perspective ? 24
+		        : slice.warp == WarpMode::Contour   ? std::clamp( 8 * (int)slice.contour.size(), 32, 96 )
+		                                            : std::clamp( 8 * ( std::max( slice.gridColumns, slice.gridRows ) - 1 ), 16, 96 );
+		std::vector< Vec2 > positions = slice.MapGrid( n ), sources( positions.size() );
 		for( int r = 0; r <= n; ++r )
 			for( int c = 0; c <= n; ++c )
-			{
-				float u = (float)c / n, v = (float)r / n;
-				positions[ (size_t)r * ( n + 1 ) + c ] = slice.Map( u, v );
-				sources[ (size_t)r * ( n + 1 ) + c ]   = slice.Source( u, v );
-			}
+				sources[ (size_t)r * ( n + 1 ) + c ] = slice.Source( (float)c / n, (float)r / n );
 		auto corner = [ & ]( int c, int r ) {
 			size_t i = (size_t)r * ( n + 1 ) + c;
 			push( positions[ i ], (float)c / n, (float)r / n, sources[ i ] );

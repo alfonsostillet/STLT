@@ -72,6 +72,129 @@ Vec2 GridAt( const Slice& s, int column, int row )
 	return p;
 }
 
+Vec2 Add( Vec2 a, Vec2 b )
+{
+	return { a.x + b.x, a.y + b.y };
+}
+
+Vec2 Sub( Vec2 a, Vec2 b )
+{
+	return { a.x - b.x, a.y - b.y };
+}
+
+float Distance( Vec2 a, Vec2 b )
+{
+	return std::hypot( a.x - b.x, a.y - b.y );
+}
+
+// One segment of a contour, from point a to point b, at t in 0..1.
+Vec2 SegmentAt( const ContourPoint& a, const ContourPoint& b, float t, PointMode mode )
+{
+	if( mode == PointMode::Linear )
+		return Lerp( a.p, b.p, t );
+	Vec2 p1 = Add( a.p, a.out ), p2 = Add( b.p, b.in );
+	float s = 1 - t;
+	float w0 = s * s * s, w1 = 3 * s * s * t, w2 = 3 * s * t * t, w3 = t * t * t;
+	return { w0 * a.p.x + w1 * p1.x + w2 * p2.x + w3 * b.p.x, w0 * a.p.y + w1 * p1.y + w2 * p2.y + w3 * b.p.y };
+}
+
+// A side of the contour sampled densely, walked by arc length.
+struct SideCurve
+{
+	std::vector< Vec2 > points;
+	std::vector< float > lengths; // cumulative
+	void Add( Vec2 p )
+	{
+		lengths.push_back( points.empty() ? 0 : lengths.back() + Distance( points.back(), p ) );
+		points.push_back( p );
+	}
+	// The point a fraction f of the way along.
+	Vec2 At( float f ) const
+	{
+		if( points.size() < 2 || lengths.back() <= 0 )
+			return points.empty() ? Vec2{} : points.front();
+		float target = std::clamp( f, 0.0f, 1.0f ) * lengths.back();
+		size_t i     = std::upper_bound( lengths.begin(), lengths.end(), target ) - lengths.begin();
+		i            = std::clamp< size_t >( i, 1, points.size() - 1 );
+		float span   = lengths[ i ] - lengths[ i - 1 ];
+		return Lerp( points[ i - 1 ], points[ i ], span > 0 ? ( target - lengths[ i - 1 ] ) / span : 0 );
+	}
+};
+
+// The output shape of a contour slice. The four corners give a perspective (so a plain four-corner contour is
+// exactly the perspective warp); how far each side bends away from its straight edge is blended across the
+// inside (a Coons patch of the bends), so the picture follows the outline.
+class ContourShape
+{
+public:
+	explicit ContourShape( const Slice& s )
+	{
+		int n = (int)s.contour.size();
+		for( int k = 0; k < 4; ++k )
+			corner[ k ] = s.contour[ s.contourCorners[ k ] ].p;
+		for( int side = 0; side < 4; ++side )
+		{
+			SideCurve curve;
+			int from = s.contourCorners[ side ], to = side == 3 ? n : s.contourCorners[ side + 1 ];
+			for( int i = from; i < to; ++i )
+			{
+				const ContourPoint& a = s.contour[ i ];
+				const ContourPoint& b = s.contour[ ( i + 1 ) % n ];
+				int steps             = s.pointMode == PointMode::Linear ? 1 : 24;
+				for( int k = ( i == from ? 0 : 1 ); k <= steps; ++k )
+					curve.Add( SegmentAt( a, b, (float)k / steps, s.pointMode ) );
+			}
+			raw[ side ] = curve;
+		}
+		// Top and right run as stored (clockwise); bottom and left are walked from the left and the top.
+		sides[ 0 ] = raw[ 0 ];
+		sides[ 1 ] = raw[ 1 ];
+		sides[ 2 ] = Reversed( raw[ 2 ] );
+		sides[ 3 ] = Reversed( raw[ 3 ] );
+	}
+
+	Vec2 Map( float u, float v ) const
+	{
+		Vec2 base = Projective( corner, u, v );
+		Vec2 top = Bend( sides[ 0 ], corner[ 0 ], corner[ 1 ], Projective( corner, u, 0 ) );
+		Vec2 bottom = Bend( sides[ 2 ], corner[ 3 ], corner[ 2 ], Projective( corner, u, 1 ) );
+		Vec2 left = Bend( sides[ 3 ], corner[ 0 ], corner[ 3 ], Projective( corner, 0, v ) );
+		Vec2 right = Bend( sides[ 1 ], corner[ 1 ], corner[ 2 ], Projective( corner, 1, v ) );
+		return { base.x + ( 1 - v ) * top.x + v * bottom.x + ( 1 - u ) * left.x + u * right.x,
+			     base.y + ( 1 - v ) * top.y + v * bottom.y + ( 1 - u ) * left.y + u * right.y };
+	}
+
+	// The outline, clockwise from the top-left corner.
+	std::vector< Vec2 > Outline() const
+	{
+		std::vector< Vec2 > outline;
+		for( const SideCurve& side : raw )
+			outline.insert( outline.end(), side.points.begin(), side.points.empty() ? side.points.end() : side.points.end() - 1 );
+		return outline;
+	}
+
+private:
+	static SideCurve Reversed( const SideCurve& c )
+	{
+		SideCurve r;
+		for( auto it = c.points.rbegin(); it != c.points.rend(); ++it )
+			r.Add( *it );
+		return r;
+	}
+
+	// How far the side is from the straight edge a-b at the point `onEdge` of that edge.
+	static Vec2 Bend( const SideCurve& side, Vec2 a, Vec2 b, Vec2 onEdge )
+	{
+		float length = Distance( a, b );
+		float f      = length > 0 ? Distance( a, onEdge ) / length : 0;
+		return Sub( side.At( f ), onEdge );
+	}
+
+	Vec2 corner[ 4 ];
+	SideCurve raw[ 4 ];
+	SideCurve sides[ 4 ];
+};
+
 float Cross( Vec2 o, Vec2 a, Vec2 b )
 {
 	return ( a.x - o.x ) * ( b.y - o.y ) - ( a.y - o.y ) * ( b.x - o.x );
@@ -88,8 +211,14 @@ float Area( const std::vector< Vec2 >& p )
 
 const char* WarpModeName( WarpMode mode )
 {
-	static const char* names[] = { "Perspective", "Grid", "Curved Grid" };
+	static const char* names[] = { "Perspective", "Grid", "Curved Grid", "Contour" };
 	return names[ std::clamp( (int)mode, 0, (int)WarpMode::Count - 1 ) ];
+}
+
+const char* PointModeName( PointMode mode )
+{
+	static const char* names[] = { "Linear", "Bezier" };
+	return names[ std::clamp( (int)mode, 0, (int)PointMode::Count - 1 ) ];
 }
 
 const char* OutputDeviceName( OutputDevice device )
@@ -110,9 +239,22 @@ float SoftEdge::Factor( float u, float v ) const
 	return ramp( u, left ) * ramp( 1 - u, right ) * ramp( v, top ) * ramp( 1 - v, bottom );
 }
 
+static bool ContourUsable( const Slice& s )
+{
+	int n = (int)s.contour.size();
+	if( n < 4 || s.contourCorners[ 0 ] != 0 )
+		return false;
+	for( int k = 1; k < 4; ++k )
+		if( s.contourCorners[ k ] <= s.contourCorners[ k - 1 ] || s.contourCorners[ k ] >= n )
+			return false;
+	return true;
+}
+
 Vec2 Slice::Map( float u, float v ) const
 {
-	if( warp == WarpMode::Perspective || (int)grid.size() != gridColumns * gridRows || gridColumns < 2 || gridRows < 2 )
+	if( warp == WarpMode::Contour && ContourUsable( *this ) )
+		return ContourShape( *this ).Map( u, v );
+	if( warp == WarpMode::Perspective || warp == WarpMode::Contour || (int)grid.size() != gridColumns * gridRows || gridColumns < 2 || gridRows < 2 )
 		return Projective( corners, u, v );
 	float su = std::clamp( u, 0.0f, 1.0f ) * ( gridColumns - 1 ), sv = std::clamp( v, 0.0f, 1.0f ) * ( gridRows - 1 );
 	int c = std::min( (int)su, gridColumns - 2 ), r = std::min( (int)sv, gridRows - 2 );
@@ -127,6 +269,23 @@ Vec2 Slice::Map( float u, float v ) const
 		rows[ k ] = CatmullRom( GridAt( *this, c - 1, r - 1 + k ), GridAt( *this, c, r - 1 + k ), GridAt( *this, c + 1, r - 1 + k ),
 		                        GridAt( *this, c + 2, r - 1 + k ), tu );
 	return CatmullRom( rows[ 0 ], rows[ 1 ], rows[ 2 ], rows[ 3 ], tv );
+}
+
+std::vector< Vec2 > Slice::MapGrid( int n ) const
+{
+	std::vector< Vec2 > positions( (size_t)( n + 1 ) * ( n + 1 ) );
+	if( warp == WarpMode::Contour && ContourUsable( *this ) )
+	{
+		ContourShape shape( *this ); // built once for the whole lattice
+		for( int r = 0; r <= n; ++r )
+			for( int c = 0; c <= n; ++c )
+				positions[ (size_t)r * ( n + 1 ) + c ] = shape.Map( (float)c / n, (float)r / n );
+		return positions;
+	}
+	for( int r = 0; r <= n; ++r )
+		for( int c = 0; c <= n; ++c )
+			positions[ (size_t)r * ( n + 1 ) + c ] = Map( (float)c / n, (float)r / n );
+	return positions;
 }
 
 Vec2 Slice::Source( float u, float v ) const
@@ -157,6 +316,31 @@ void Slice::SetWarp( WarpMode mode )
 {
 	if( mode == warp )
 		return;
+	if( mode == WarpMode::Contour )
+	{
+		// The outline as it is now: its corners, plus the grid's border points when coming from a grid.
+		bool fromGrid = warp != WarpMode::Perspective && (int)grid.size() == gridColumns * gridRows && gridColumns >= 2 && gridRows >= 2;
+		std::vector< ContourPoint > fresh;
+		auto add = [ & ]( Vec2 p ) { fresh.push_back( { p, {}, {} } ); };
+		int columns = fromGrid ? gridColumns : 2, rows = fromGrid ? gridRows : 2;
+		for( int c = 0; c < columns - 1; ++c )
+			add( Map( (float)c / ( columns - 1 ), 0 ) );
+		contourCorners[ 1 ] = (int)fresh.size();
+		for( int r = 0; r < rows - 1; ++r )
+			add( Map( 1, (float)r / ( rows - 1 ) ) );
+		contourCorners[ 2 ] = (int)fresh.size();
+		for( int c = columns - 1; c > 0; --c )
+			add( Map( (float)c / ( columns - 1 ), 1 ) );
+		contourCorners[ 3 ] = (int)fresh.size();
+		for( int r = rows - 1; r > 0; --r )
+			add( Map( 0, (float)r / ( rows - 1 ) ) );
+		contourCorners[ 0 ] = 0;
+		contour = std::move( fresh );
+		warp    = mode;
+		for( int i = 0; i < (int)contour.size(); ++i )
+			SmoothContourPoint( i );
+		return;
+	}
 	if( mode == WarpMode::Perspective )
 	{
 		// Keep the outer corners.
@@ -165,9 +349,147 @@ void Slice::SetWarp( WarpMode mode )
 		warp = mode;
 		return;
 	}
-	if( warp == WarpMode::Perspective || (int)grid.size() != gridColumns * gridRows )
+	if( warp == WarpMode::Perspective || warp == WarpMode::Contour || (int)grid.size() != gridColumns * gridRows )
 		ResampleGrid( gridColumns, gridRows );
 	warp = mode;
+}
+
+bool Slice::IsContourCorner( int index ) const
+{
+	for( int c : contourCorners )
+		if( c == index )
+			return true;
+	return false;
+}
+
+void Slice::SmoothContourPoint( int index )
+{
+	int n = (int)contour.size();
+	if( index < 0 || index >= n )
+		return;
+	ContourPoint& p = contour[ index ];
+	Vec2 prev = contour[ ( index + n - 1 ) % n ].p, next = contour[ ( index + 1 ) % n ].p;
+	if( IsContourCorner( index ) || n < 3 )
+	{
+		// Straight handles a third of the way along each side: the sides stay straight, the handles can be grabbed.
+		p.in  = { ( prev.x - p.p.x ) / 3, ( prev.y - p.p.y ) / 3 };
+		p.out = { ( next.x - p.p.x ) / 3, ( next.y - p.p.y ) / 3 };
+		return;
+	}
+	// Catmull-Rom tangent through the neighbours, as Bézier handles.
+	Vec2 t{ ( next.x - prev.x ) / 6, ( next.y - prev.y ) / 6 };
+	p.out = t;
+	p.in  = { -t.x, -t.y };
+}
+
+void Slice::ResetContour()
+{
+	Vec2 c[ 4 ] = { Map( 0, 0 ), Map( 1, 0 ), Map( 1, 1 ), Map( 0, 1 ) };
+	contour.clear();
+	for( Vec2 p : c )
+		contour.push_back( { p, {}, {} } );
+	for( int k = 0; k < 4; ++k )
+		contourCorners[ k ] = k;
+	for( int k = 0; k < 4; ++k )
+		SmoothContourPoint( k );
+}
+
+int Slice::InsertContourPoint( Vec2 near, float maxDistance )
+{
+	int n = (int)contour.size();
+	if( n < 4 )
+		return -1;
+	int bestSegment = -1;
+	float bestT = 0, best = maxDistance;
+	for( int i = 0; i < n; ++i )
+		for( int k = 1; k < 64; ++k )
+		{
+			float t = k / 64.0f;
+			float d = Distance( SegmentAt( contour[ i ], contour[ ( i + 1 ) % n ], t, pointMode ), near );
+			if( d < best )
+			{
+				best        = d;
+				bestSegment = i;
+				bestT       = t;
+			}
+		}
+	if( bestSegment < 0 )
+		return -1;
+	ContourPoint& a = contour[ bestSegment ];
+	ContourPoint& b = contour[ ( bestSegment + 1 ) % n ];
+	ContourPoint fresh;
+	if( pointMode == PointMode::Bezier )
+	{
+		// De Casteljau split: the curve keeps its shape, the new point sits on it with matching handles.
+		Vec2 p0 = a.p, p1 = Add( a.p, a.out ), p2 = Add( b.p, b.in ), p3 = b.p;
+		Vec2 p01 = Lerp( p0, p1, bestT ), p12 = Lerp( p1, p2, bestT ), p23 = Lerp( p2, p3, bestT );
+		Vec2 p012 = Lerp( p01, p12, bestT ), p123 = Lerp( p12, p23, bestT ), m = Lerp( p012, p123, bestT );
+		a.out     = Sub( p01, p0 );
+		b.in      = Sub( p23, p3 );
+		fresh     = { m, Sub( p012, m ), Sub( p123, m ) };
+	}
+	else
+	{
+		Vec2 m = Lerp( a.p, b.p, bestT );
+		fresh  = { m, { ( a.p.x - m.x ) / 3, ( a.p.y - m.y ) / 3 }, { ( b.p.x - m.x ) / 3, ( b.p.y - m.y ) / 3 } };
+	}
+	int at = bestSegment + 1;
+	contour.insert( contour.begin() + at, fresh );
+	for( int k = 1; k < 4; ++k )
+		if( contourCorners[ k ] >= at )
+			contourCorners[ k ]++;
+	return at;
+}
+
+bool Slice::RemoveContourPoint( int index )
+{
+	if( index < 0 || index >= (int)contour.size() || IsContourCorner( index ) )
+		return false;
+	contour.erase( contour.begin() + index );
+	for( int k = 1; k < 4; ++k )
+		if( contourCorners[ k ] > index )
+			contourCorners[ k ]--;
+	return true;
+}
+
+int Slice::InsertPolygonPoint( bool onOutput, Vec2 near, float maxDistance )
+{
+	std::vector< Vec2 >& edit  = onOutput ? output : input;
+	std::vector< Vec2 >& other = onOutput ? input : output;
+	int n                      = (int)edit.size();
+	if( n < 3 || (int)other.size() != n )
+		return -1;
+	int bestEdge = -1;
+	float bestT = 0, best = maxDistance;
+	for( int i = 0; i < n; ++i )
+	{
+		Vec2 a = edit[ i ], b = edit[ ( i + 1 ) % n ];
+		Vec2 ab = Sub( b, a );
+		float len2 = ab.x * ab.x + ab.y * ab.y;
+		float t    = len2 > 0 ? std::clamp( ( ( near.x - a.x ) * ab.x + ( near.y - a.y ) * ab.y ) / len2, 0.0f, 1.0f ) : 0;
+		float d    = Distance( Lerp( a, b, t ), near );
+		if( d < best && t > 0.01f && t < 0.99f )
+		{
+			best     = d;
+			bestEdge = i;
+			bestT    = t;
+		}
+	}
+	if( bestEdge < 0 )
+		return -1;
+	int at = bestEdge + 1;
+	edit.insert( edit.begin() + at, Lerp( edit[ bestEdge ], edit[ ( bestEdge + 1 ) % n ], bestT ) );
+	other.insert( other.begin() + at, Lerp( other[ bestEdge ], other[ ( bestEdge + 1 ) % n ], bestT ) );
+	return at;
+}
+
+bool Slice::RemovePolygonPoint( int index )
+{
+	if( !polygon || input.size() <= 3 || index < 0 || index >= (int)input.size() || input.size() != output.size() )
+		return false;
+	input.erase( input.begin() + index );
+	output.erase( output.begin() + index );
+	return true;
 }
 
 void Slice::MatchOutputToInput( float compWidth, float compHeight, float screenWidth, float screenHeight )
@@ -180,10 +502,16 @@ void Slice::MatchOutputToInput( float compWidth, float compHeight, float screenW
 			output[ i ] = { input[ i ].x * sx, input[ i ].y * sy };
 		return;
 	}
+	bool contourMode = warp == WarpMode::Contour;
 	for( int i = 0; i < 4 && i < (int)input.size(); ++i )
 		corners[ i ] = { input[ i ].x * sx, input[ i ].y * sy };
 	warp = WarpMode::Perspective;
 	grid.clear();
+	if( contourMode )
+	{
+		ResetContour();
+		warp = WarpMode::Contour;
+	}
 }
 
 void Slice::FitOutput( float w, float h )
@@ -204,20 +532,28 @@ void Slice::FitOutput( float w, float h )
 			p = { ( p.x - minX ) / bw * w, ( p.y - minY ) / bh * h };
 		return;
 	}
-	corners[ 0 ] = { 0, 0 };
-	corners[ 1 ] = { w, 0 };
-	corners[ 2 ] = { w, h };
-	corners[ 3 ] = { 0, h };
-	warp         = WarpMode::Perspective;
+	bool contourMode = warp == WarpMode::Contour;
+	corners[ 0 ]     = { 0, 0 };
+	corners[ 1 ]     = { w, 0 };
+	corners[ 2 ]     = { w, h };
+	corners[ 3 ]     = { 0, h };
+	warp             = WarpMode::Perspective;
 	grid.clear();
+	if( contourMode )
+	{
+		ResetContour();
+		warp = WarpMode::Contour;
+	}
 }
 
 std::vector< Vec2 > Slice::OutputOutline( int steps ) const
 {
 	if( polygon )
 		return output;
+	if( warp == WarpMode::Contour && ContourUsable( *this ) )
+		return ContourShape( *this ).Outline();
 	std::vector< Vec2 > outline;
-	if( warp == WarpMode::Perspective )
+	if( warp == WarpMode::Perspective || warp == WarpMode::Contour )
 		steps = 1;
 	for( int i = 0; i < steps; ++i )
 		outline.push_back( Map( (float)i / steps, 0 ) );
@@ -398,10 +734,19 @@ std::string SaveAdvancedOutput( const AdvancedOutputSetup& setup )
 			{
 				k[ "warp" ]    = WarpModeName( sl.warp );
 				k[ "corners" ] = Points( std::vector< Vec2 >( sl.corners, sl.corners + 4 ) );
-				if( sl.warp != WarpMode::Perspective )
+				if( sl.warp == WarpMode::Grid || sl.warp == WarpMode::Curved )
 				{
 					k[ "grid" ]     = Points( sl.grid );
 					k[ "gridSize" ] = { sl.gridColumns, sl.gridRows };
+				}
+				if( sl.warp == WarpMode::Contour )
+				{
+					json points = json::array();
+					for( const ContourPoint& c : sl.contour )
+						points.push_back( { c.p.x, c.p.y, c.in.x, c.in.y, c.out.x, c.out.y } );
+					k[ "contour" ]        = points;
+					k[ "contourCorners" ] = { sl.contourCorners[ 0 ], sl.contourCorners[ 1 ], sl.contourCorners[ 2 ], sl.contourCorners[ 3 ] };
+					k[ "pointMode" ]      = PointModeName( sl.pointMode );
 				}
 			}
 			k[ "softEdge" ] = { { "left", sl.edge.left },   { "right", sl.edge.right },         { "top", sl.edge.top },        { "bottom", sl.edge.bottom },
@@ -470,7 +815,25 @@ bool LoadAdvancedOutput( const std::string& text, AdvancedOutputSetup& out, std:
 						for( int i = 0; i < 4 && i < (int)c.size(); ++i )
 							sl.corners[ i ] = c[ i ];
 						sl.warp = ByName( k.value( "warp", json() ), WarpModeName, WarpMode::Perspective );
-						if( sl.warp != WarpMode::Perspective )
+						if( sl.warp == WarpMode::Contour )
+						{
+							if( k.contains( "contour" ) && k[ "contour" ].is_array() )
+								for( const json& c : k[ "contour" ] )
+									if( c.is_array() && c.size() == 6 )
+										sl.contour.push_back( { { c[ 0 ].get< float >(), c[ 1 ].get< float >() },
+										                        { c[ 2 ].get< float >(), c[ 3 ].get< float >() },
+										                        { c[ 4 ].get< float >(), c[ 5 ].get< float >() } } );
+							if( k.contains( "contourCorners" ) && k[ "contourCorners" ].is_array() && k[ "contourCorners" ].size() == 4 )
+								for( int i = 0; i < 4; ++i )
+									sl.contourCorners[ i ] = k[ "contourCorners" ][ i ].get< int >();
+							sl.pointMode = ByName( k.value( "pointMode", json() ), PointModeName, PointMode::Bezier );
+							if( !ContourUsable( sl ) )
+							{
+								sl.warp = WarpMode::Perspective;
+								sl.contour.clear();
+							}
+						}
+						else if( sl.warp != WarpMode::Perspective )
 						{
 							sl.grid = ReadPoints( k.value( "grid", json() ) );
 							if( k.contains( "gridSize" ) && k[ "gridSize" ].is_array() && k[ "gridSize" ].size() == 2 )

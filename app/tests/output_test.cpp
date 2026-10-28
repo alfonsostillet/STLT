@@ -1,4 +1,4 @@
-// Tests for the advanced output without a GPU: warps, polygons, soft edges, saving and Resolume import.
+// Tests for the advanced output without a GPU: warps, contours, polygons, soft edges, saving and Resolume import.
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -177,10 +177,83 @@ static void TestResolumeImport()
 	CHECK( !ImportResolumeXml( "<nope/>", setup, error ) );
 }
 
+static void TestContour()
+{
+	// A plain four-corner contour is exactly the perspective warp.
+	Slice persp = AdvancedOutputSetup::MakeSlice( "A", 100, 100, 400, 200 );
+	persp.corners[ 0 ] = { 40, 10 };
+	persp.corners[ 2 ] = { 380, 190 };
+	Slice s = persp;
+	s.SetWarp( WarpMode::Contour );
+	CHECK( s.contour.size() == 4 && s.contourCorners[ 3 ] == 3 && s.pointMode == PointMode::Bezier );
+	for( float u : { 0.0f, 0.25f, 0.5f, 0.9f } )
+		for( float v : { 0.0f, 0.4f, 1.0f } )
+			CHECK( Near( s.Map( u, v ), persp.Map( u, v ), 0.05f ) );
+	std::vector< Vec2 > lattice = s.MapGrid( 4 );
+	CHECK( lattice.size() == 25 && Near( lattice[ 2 * 5 + 1 ], s.Map( 0.25f, 0.5f ), 0.01f ) );
+
+	// A point added on the top side leaves the shape alone; pulling it up bends the top, fading towards the bottom.
+	s = AdvancedOutputSetup::MakeSlice( "B", 100, 100, 400, 200 );
+	s.SetWarp( WarpMode::Contour );
+	CHECK( s.InsertContourPoint( { 210, 30 }, 5 ) == -1 ); // too far from the outline
+	int top = s.InsertContourPoint( { 200, 2 }, 5 );
+	CHECK( top == 1 && s.contour.size() == 5 );
+	CHECK( s.contourCorners[ 1 ] == 2 && s.contourCorners[ 2 ] == 3 && s.contourCorners[ 3 ] == 4 );
+	CHECK( Near( s.contour[ top ].p, { 200, 0 }, 0.5f ) );
+	CHECK( Near( s.Map( 0.3f, 0.6f ), { 120, 120 }, 0.2f ) );
+	s.contour[ top ].p.y -= 40;
+	CHECK( Near( s.Map( 0, 0 ), { 0, 0 } ) && Near( s.Map( 1, 1 ), { 400, 200 } ) );
+	CHECK( Near( s.Map( 0.5f, 0 ), { 200, -40 }, 0.5f ) );
+	CHECK( Near( s.Map( 0.5f, 0.5f ), { 200, 80 }, 0.5f ) );
+	CHECK( Near( s.Map( 0.5f, 1 ), { 200, 200 }, 0.01f ) );
+	// Bézier: the point's handles are level, so the side leaves the corner flat and rises smoothly; linear: two
+	// straight segments.
+	CHECK( s.Map( 0.125f, 0 ).y > -8 );
+	s.pointMode = PointMode::Linear;
+	CHECK( Near( s.Map( 0.25f, 0 ), { 100, -20 }, 0.5f ) );
+	CHECK( Near( s.Map( 0.125f, 0 ), { 50, -10 }, 0.5f ) );
+	std::vector< Vec2 > outline = s.OutputOutline();
+	CHECK( outline.size() == 5 && Near( outline[ 1 ], { 200, -40 } ) );
+
+	// Saved and loaded as it is.
+	AdvancedOutputSetup setup = AdvancedOutputSetup::MakeDefault( 100, 100 );
+	setup.screens[ 0 ].slices[ 0 ] = s;
+	AdvancedOutputSetup loaded;
+	std::string error;
+	CHECK( LoadAdvancedOutput( SaveAdvancedOutput( setup ), loaded, error ) );
+	const Slice& l = loaded.screens[ 0 ].slices[ 0 ];
+	CHECK( l.warp == WarpMode::Contour && l.pointMode == PointMode::Linear && l.contour.size() == 5 && l.contourCorners[ 1 ] == 2 );
+	CHECK( Near( l.contour[ 1 ].p, s.contour[ 1 ].p ) && Near( l.contour[ 1 ].out, s.contour[ 1 ].out ) );
+	CHECK( Near( l.Map( 0.3f, 0.7f ), s.Map( 0.3f, 0.7f ) ) );
+
+	// Corners stay; other points go.
+	CHECK( !s.RemoveContourPoint( 0 ) && !s.RemoveContourPoint( 2 ) );
+	CHECK( s.RemoveContourPoint( 1 ) && s.contour.size() == 4 && s.contourCorners[ 3 ] == 3 );
+	// Match and fit keep the contour mode.
+	s.FitOutput( 800, 600 );
+	CHECK( s.warp == WarpMode::Contour && Near( s.Map( 1, 1 ), { 800, 600 } ) );
+
+	// From a grid, the contour takes the grid's border points.
+	Slice g = AdvancedOutputSetup::MakeSlice( "C", 100, 100, 400, 200 );
+	g.SetWarp( WarpMode::Curved );
+	g.SetWarp( WarpMode::Contour );
+	CHECK( g.contour.size() == 12 && g.contourCorners[ 1 ] == 3 && g.contourCorners[ 2 ] == 6 && g.contourCorners[ 3 ] == 9 );
+	CHECK( Near( g.Map( 0.5f, 0.5f ), { 200, 100 }, 0.5f ) );
+
+	// Polygons: a point added on an output edge gets its twin on the matching input edge.
+	Slice p    = AdvancedOutputSetup::MakePolygon( "P", 100, 100, 200, 200 );
+	Vec2 a = p.output[ 0 ], b = p.output[ 1 ], ia = p.input[ 0 ], ib = p.input[ 1 ];
+	int at     = p.InsertPolygonPoint( true, { ( a.x + b.x ) / 2, ( a.y + b.y ) / 2 }, 2 );
+	CHECK( at == 1 && p.output.size() == 4 && p.input.size() == 4 );
+	CHECK( Near( p.input[ 1 ], { ( ia.x + ib.x ) / 2, ( ia.y + ib.y ) / 2 }, 0.05f ) );
+	CHECK( p.RemovePolygonPoint( 1 ) && p.output.size() == 3 && !p.RemovePolygonPoint( 0 ) );
+}
+
 int main()
 {
 	TestPerspective();
 	TestGrids();
+	TestContour();
 	TestPolygons();
 	TestSoftEdge();
 	TestSaveLoad();

@@ -25,8 +25,42 @@ enum Tab
 enum class Drag
 {
 	None,
-	Handle,
+	Handle, // a point
+	Bezier, // a contour point's Bézier handle
+	Scale,  // a transform box handle
+	Rotate, // the transform box's rotate knob
 	Move,
+};
+
+// What dragging on the output does: shape the slice point by point, or move, scale and rotate it whole.
+enum class OutputEdit
+{
+	Points,
+	Transform,
+};
+
+// How a dragged Bézier handle moves the point's other one.
+enum class Link
+{
+	None,      // not at all
+	Opposite,  // stays opposite, keeping its length
+	Symmetric, // mirrors it: pulling fresh handles out of a point
+};
+
+// The transform box: the bounds of a slice's outline.
+struct Box
+{
+	float minX = 0, minY = 0, maxX = 0, maxY = 0;
+	// Scale handles: the corners top-left, top-right, bottom-right, bottom-left, then the middles of the top,
+	// right, bottom and left sides.
+	Vec2 Handle( int k ) const
+	{
+		float mx = ( minX + maxX ) / 2, my = ( minY + maxY ) / 2;
+		const Vec2 handles[ 8 ] = { { minX, minY }, { maxX, minY }, { maxX, maxY }, { minX, maxY }, { mx, minY }, { maxX, my }, { mx, maxY }, { minX, my } };
+		return handles[ k ];
+	}
+	static int Opposite( int k ) { return k < 4 ? ( k + 2 ) % 4 : 4 + ( k - 2 ) % 4; }
+	Vec2 Centre() const { return { ( minX + maxX ) / 2, ( minY + maxY ) / 2 }; }
 };
 
 struct Editor
@@ -38,10 +72,22 @@ struct Editor
 	ImVec2 pan[ 2 ];
 	bool snap = true;
 
-	Drag drag     = Drag::None;
-	int handle    = -1;
+	OutputEdit outputEdit = OutputEdit::Points;
+	// The selected point of the selected slice on the current tab (an index into EditablePoints), or -1.
+	int point = -1;
+	int pointScreen = -1, pointSlice = -1, pointTab = -1;
+	int menuPoint      = -1; // the point the context menu is for
+	bool menuCanInsert = false;
+	Vec2 menuAt;
+
+	Drag drag      = Drag::None;
+	int handle     = -1; // the point, the Bézier handle's point, or the box handle being dragged
+	bool handleOut = false;
+	Link link      = Link::None;
+	Box box;
 	Vec2 dragFrom;
-	std::vector< Vec2 > before; // the edited points when the drag started
+	std::vector< Vec2 > before;                 // the edited points when the drag started
+	std::vector< ContourPoint > beforeContour;  // and the contour, for its handles
 	bool snappedX = false, snappedY = false;
 	Vec2 snapAt;
 
@@ -60,7 +106,8 @@ ImTextureID TextureId( GLuint texture )
 	return (ImTextureID)(intptr_t)texture;
 }
 
-// The points the canvas edits for a slice: its input, or its output (perspective corners, grid, or polygon points).
+// The points the canvas edits for a slice: its input, or its output (perspective corners, grid, contour or
+// polygon points).
 std::vector< Vec2* > EditablePoints( Slice& s, int tab )
 {
 	std::vector< Vec2* > points;
@@ -73,6 +120,9 @@ std::vector< Vec2* > EditablePoints( Slice& s, int tab )
 	else if( s.warp == WarpMode::Perspective )
 		for( Vec2& p : s.corners )
 			points.push_back( &p );
+	else if( s.warp == WarpMode::Contour )
+		for( ContourPoint& c : s.contour )
+			points.push_back( &c.p );
 	else
 		for( Vec2& p : s.grid )
 			points.push_back( &p );
@@ -365,6 +415,116 @@ void DrawList( App& app )
 
 // ---- middle: the canvas
 
+constexpr float kPi = 3.14159265f;
+
+bool EditsContour( const Slice& s, int tab )
+{
+	return tab == OutputTab && !s.polygon && s.warp == WarpMode::Contour && s.contour.size() >= 4;
+}
+
+// Points can be added and removed: polygons on both tabs, contours on the output.
+bool HasPointEditing( const Slice& s, int tab )
+{
+	return s.polygon || EditsContour( s, tab );
+}
+
+bool Transforming( int tab )
+{
+	return tab == OutputTab && editor.outputEdit == OutputEdit::Transform;
+}
+
+struct BezierHandle
+{
+	int point;
+	bool out;
+};
+
+// The Bézier handles shown: the selected contour point's two, and its neighbours' ones facing it.
+std::vector< BezierHandle > VisibleHandles( const Slice& s, int tab )
+{
+	int n = (int)s.contour.size();
+	if( !EditsContour( s, tab ) || s.pointMode != PointMode::Bezier || Transforming( tab ) || editor.point < 0 || editor.point >= n )
+		return {};
+	return { { editor.point, false }, { editor.point, true }, { ( editor.point + n - 1 ) % n, true }, { ( editor.point + 1 ) % n, false } };
+}
+
+Vec2 HandlePosition( const Slice& s, BezierHandle h )
+{
+	const ContourPoint& c = s.contour[ h.point ];
+	Vec2 d                = h.out ? c.out : c.in;
+	return { c.p.x + d.x, c.p.y + d.y };
+}
+
+// Handles a third of the way to each neighbour: both segments through the point are straight.
+ContourPoint Straightened( const Slice& s, int i )
+{
+	int n          = (int)s.contour.size();
+	ContourPoint c = s.contour[ i ];
+	Vec2 prev = s.contour[ ( i + n - 1 ) % n ].p, next = s.contour[ ( i + 1 ) % n ].p;
+	c.in      = { ( prev.x - c.p.x ) / 3, ( prev.y - c.p.y ) / 3 };
+	c.out     = { ( next.x - c.p.x ) / 3, ( next.y - c.p.y ) / 3 };
+	return c;
+}
+
+// Straight points become smooth, anything else straight.
+void TogglePointShape( Slice& s, int i )
+{
+	ContourPoint straight = Straightened( s, i );
+	const ContourPoint& c = s.contour[ i ];
+	bool isStraight = std::hypot( c.in.x - straight.in.x, c.in.y - straight.in.y ) < 0.5f && std::hypot( c.out.x - straight.out.x, c.out.y - straight.out.y ) < 0.5f;
+	if( isStraight )
+		s.SmoothContourPoint( i );
+	else
+		s.contour[ i ] = straight;
+}
+
+bool RemovePoint( Slice& s, int tab, int index )
+{
+	if( s.polygon )
+		return s.RemovePolygonPoint( index );
+	return EditsContour( s, tab ) && s.RemoveContourPoint( index );
+}
+
+int InsertPoint( Slice& s, int tab, Vec2 at, float maxDistance )
+{
+	if( s.polygon )
+		return s.InsertPolygonPoint( tab == OutputTab, at, maxDistance );
+	return EditsContour( s, tab ) ? s.InsertContourPoint( at, maxDistance ) : -1;
+}
+
+Box OutlineBox( const Slice& s, int tab )
+{
+	Box box;
+	Bounds( Outline( s, tab ), box.minX, box.minY, box.maxX, box.maxY );
+	return box;
+}
+
+// Remembers the edited points, and the contour's handles, as they are when a drag starts.
+void BeginEdit( Slice& s, int tab )
+{
+	editor.before.clear();
+	for( Vec2* p : EditablePoints( s, tab ) )
+		editor.before.push_back( *p );
+	editor.beforeContour = s.contour;
+}
+
+// Places the edited points, and a contour's handles, from where they were when the drag started.
+template< typename PointFn, typename VectorFn >
+void TransformPoints( Slice& s, int tab, PointFn point, VectorFn vector )
+{
+	std::vector< Vec2* > points = EditablePoints( s, tab );
+	if( points.size() != editor.before.size() )
+		return;
+	for( size_t k = 0; k < points.size(); ++k )
+		*points[ k ] = point( editor.before[ k ] );
+	if( EditsContour( s, tab ) && s.contour.size() == editor.beforeContour.size() )
+		for( size_t k = 0; k < s.contour.size(); ++k )
+		{
+			s.contour[ k ].in  = vector( editor.beforeContour[ k ].in );
+			s.contour[ k ].out = vector( editor.beforeContour[ k ].out );
+		}
+}
+
 void DrawCanvas( App& app, Screen& screen )
 {
 	ImGuiIO& io = ImGui::GetIO();
@@ -389,6 +549,12 @@ void DrawCanvas( App& app, Screen& screen )
 	ImVec2 origin( centre.x - W * scale / 2, centre.y - H * scale / 2 );
 	auto toScreen  = [ & ]( Vec2 p ) { return ImVec2( origin.x + p.x * scale, origin.y + p.y * scale ); };
 	auto toContent = [ & ]( ImVec2 s ) { return Vec2{ ( s.x - origin.x ) / scale, ( s.y - origin.y ) / scale }; };
+	auto rotateKnob = [ & ]( const Box& box ) {
+		ImVec2 top = toScreen( box.Handle( 4 ) );
+		return ImVec2( top.x, top.y - Ui( 24 ) );
+	};
+	// Squared screen distance from the mouse.
+	auto mouseDistance2 = [ & ]( ImVec2 p ) { return ( io.MousePos.x - p.x ) * ( io.MousePos.x - p.x ) + ( io.MousePos.y - p.y ) * ( io.MousePos.y - p.y ); };
 
 	// Zoom around the mouse; pan with the middle button or space + drag.
 	if( hovered && io.MouseWheel != 0 )
@@ -414,8 +580,20 @@ void DrawCanvas( App& app, Screen& screen )
 		draw->AddImage( TextureId( texture ), toScreen( { 0, 0 } ), toScreen( { W, H } ), ImVec2( 0, 1 ), ImVec2( 1, 0 ) );
 	draw->AddRect( toScreen( { 0, 0 } ), toScreen( { W, H } ), IM_COL32( 90, 90, 90, 255 ) );
 
-	// Slice outlines; the selected one with its handles (and its grid on the output).
 	int selected = editor.slice >= 0 && editor.slice < (int)screen.slices.size() ? editor.slice : -1;
+	// A selected point belongs to one slice on one tab.
+	if( editor.pointScreen != editor.screen || editor.pointSlice != selected || editor.pointTab != tab )
+	{
+		editor.point       = -1;
+		editor.pointScreen = editor.screen;
+		editor.pointSlice  = selected;
+		editor.pointTab    = tab;
+	}
+	bool transforming = Transforming( tab );
+	if( selected < 0 || transforming || editor.point >= (int)EditablePoints( screen.slices[ selected ], tab ).size() )
+		editor.point = -1;
+
+	// Slice outlines; the selected one with its handles (and its grid on the output).
 	for( int i = 0; i < (int)screen.slices.size(); ++i )
 	{
 		const Slice& s           = screen.slices[ i ];
@@ -436,37 +614,96 @@ void DrawCanvas( App& app, Screen& screen )
 		ImVec2 text = ImGui::CalcTextSize( s.name.c_str() );
 		draw->AddText( ImVec2( c.x - text.x / 2, c.y - text.y / 2 ), colour, s.name.c_str() );
 	}
+	const ImU32 white = IM_COL32( 255, 255, 255, 255 ), black = IM_COL32( 0, 0, 0, 200 ), amber = IM_COL32( 255, 200, 80, 255 );
+	const ImU32 lattice = IM_COL32( 102, 225, 192, 110 );
+	float radius        = Ui( 4.5f );
 	if( selected >= 0 )
 	{
 		Slice& s = screen.slices[ selected ];
-		if( tab == OutputTab && !s.polygon && s.warp != WarpMode::Perspective )
+		if( tab == OutputTab && !s.polygon && ( s.warp == WarpMode::Grid || s.warp == WarpMode::Curved ) )
 		{
 			for( int r = 0; r < s.gridRows; ++r )
 			{
 				std::vector< ImVec2 > row;
 				for( int k = 0; k <= 32; ++k )
 					row.push_back( toScreen( s.Map( k / 32.0f, (float)r / ( s.gridRows - 1 ) ) ) );
-				draw->AddPolyline( row.data(), (int)row.size(), IM_COL32( 102, 225, 192, 110 ), 0, Ui( 1 ) );
+				draw->AddPolyline( row.data(), (int)row.size(), lattice, 0, Ui( 1 ) );
 			}
 			for( int c = 0; c < s.gridColumns; ++c )
 			{
 				std::vector< ImVec2 > column;
 				for( int k = 0; k <= 32; ++k )
 					column.push_back( toScreen( s.Map( (float)c / ( s.gridColumns - 1 ), k / 32.0f ) ) );
-				draw->AddPolyline( column.data(), (int)column.size(), IM_COL32( 102, 225, 192, 110 ), 0, Ui( 1 ) );
+				draw->AddPolyline( column.data(), (int)column.size(), lattice, 0, Ui( 1 ) );
 			}
 		}
-		std::vector< Vec2* > points = EditablePoints( s, tab );
-		float handle                = Ui( 4.5f );
-		for( size_t k = 0; k < points.size(); ++k )
+		else if( EditsContour( s, tab ) )
 		{
-			ImVec2 p          = toScreen( *points[ k ] );
-			bool hot          = editor.drag == Drag::Handle && editor.handle == (int)k;
-			ImVec2 d( io.MousePos.x - p.x, io.MousePos.y - p.y );
-			bool underMouse   = hovered && d.x * d.x + d.y * d.y < handle * handle * 4;
-			draw->AddRectFilled( ImVec2( p.x - handle, p.y - handle ), ImVec2( p.x + handle, p.y + handle ),
-			                     hot || underMouse ? IM_COL32( 255, 255, 255, 255 ) : theme::Accent );
-			draw->AddRect( ImVec2( p.x - handle, p.y - handle ), ImVec2( p.x + handle, p.y + handle ), IM_COL32( 0, 0, 0, 200 ) );
+			// How the picture spreads inside the contour: a line at every quarter of the slice.
+			const int n                = 32;
+			std::vector< Vec2 > mapped = s.MapGrid( n );
+			for( int k = 1; k < 4; ++k )
+			{
+				std::vector< ImVec2 > row, column;
+				for( int j = 0; j <= n; ++j )
+				{
+					row.push_back( toScreen( mapped[ (size_t)( k * n / 4 ) * ( n + 1 ) + j ] ) );
+					column.push_back( toScreen( mapped[ (size_t)j * ( n + 1 ) + k * n / 4 ] ) );
+				}
+				draw->AddPolyline( row.data(), (int)row.size(), lattice, 0, Ui( 1 ) );
+				draw->AddPolyline( column.data(), (int)column.size(), lattice, 0, Ui( 1 ) );
+			}
+		}
+
+		if( transforming )
+		{
+			Box box = OutlineBox( s, tab );
+			draw->AddRect( toScreen( { box.minX, box.minY } ), toScreen( { box.maxX, box.maxY } ), theme::Accent, 0, 0, Ui( 1 ) );
+			ImVec2 knob = rotateKnob( box );
+			draw->AddLine( toScreen( box.Handle( 4 ) ), knob, theme::Accent, Ui( 1 ) );
+			bool hotKnob = editor.drag == Drag::Rotate || ( editor.drag == Drag::None && hovered && mouseDistance2( knob ) < radius * radius * 4 );
+			draw->AddCircleFilled( knob, radius, hotKnob ? white : theme::Accent );
+			draw->AddCircle( knob, radius, black );
+			for( int k = 0; k < 8; ++k )
+			{
+				ImVec2 p = toScreen( box.Handle( k ) );
+				bool hot = ( editor.drag == Drag::Scale && editor.handle == k ) || ( editor.drag == Drag::None && hovered && mouseDistance2( p ) < radius * radius * 4 );
+				draw->AddRectFilled( ImVec2( p.x - radius, p.y - radius ), ImVec2( p.x + radius, p.y + radius ), hot ? white : theme::Accent );
+				draw->AddRect( ImVec2( p.x - radius, p.y - radius ), ImVec2( p.x + radius, p.y + radius ), black );
+			}
+		}
+		else
+		{
+			for( BezierHandle h : VisibleHandles( s, tab ) )
+			{
+				ImVec2 p = toScreen( s.contour[ h.point ].p ), q = toScreen( HandlePosition( s, h ) );
+				if( ( q.x - p.x ) * ( q.x - p.x ) + ( q.y - p.y ) * ( q.y - p.y ) < radius * radius * 2 )
+					continue; // too short to grab apart from its point
+				bool hot = ( editor.drag == Drag::Bezier && editor.handle == h.point && editor.handleOut == h.out )
+				           || ( editor.drag == Drag::None && hovered && mouseDistance2( q ) < radius * radius * 4 );
+				draw->AddLine( p, q, amber, Ui( 1 ) );
+				draw->AddCircleFilled( q, radius * 0.8f, hot ? white : amber );
+				draw->AddCircle( q, radius * 0.8f, black );
+			}
+			std::vector< Vec2* > points = EditablePoints( s, tab );
+			bool contour                = EditsContour( s, tab );
+			for( size_t k = 0; k < points.size(); ++k )
+			{
+				ImVec2 p  = toScreen( *points[ k ] );
+				bool hot  = ( editor.drag == Drag::Handle && editor.handle == (int)k ) || ( editor.drag == Drag::None && hovered && mouseDistance2( p ) < radius * radius * 4 );
+				ImU32 fill = hot ? white : editor.point == (int)k ? amber : theme::Accent;
+				if( contour && !s.IsContourCorner( (int)k ) )
+				{
+					// Contour points between the corners are round; corners stay square.
+					draw->AddCircleFilled( p, radius, fill );
+					draw->AddCircle( p, radius, black );
+				}
+				else
+				{
+					draw->AddRectFilled( ImVec2( p.x - radius, p.y - radius ), ImVec2( p.x + radius, p.y + radius ), fill );
+					draw->AddRect( ImVec2( p.x - radius, p.y - radius ), ImVec2( p.x + radius, p.y + radius ), black );
+				}
+			}
 		}
 	}
 	if( editor.drag != Drag::None && ( editor.snappedX || editor.snappedY ) )
@@ -480,24 +717,114 @@ void DrawCanvas( App& app, Screen& screen )
 	draw->PopClipRect();
 
 	// Picking and dragging.
-	Vec2 mouse = toContent( io.MousePos );
-	if( ImGui::IsItemClicked( ImGuiMouseButton_Left ) && !ImGui::IsKeyDown( ImGuiKey_Space ) )
+	Vec2 mouse      = toContent( io.MousePos );
+	float pick      = Ui( 9 ) * Ui( 9 );
+	float nearLine  = Ui( 8 ) / scale; // how close to the outline a click adds a point, in content pixels
+	// The editable point under the mouse, or -1.
+	auto pointUnderMouse = [ & ]( Slice& s ) {
+		int hit                     = -1;
+		float best                  = pick;
+		std::vector< Vec2* > points = EditablePoints( s, tab );
+		for( size_t k = 0; k < points.size(); ++k )
+		{
+			float d = mouseDistance2( toScreen( *points[ k ] ) );
+			if( d < best )
+			{
+				best = d;
+				hit  = (int)k;
+			}
+		}
+		return hit;
+	};
+	bool clicked = ImGui::IsItemClicked( ImGuiMouseButton_Left ) && !ImGui::IsKeyDown( ImGuiKey_Space );
+	// Double-click: a contour point turns smooth or straight; the outline of a contour or polygon gets a new point,
+	// which the click below then picks up for dragging.
+	if( clicked && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) && selected >= 0 && !transforming )
+	{
+		Slice& s = screen.slices[ selected ];
+		int at   = pointUnderMouse( s );
+		if( at >= 0 && EditsContour( s, tab ) )
+		{
+			TogglePointShape( s, at );
+			editor.point = at;
+			clicked      = false;
+		}
+		else if( at < 0 )
+		{
+			int fresh = InsertPoint( s, tab, mouse, nearLine );
+			if( fresh >= 0 )
+				editor.point = fresh;
+		}
+	}
+	if( clicked )
 	{
 		editor.drag   = Drag::None;
 		editor.handle = -1;
 		if( selected >= 0 )
 		{
-			std::vector< Vec2* > points = EditablePoints( screen.slices[ selected ], tab );
-			float best                  = Ui( 9 ) * Ui( 9 );
-			for( size_t k = 0; k < points.size(); ++k )
+			Slice& s   = screen.slices[ selected ];
+			float best = pick;
+			if( transforming )
 			{
-				ImVec2 p = toScreen( *points[ k ] );
-				float d  = ( io.MousePos.x - p.x ) * ( io.MousePos.x - p.x ) + ( io.MousePos.y - p.y ) * ( io.MousePos.y - p.y );
-				if( d < best )
+				Box box = OutlineBox( s, tab );
+				if( mouseDistance2( rotateKnob( box ) ) < best )
 				{
-					best          = d;
-					editor.handle = (int)k;
+					best        = mouseDistance2( rotateKnob( box ) );
+					editor.drag = Drag::Rotate;
+				}
+				for( int k = 0; k < 8; ++k )
+				{
+					float d = mouseDistance2( toScreen( box.Handle( k ) ) );
+					if( d < best )
+					{
+						best          = d;
+						editor.drag   = Drag::Scale;
+						editor.handle = k;
+					}
+				}
+				editor.box = box;
+			}
+			else
+			{
+				for( BezierHandle h : VisibleHandles( s, tab ) )
+				{
+					ImVec2 p = toScreen( s.contour[ h.point ].p ), q = toScreen( HandlePosition( s, h ) );
+					if( ( q.x - p.x ) * ( q.x - p.x ) + ( q.y - p.y ) * ( q.y - p.y ) < radius * radius * 2 )
+						continue;
+					float d = mouseDistance2( q );
+					if( d < best )
+					{
+						best             = d;
+						editor.drag      = Drag::Bezier;
+						editor.handle    = h.point;
+						editor.handleOut = h.out;
+					}
+				}
+				int at = pointUnderMouse( s );
+				if( at >= 0 && mouseDistance2( toScreen( *EditablePoints( s, tab )[ at ] ) ) < best )
+				{
 					editor.drag   = Drag::Handle;
+					editor.handle = at;
+				}
+				if( editor.drag == Drag::Handle )
+				{
+					editor.point = editor.handle;
+					// Alt-drag on a contour point pulls fresh Bézier handles out of it.
+					if( io.KeyAlt && EditsContour( s, tab ) && s.pointMode == PointMode::Bezier )
+					{
+						editor.drag      = Drag::Bezier;
+						editor.handleOut = true;
+						editor.link      = Link::Symmetric;
+					}
+				}
+				else if( editor.drag == Drag::Bezier )
+				{
+					// Handles in line stay in line; Alt moves one alone.
+					const ContourPoint& c = s.contour[ editor.handle ];
+					float li = std::hypot( c.in.x, c.in.y ), lo = std::hypot( c.out.x, c.out.y );
+					float cross = c.in.x * c.out.y - c.in.y * c.out.x, dot = c.in.x * c.out.x + c.in.y * c.out.y;
+					bool inLine = li > 0 && lo > 0 && dot < 0 && std::fabs( cross ) < 0.02f * li * lo;
+					editor.link = inLine && !io.KeyAlt ? Link::Opposite : Link::None;
 				}
 			}
 		}
@@ -508,6 +835,7 @@ void DrawCanvas( App& app, Screen& screen )
 				if( PointInPolygon( Outline( screen.slices[ i ], tab ), mouse ) )
 					hit = i;
 			editor.slice = hit;
+			editor.point = -1;
 			selected     = hit;
 			if( hit >= 0 )
 				editor.drag = Drag::Move;
@@ -515,9 +843,7 @@ void DrawCanvas( App& app, Screen& screen )
 		if( editor.drag != Drag::None && selected >= 0 )
 		{
 			editor.dragFrom = mouse;
-			editor.before.clear();
-			for( Vec2* p : EditablePoints( screen.slices[ selected ], tab ) )
-				editor.before.push_back( *p );
+			BeginEdit( screen.slices[ selected ], tab );
 		}
 	}
 	if( !ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
@@ -544,6 +870,72 @@ void DrawCanvas( App& app, Screen& screen )
 				}
 				else
 					*points[ editor.handle ] = target;
+			}
+			else if( editor.drag == Drag::Bezier && editor.handle >= 0 && editor.handle < (int)s.contour.size() && s.contour.size() == editor.beforeContour.size() )
+			{
+				ContourPoint& c         = s.contour[ editor.handle ];
+				const ContourPoint& was = editor.beforeContour[ editor.handle ];
+				Vec2& moved             = editor.handleOut ? c.out : c.in;
+				Vec2& other             = editor.handleOut ? c.in : c.out;
+				if( editor.link == Link::Symmetric )
+				{
+					moved = { mouse.x - c.p.x, mouse.y - c.p.y };
+					other = { -moved.x, -moved.y };
+				}
+				else
+				{
+					Vec2 start = editor.handleOut ? was.out : was.in;
+					moved      = { start.x + delta.x, start.y + delta.y };
+					float l    = std::hypot( moved.x, moved.y );
+					if( editor.link == Link::Opposite && l > 1e-4f )
+					{
+						Vec2 kept    = editor.handleOut ? was.in : was.out;
+						float length = std::hypot( kept.x, kept.y );
+						other        = { -moved.x / l * length, -moved.y / l * length };
+					}
+				}
+			}
+			else if( editor.drag == Drag::Scale && editor.handle >= 0 && editor.handle < 8 )
+			{
+				const Box& box = editor.box;
+				Vec2 grabbed   = box.Handle( editor.handle );
+				Vec2 anchor    = io.KeyAlt ? box.Centre() : box.Handle( Box::Opposite( editor.handle ) );
+				bool sx = editor.handle != 4 && editor.handle != 6, sy = editor.handle != 5 && editor.handle != 7;
+				auto factor = []( float to, float from, float about ) {
+					float span = from - about;
+					return std::fabs( span ) > 1e-3f ? ( to - about ) / span : 1.0f;
+				};
+				float fx = sx ? factor( grabbed.x + delta.x, grabbed.x, anchor.x ) : 1;
+				float fy = sy ? factor( grabbed.y + delta.y, grabbed.y, anchor.y ) : 1;
+				if( io.KeyShift )
+				{
+					// Keep the proportions.
+					if( sx && sy )
+						fx = fy = std::fabs( fx ) > std::fabs( fy ) ? fx : fy;
+					else if( sx )
+						fy = fx;
+					else
+						fx = fy;
+				}
+				TransformPoints(
+					s, tab, [ & ]( Vec2 p ) { return Vec2{ anchor.x + ( p.x - anchor.x ) * fx, anchor.y + ( p.y - anchor.y ) * fy }; },
+					[ & ]( Vec2 v ) { return Vec2{ v.x * fx, v.y * fy }; } );
+			}
+			else if( editor.drag == Drag::Rotate )
+			{
+				Vec2 c      = editor.box.Centre();
+				float angle = std::atan2( mouse.y - c.y, mouse.x - c.x ) - std::atan2( editor.dragFrom.y - c.y, editor.dragFrom.x - c.x );
+				if( io.KeyShift )
+					angle = std::round( angle / ( kPi / 12 ) ) * ( kPi / 12 );
+				float cs = std::cos( angle ), sn = std::sin( angle );
+				auto rotate = [ & ]( Vec2 v ) { return Vec2{ v.x * cs - v.y * sn, v.x * sn + v.y * cs }; };
+				TransformPoints(
+					s, tab,
+					[ & ]( Vec2 p ) {
+						Vec2 r = rotate( { p.x - c.x, p.y - c.y } );
+						return Vec2{ c.x + r.x, c.y + r.y };
+					},
+					rotate );
 			}
 			else if( editor.drag == Drag::Move )
 			{
@@ -576,10 +968,12 @@ void DrawCanvas( App& app, Screen& screen )
 		}
 	}
 
-	// Arrow keys nudge the selected slice (Shift: 10 pixels).
+	// Keys: arrows nudge the selected point, or the whole slice (Shift: 10 pixels); Delete removes the point.
 	if( selected >= 0 && ( hovered || focused ) && !io.WantTextInput )
 	{
-		float step = io.KeyShift ? 10.0f : 1.0f;
+		Slice& s                    = screen.slices[ selected ];
+		std::vector< Vec2* > points = EditablePoints( s, tab );
+		float step                  = io.KeyShift ? 10.0f : 1.0f;
 		Vec2 nudge;
 		if( ImGui::IsKeyPressed( ImGuiKey_LeftArrow ) )
 			nudge.x -= step;
@@ -589,22 +983,44 @@ void DrawCanvas( App& app, Screen& screen )
 			nudge.y -= step;
 		if( ImGui::IsKeyPressed( ImGuiKey_DownArrow ) )
 			nudge.y += step;
+		bool onePoint = editor.point >= 0 && editor.point < (int)points.size() && ( tab == OutputTab || s.polygon );
 		if( nudge.x != 0 || nudge.y != 0 )
-			for( Vec2* p : EditablePoints( screen.slices[ selected ], tab ) )
-			{
-				p->x += nudge.x;
-				p->y += nudge.y;
-			}
+			for( size_t k = 0; k < points.size(); ++k )
+				if( !onePoint || (int)k == editor.point )
+				{
+					points[ k ]->x += nudge.x;
+					points[ k ]->y += nudge.y;
+				}
+		if( editor.point >= 0 && ( ImGui::IsKeyPressed( ImGuiKey_Delete ) || ImGui::IsKeyPressed( ImGuiKey_Backspace ) ) && RemovePoint( s, tab, editor.point ) )
+			editor.point = -1;
+		if( ImGui::IsKeyPressed( ImGuiKey_Escape ) )
+			editor.point = -1;
 	}
 
 	if( ImGui::IsItemClicked( ImGuiMouseButton_Right ) )
 	{
-		for( int i = (int)screen.slices.size() - 1; i >= 0; --i )
-			if( PointInPolygon( Outline( screen.slices[ i ], tab ), mouse ) )
+		editor.menuPoint     = -1;
+		editor.menuAt        = mouse;
+		editor.menuCanInsert = false;
+		if( selected >= 0 && !transforming )
+		{
+			Slice& s         = screen.slices[ selected ];
+			editor.menuPoint = pointUnderMouse( s );
+			if( editor.menuPoint >= 0 )
+				editor.point = editor.menuPoint;
+			else if( HasPointEditing( s, tab ) )
 			{
-				editor.slice = i;
-				break;
+				Slice probe          = s;
+				editor.menuCanInsert = InsertPoint( probe, tab, mouse, nearLine * 2 ) >= 0;
 			}
+		}
+		if( editor.menuPoint < 0 && !editor.menuCanInsert )
+			for( int i = (int)screen.slices.size() - 1; i >= 0; --i )
+				if( PointInPolygon( Outline( screen.slices[ i ], tab ), mouse ) )
+				{
+					editor.slice = i;
+					break;
+				}
 		if( editor.slice >= 0 )
 			ImGui::OpenPopup( "##sliceMenu" );
 	}
@@ -612,8 +1028,39 @@ void DrawCanvas( App& app, Screen& screen )
 	{
 		if( editor.slice >= 0 && editor.slice < (int)screen.slices.size() )
 		{
-			Slice& s = screen.slices[ editor.slice ];
-			ImGui::TextDisabled( "%s", s.name.c_str() );
+			Slice& s     = screen.slices[ editor.slice ];
+			bool contour = EditsContour( s, tab );
+			if( editor.menuPoint >= 0 && editor.menuPoint < (int)EditablePoints( s, tab ).size() )
+			{
+				ImGui::TextDisabled( "%s - point %d", s.name.c_str(), editor.menuPoint + 1 );
+				if( contour && s.pointMode == PointMode::Bezier )
+				{
+					if( ImGui::MenuItem( "Smooth Point" ) )
+						s.SmoothContourPoint( editor.menuPoint );
+					if( ImGui::MenuItem( "Straight Point" ) )
+						s.contour[ editor.menuPoint ] = Straightened( s, editor.menuPoint );
+				}
+				bool removable = s.polygon ? s.input.size() > 3 : contour && !s.IsContourCorner( editor.menuPoint );
+				if( HasPointEditing( s, tab ) && ImGui::MenuItem( "Delete Point", "Del", false, removable ) && RemovePoint( s, tab, editor.menuPoint ) )
+				{
+					editor.point     = -1;
+					editor.menuPoint = -1;
+				}
+				ImGui::Separator();
+			}
+			else
+				ImGui::TextDisabled( "%s", s.name.c_str() );
+			if( editor.menuCanInsert && ImGui::MenuItem( "Add Point Here" ) )
+			{
+				int fresh = InsertPoint( s, tab, editor.menuAt, nearLine * 2 );
+				if( fresh >= 0 )
+					editor.point = fresh;
+			}
+			if( contour && ImGui::MenuItem( "Reset Contour" ) )
+			{
+				s.ResetContour();
+				editor.point = -1;
+			}
 			if( ImGui::MenuItem( "Match Output to Input" ) )
 				s.MatchOutputToInput( (float)app.composition.width, (float)app.composition.height, (float)screen.width, (float)screen.height );
 			if( ImGui::MenuItem( "Fit Output to Screen" ) )
@@ -723,6 +1170,21 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 		if( ImGui::Button( "Whole Composition" ) )
 			SetRect( s, 0, 0, cw, ch );
 	}
+	if( editor.tab == OutputTab )
+	{
+		Row( "Mode" );
+		if( ImGui::RadioButton( "Edit Points", editor.outputEdit == OutputEdit::Points ) )
+			editor.outputEdit = OutputEdit::Points;
+		ImGui::SameLine();
+		if( ImGui::RadioButton( "Transform", editor.outputEdit == OutputEdit::Transform ) )
+			editor.outputEdit = OutputEdit::Transform;
+	}
+	std::vector< Vec2* > points = EditablePoints( s, editor.tab );
+	if( editor.point >= 0 && editor.point < (int)points.size() )
+	{
+		Row( "Point" );
+		ImGui::DragFloat2( "##point", &points[ editor.point ]->x, 1, -16384, 16384, "%.1f" );
+	}
 	Row( "Flip" );
 	ImGui::Checkbox( "Horizontal", &s.flipHorizontal );
 	ImGui::SameLine();
@@ -738,7 +1200,30 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 					s.SetWarp( (WarpMode)m );
 			ImGui::EndCombo();
 		}
-		if( s.warp != WarpMode::Perspective )
+		if( s.warp == WarpMode::Contour )
+		{
+			Row( "Point Mode" );
+			if( ImGui::BeginCombo( "##pointMode", PointModeName( s.pointMode ) ) )
+			{
+				for( int m = 0; m < (int)PointMode::Count; ++m )
+					if( ImGui::Selectable( PointModeName( (PointMode)m ), (int)s.pointMode == m ) )
+						s.pointMode = (PointMode)m;
+				ImGui::EndCombo();
+			}
+			Row( "Points" );
+			ImGui::Text( "%d", (int)s.contour.size() );
+			Row( "" );
+			if( ImGui::Button( "Smooth All" ) )
+				for( int i = 0; i < (int)s.contour.size(); ++i )
+					s.SmoothContourPoint( i );
+			ImGui::SameLine();
+			if( ImGui::Button( "Reset Contour" ) )
+			{
+				s.ResetContour();
+				editor.point = -1;
+			}
+		}
+		else if( s.warp != WarpMode::Perspective )
 		{
 			Row( "Grid Points" );
 			int grid[ 2 ] = { s.gridColumns, s.gridRows };
@@ -853,7 +1338,13 @@ void DrawAdvancedOutputPanel( App& app )
 			DrawSliceProps( app, screen, screen.slices[ editor.slice ] );
 		DrawScreenProps( app, screen );
 		ImGui::Spacing();
-		ImGui::TextDisabled( "Drag a slice to move it, its handles to shape it.\nShift: one axis. Alt: free input corner.\nCtrl: no snapping. Arrows: nudge.\nWheel: zoom. Middle button or Space: pan.\nRight-click a slice for more." );
+		ImGui::TextDisabled( "Drag a slice to move it, its points to shape it.\n"
+		                     "Double-click the outline of a contour or\npolygon to add a point; Del removes it.\n"
+		                     "Double-click a contour point: smooth or\nstraight. Alt-drag it: new Bezier handles.\n"
+		                     "Alt on a handle: move it alone.\n"
+		                     "Transform: drag the box to scale (Alt: from\nthe centre), the knob to rotate.\n"
+		                     "Shift: one axis, keep proportions, 15 degrees.\nAlt: free input corner. Ctrl: no snapping.\n"
+		                     "Arrows: nudge the slice or the selected point.\nWheel: zoom. Middle button or Space: pan.\nRight-click a slice for more." );
 		ImGui::EndChild();
 		ImGui::EndTable();
 	}
