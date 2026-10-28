@@ -67,6 +67,16 @@ public:
 	void LoadClip( int layer, int column, const std::string& path );
 	void RemoveClip( int layer, int column );
 	void MoveClip( int fromLayer, int fromColumn, int toLayer, int toColumn );
+	// Move mode (the Move menu): clips are picked in the deck, then moved together. Playing clips keep playing.
+	bool moveMode = false;
+	std::vector< std::pair< int, int > > movePicked; // (row, column) of the picked clips
+	void SetMoveMode( bool on );
+	bool IsPicked( int row, int column ) const;
+	void TogglePicked( int row, int column );
+	void PickAllClips();
+	// Moves the picked clips by `rows` and `columns` (columns are added when needed); false, with the reason in the
+	// status bar, when they would leave the deck or land on clips that are not picked.
+	bool MovePicked( int rows, int columns );
 	// Launches the clip at row/column: on `onLayer`, else where the composition's clip target says (its own row's
 	// layer, or the selected layer). With launch quantize set it waits for the next beat or bar unless `now`.
 	void Launch( int row, int column, bool now = false, int onLayer = -1 );
@@ -111,6 +121,14 @@ public:
 	std::vector< std::string > OutputPresets() const;
 	bool ImportResolumeOutput( const std::string& path );
 	std::string OutputPresetDirectory() const;
+	// The Advanced Output setup is edited live, and kept only when saved: SaveOutputSetup writes it,
+	// RevertOutputSetup goes back to the saved one. Unsaved edits are not kept when the app closes.
+	bool OutputUnsaved() const;
+	void SaveOutputSetup();
+	void RevertOutputSetup();
+	std::string savedOutput;            // the setup as last saved
+	int outputSavePrompt     = 0;       // asking whether to save the setup: 1 the editor is closing, 2 the app is quitting
+	bool advancedEditorWasOpen = false; // to catch the editor closing with unsaved edits
 
 	// Undo and redo of the composition and the output setup (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y). Steps are recorded
 	// when an edit ends: a value dragged, a field left, a menu choice, a drop.
@@ -125,7 +143,10 @@ public:
 	ControlSettings control;
 	RemoteInputs remote;
 	AudioEngine audio;
-	bool learning = false;
+	bool learning  = false; // mapping mode: a click picks a control, the next key or MIDI message maps it
+	bool learnKeys = false; // mapping keys of the computer's keyboard (Ctrl+K), else MIDI (Ctrl+M)
+	// Turns keyboard or MIDI mapping on, or off when it is the one on.
+	void ToggleMapping( bool keys );
 	std::string learnTarget;
 	std::string lastControl; // the last message, for the panel
 

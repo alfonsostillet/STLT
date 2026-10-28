@@ -25,6 +25,8 @@ namespace stltvj
 namespace
 {
 constexpr const char* kCellPayload = "STLT_CELL";
+constexpr const char* kMovePayload = "STLT_MOVE"; // the picked clips, dragged in Move mode
+constexpr ImU32 kMoveColour        = IM_COL32( 214, 120, 255, 255 );
 constexpr const char* kFilePayload = "STLT_FILE";
 
 struct CellRef
@@ -272,8 +274,14 @@ static void DrawOutputModeItems( App& app )
 		}
 		ImGui::EndMenu();
 	}
-	if( ImGui::MenuItem( "Advanced (slices, warps, masks)", nullptr, app.outputMode == OutputMode::Advanced ) )
+	// As Resolume's "Advanced...": shows the Advanced Output setup and opens its editor.
+	if( ImGui::MenuItem( "Advanced...", nullptr, app.outputMode == OutputMode::Advanced ) )
+	{
 		app.SetOutputMode( OutputMode::Advanced );
+		app.panels.advancedOutput = true;
+	}
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "Screens with slices, warps and masks: opens the Advanced Output editor (Ctrl+Shift+A)" );
 }
 
 void DrawMainMenu( App& app )
@@ -340,18 +348,14 @@ void DrawMainMenu( App& app )
 		if( ImGui::BeginMenu( "Output" ) )
 		{
 			DrawOutputModeItems( app );
-			ImGui::Separator();
-			if( ImGui::MenuItem( "Advanced Output Settings...", "Ctrl+Shift+A" ) )
-				app.panels.advancedOutput = true;
 			ImGui::EndMenu();
 		}
 		if( ImGui::BeginMenu( "Shortcuts" ) )
 		{
-			if( ImGui::MenuItem( "Map Keys and MIDI", "Ctrl+M", app.learning ) )
-			{
-				app.learning = !app.learning;
-				app.learnTarget.clear();
-			}
+			if( ImGui::MenuItem( "Map Keys", "Ctrl+K", app.learning && app.learnKeys ) )
+				app.ToggleMapping( true );
+			if( ImGui::MenuItem( "Map MIDI", "Ctrl+M", app.learning && !app.learnKeys ) )
+				app.ToggleMapping( false );
 			if( ImGui::MenuItem( "Shortcuts Panel (keys, MIDI, OSC)" ) )
 			{
 				app.panels.control = true;
@@ -368,6 +372,23 @@ void DrawMainMenu( App& app )
 				app.control.midi.clear();
 				app.SaveControlSettings();
 			}
+			ImGui::EndMenu();
+		}
+		if( ImGui::BeginMenu( "Move" ) )
+		{
+			if( ImGui::MenuItem( "Move Clips", nullptr, app.moveMode ) )
+				app.SetMoveMode( !app.moveMode );
+			if( ImGui::IsItemHovered() )
+				ImGui::SetTooltip( "Pick clips in the deck (click, Ins, or drag a box), then drag them, or use the arrows, to move them together" );
+			ImGui::Separator();
+			if( ImGui::MenuItem( "Pick All Clips" ) )
+			{
+				if( !app.moveMode )
+					app.SetMoveMode( true );
+				app.PickAllClips();
+			}
+			if( ImGui::MenuItem( "Clear Picks", nullptr, false, !app.movePicked.empty() ) )
+				app.movePicked.clear();
 			ImGui::EndMenu();
 		}
 		if( ImGui::BeginMenu( "View" ) )
@@ -575,14 +596,25 @@ void DrawToolbar( App& app )
 				return false;
 		return true;
 	};
-	if( builtIn( ImGuiKey_RightArrow ) )
-		app.LaunchNextClip( comp.selectedLayer, 1 );
-	if( builtIn( ImGuiKey_LeftArrow ) )
-		app.LaunchNextClip( comp.selectedLayer, -1 );
-	if( builtIn( ImGuiKey_UpArrow ) )
-		comp.selectedLayer = std::min( comp.selectedLayer + 1, (int)comp.layers.size() - 1 );
-	if( builtIn( ImGuiKey_DownArrow ) )
-		comp.selectedLayer = std::max( comp.selectedLayer - 1, 0 );
+	if( app.moveMode )
+	{
+		// In Move mode the arrows move the picked clips by one cell.
+		for( auto [ key, rows, columns ] : { std::tuple{ ImGuiKey_RightArrow, 0, 1 }, std::tuple{ ImGuiKey_LeftArrow, 0, -1 }, std::tuple{ ImGuiKey_UpArrow, 1, 0 },
+		                                     std::tuple{ ImGuiKey_DownArrow, -1, 0 } } )
+			if( plainKeys && !app.panels.advancedOutput && ImGui::IsKeyPressed( key, true ) )
+				app.MovePicked( rows, columns );
+	}
+	else
+	{
+		if( builtIn( ImGuiKey_RightArrow ) )
+			app.LaunchNextClip( comp.selectedLayer, 1 );
+		if( builtIn( ImGuiKey_LeftArrow ) )
+			app.LaunchNextClip( comp.selectedLayer, -1 );
+		if( builtIn( ImGuiKey_UpArrow ) )
+			comp.selectedLayer = std::min( comp.selectedLayer + 1, (int)comp.layers.size() - 1 );
+		if( builtIn( ImGuiKey_DownArrow ) )
+			comp.selectedLayer = std::max( comp.selectedLayer - 1, 0 );
+	}
 
 	// Tempo: the BPM in figures that do not jump about, halve, double, tap, resync, and the beats of the bar.
 	ToolbarDivider();
@@ -713,9 +745,6 @@ void DrawToolbar( App& app )
 		if( ImGui::BeginPopup( "##outputMode" ) )
 		{
 			DrawOutputModeItems( app );
-			ImGui::Separator();
-			if( ImGui::MenuItem( "Advanced Output Settings...", "Ctrl+Shift+A" ) )
-				app.panels.advancedOutput = true;
 			ImGui::EndPopup();
 		}
 	}
@@ -895,6 +924,46 @@ void DrawClipGrid( App& app )
 		std::vector< std::string > paths;
 		std::string generatorId;
 	} pendingLoad;
+
+	// Move mode: a banner with what to do, and the box being dragged to pick clips.
+	struct PickBox
+	{
+		bool active = false, additive = false;
+		ImVec2 start;
+	};
+	static PickBox box;
+	static CellRef moveTarget{ -1, -1 }; // the cell under the dragged clips, last frame
+	const ImGuiIO& io     = ImGui::GetIO();
+	bool insertPressed    = app.moveMode && !io.WantTextInput && ImGui::IsKeyPressed( ImGuiKey_Insert, false );
+	bool insertHandled    = false;
+	if( !app.moveMode )
+		box.active = false;
+	bool boxRelease       = box.active && !ImGui::IsMouseDown( ImGuiMouseButton_Left );
+	ImVec2 boxMin( std::min( box.start.x, io.MousePos.x ), std::min( box.start.y, io.MousePos.y ) );
+	ImVec2 boxMax( std::max( box.start.x, io.MousePos.x ), std::max( box.start.y, io.MousePos.y ) );
+	const ImGuiPayload* dragged = ImGui::GetDragDropPayload();
+	bool movingPicked           = app.moveMode && dragged && dragged->IsDataType( kMovePayload );
+	CellRef moveFrom            = movingPicked ? *(const CellRef*)dragged->Data : CellRef{ -1, -1 };
+	if( !movingPicked )
+		moveTarget = { -1, -1 };
+	CellRef nextMoveTarget{ -1, -1 };
+	if( app.moveMode )
+	{
+		ImGui::PushStyleColor( ImGuiCol_ChildBg, ImVec4( 0.45f, 0.22f, 0.55f, 0.55f ) );
+		ImGui::BeginChild( "##moveBanner", ImVec2( 0, ImGui::GetFrameHeightWithSpacing() + Ui( 6 ) ), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar );
+		ImGui::SetCursorPos( ImVec2( Ui( 8 ), Ui( 3 ) ) );
+		if( ImGui::Button( "Done" ) )
+			app.SetMoveMode( false );
+		ImGui::SameLine();
+		ImGui::AlignTextToFramePadding();
+		ImGui::Text( "Move: %d picked. Click clips or press Ins to pick them, drag a box from an empty cell to pick many, then drag a picked clip "
+		             "(or press the arrows) to move them all.",
+		             (int)app.movePicked.size() );
+		ImGui::EndChild();
+		ImGui::PopStyleColor();
+		if( !io.WantTextInput && !app.learning && ImGui::IsKeyPressed( ImGuiKey_Escape, false ) && !ImGui::IsPopupOpen( "", ImGuiPopupFlags_AnyPopup ) )
+			app.SetMoveMode( false );
+	}
 
 	ImGui::BeginChild( "##grid", ImVec2( 0, 0 ), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar );
 	draw         = ImGui::GetWindowDrawList();
@@ -1266,7 +1335,53 @@ void DrawClipGrid( App& app )
 				               Ui( 2 ) );
 			}
 
-			if( clicked )
+			if( app.moveMode )
+			{
+				// Picked clips: tinted and framed. Under a box being dragged: framed thinner. Where the dragged clips
+				// would land: an outline, red when that cell holds another clip.
+				bool picked = app.IsPicked( l, c );
+				bool inBox  = box.active && !clip.Empty() && min.x < boxMax.x && max.x > boxMin.x && min.y < boxMax.y && max.y > boxMin.y;
+				if( picked )
+				{
+					draw->AddRectFilled( min, max, IM_COL32( 214, 120, 255, 60 ), round );
+					draw->AddRect( ImVec2( min.x - Ui( 1 ), min.y - Ui( 1 ) ), ImVec2( max.x + Ui( 1 ), max.y + Ui( 1 ) ), kMoveColour, round + Ui( 1 ), 0, Ui( 2.5f ) );
+				}
+				else if( inBox )
+					draw->AddRect( min, max, kMoveColour, round, 0, Ui( 1.5f ) );
+				if( moveTarget.layer >= 0 && app.IsPicked( l - ( moveTarget.layer - moveFrom.layer ), c - ( moveTarget.column - moveFrom.column ) ) )
+				{
+					bool taken = !clip.Empty() && !picked;
+					draw->AddRect( ImVec2( min.x + Ui( 3 ), min.y + Ui( 3 ) ), ImVec2( max.x - Ui( 3 ), max.y - Ui( 3 ) ), taken ? theme::Error : IM_COL32( 255, 255, 255, 230 ),
+					               round, 0, Ui( 2 ) );
+				}
+				if( boxRelease && inBox && !picked )
+					app.TogglePicked( l, c );
+				if( ImGui::IsItemActivated() && clip.Empty() )
+				{
+					// Pressed on an empty cell: a box starts (with Ctrl or Shift it adds to the picks).
+					box.active   = true;
+					box.additive = io.KeyCtrl || io.KeyShift;
+					box.start    = io.MousePos;
+					if( !box.additive )
+						app.movePicked.clear();
+				}
+				if( insertPressed && hovered )
+				{
+					app.TogglePicked( l, c );
+					insertHandled = true;
+				}
+				// (The cell button is not "hovered" while another item is dragged: test the mouse.)
+				if( movingPicked && io.MousePos.x >= cellsLeft && ImGui::IsMouseHoveringRect( min, max )
+				    && ImGui::IsWindowHovered( ImGuiHoveredFlags_AllowWhenBlockedByActiveItem ) )
+					nextMoveTarget = { l, c };
+			}
+
+			if( clicked && app.moveMode )
+			{
+				if( !clip.Empty() )
+					app.TogglePicked( l, c );
+			}
+			else if( clicked )
 			{
 				if( clip.Empty() || ImGui::GetIO().MouseClickedPos[ ImGuiMouseButton_Left ].y >= min.y + thumbH )
 					app.Select( l, c );
@@ -1276,12 +1391,28 @@ void DrawClipGrid( App& app )
 			if( !clip.Empty() && ImGui::BeginDragDropSource() )
 			{
 				CellRef ref{ l, c };
-				ImGui::SetDragDropPayload( kCellPayload, &ref, sizeof( ref ) );
-				ImGui::TextUnformatted( clip.name.c_str() );
+				if( app.moveMode )
+				{
+					// Dragging a clip moves every picked clip along (it is picked too).
+					if( !app.IsPicked( l, c ) )
+						app.TogglePicked( l, c );
+					ImGui::SetDragDropPayload( kMovePayload, &ref, sizeof( ref ) );
+					ImGui::Text( "Moving %d clip%s", (int)app.movePicked.size(), app.movePicked.size() == 1 ? "" : "s" );
+				}
+				else
+				{
+					ImGui::SetDragDropPayload( kCellPayload, &ref, sizeof( ref ) );
+					ImGui::TextUnformatted( clip.name.c_str() );
+				}
 				ImGui::EndDragDropSource();
 			}
 			if( ImGui::BeginDragDropTarget() )
 			{
+				if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kMovePayload ) )
+				{
+					CellRef ref = *(const CellRef*)payload->Data;
+					app.MovePicked( l - ref.layer, c - ref.column );
+				}
 				if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kCellPayload ) )
 				{
 					CellRef ref = *(const CellRef*)payload->Data;
@@ -1331,6 +1462,23 @@ void DrawClipGrid( App& app )
 		}
 		ImGui::PopClipRect();
 		ImGui::PopID();
+	}
+
+	if( app.moveMode )
+	{
+		moveTarget = nextMoveTarget;
+		if( box.active )
+		{
+			draw->PushClipRect( ImVec2( cellsLeft, viewMin.y ), viewMax, true );
+			draw->AddRectFilled( boxMin, boxMax, IM_COL32( 214, 120, 255, 40 ) );
+			draw->AddRect( boxMin, boxMax, kMoveColour );
+			draw->PopClipRect();
+		}
+		if( boxRelease )
+			box.active = false;
+		// Ins with no cell under the mouse: the selected clip.
+		if( insertPressed && !insertHandled )
+			app.TogglePicked( comp.selectedRow, comp.selectedColumn );
 	}
 
 	// The crossfader, under the layers.
@@ -1564,7 +1712,8 @@ void DrawLayerPanel( App& app )
 }
 
 // The clip's timeline, as in Resolume: the range between the in and out triangles under the bar (drag them),
-// beat ticks (each beat of a BPM-synced clip, else quarters), cue points, and the playhead's triangle on top.
+// beat ticks (each beat of a BPM-synced clip, else quarters), cue points (their numbers under the bar drag too),
+// and the playhead's triangle on top. Right-click a triangle to reset it, a cue's number to clear it.
 // A click or drag anywhere else moves the playhead.
 static void Timeline( Clip& clip, float width )
 {
@@ -1583,28 +1732,66 @@ static void Timeline( Clip& clip, float width )
 	double start = clip.RangeStart(), end = clip.RangeEnd();
 	const double minimum = std::min( duration, 1.0 / 30 );
 
-	// What the press grabbed: 1 the in point, 2 the out point, 3 the playhead.
-	if( ImGui::IsItemActivated() )
-	{
+	// What is under the mouse below the bar: 1 the in point, 2 the out point, 10 + i cue i, else 3 the playhead.
+	auto under = [ & ]() {
 		float mx = ImGui::GetIO().MousePos.x;
-		bool low = ImGui::GetIO().MousePos.y >= barBottom - Ui( 2 );
-		float dIn = std::fabs( mx - xAt( start ) ), dOut = std::fabs( mx - xAt( end ) );
-		int grab  = low && std::min( dIn, dOut ) < Ui( 8 ) ? ( dIn <= dOut ? 1 : 2 ) : 3;
-		mem->SetInt( id, grab );
-	}
+		if( ImGui::GetIO().MousePos.y < barBottom - Ui( 2 ) )
+			return 3;
+		int grab     = 3;
+		float best   = Ui( 8 );
+		auto nearest = [ & ]( double t, int what ) {
+			float d = std::fabs( mx - xAt( t ) );
+			if( d < best )
+			{
+				best = d;
+				grab = what;
+			}
+		};
+		nearest( start, 1 );
+		nearest( end, 2 );
+		for( int i = 0; i < kCuePoints; ++i )
+			if( clip.cues[ i ] >= 0 && clip.cues[ i ] <= duration )
+				nearest( clip.cues[ i ], 10 + i );
+		return grab;
+	};
+	if( ImGui::IsItemActivated() )
+		mem->SetInt( id, under() );
 	if( ImGui::IsItemActive() )
 	{
-		switch( mem->GetInt( id, 0 ) )
+		int grab = mem->GetInt( id, 0 );
+		switch( grab )
 		{
 		case 1: clip.inPoint = std::clamp( mouseTime, 0.0, end - minimum ); break;
 		case 2: clip.outPoint = mouseTime >= duration - 1e-3 ? -1.0 : std::clamp( mouseTime, start + minimum, duration ); break;
 		case 3: clip.JumpTo( mouseTime ); break;
+		default:
+			if( grab >= 10 && grab < 10 + kCuePoints )
+				clip.cues[ grab - 10 ] = mouseTime;
 		}
 		start = clip.RangeStart();
 		end   = clip.RangeEnd();
 	}
 	if( ImGui::IsItemHovered() )
-		ImGui::SetTooltip( "%s\nDrag the triangles under the bar to set the in and out points", FormatTime( mouseTime ).c_str() );
+	{
+		int what = under();
+		if( ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
+		{
+			if( what == 1 )
+				clip.inPoint = 0;
+			else if( what == 2 )
+				clip.outPoint = -1;
+			else if( what >= 10 )
+				clip.cues[ what - 10 ] = -1;
+			start = clip.RangeStart();
+			end   = clip.RangeEnd();
+		}
+		else if( what == 1 || what == 2 )
+			ImGui::SetTooltip( "%s point at %s\nDrag to move it, right-click to reset it", what == 1 ? "In" : "Out", FormatTime( what == 1 ? start : end ).c_str() );
+		else if( what >= 10 )
+			ImGui::SetTooltip( "Cue %d at %s\nDrag to move it, right-click to delete it", what - 9, FormatTime( clip.cues[ what - 10 ] ).c_str() );
+		else
+			ImGui::SetTooltip( "%s\nDrag the triangles under the bar to set the in and out points", FormatTime( mouseTime ).c_str() );
+	}
 
 	ImDrawList* draw = ImGui::GetWindowDrawList();
 	draw->AddRectFilled( ImVec2( x0, barTop ), ImVec2( x1, barBottom ), IM_COL32( 20, 22, 26, 255 ), Ui( 3 ) );
@@ -1757,25 +1944,16 @@ void DrawClipPanel( App& app )
 			ImGui::EndTable();
 		}
 
-		// In and out points: where the playhead is now (or drag the triangles under the timeline).
-		if( ImGui::Button( "Set In" ) )
-			clip->inPoint = std::min( clip->time, clip->RangeEnd() - 1e-3 );
-		ImGui::SameLine();
-		if( ImGui::Button( "Set Out" ) )
-			clip->outPoint = std::max( clip->time, clip->RangeStart() + 1e-3 );
-		ImGui::SameLine();
-		if( ImGui::Button( "Clear In/Out" ) )
-		{
-			clip->inPoint  = 0;
-			clip->outPoint = -1;
-		}
-
-		// Cue points: click an empty one to place it at the playhead, a set one to play from it; right-click clears.
+		// Cue points: click an empty one to place it at the playhead, a set one to play from it; its x (or a
+		// right-click) deletes it, and the x at the end of the row deletes them all.
 		ImGui::AlignTextToFramePadding();
 		ImGui::TextUnformatted( "Cues" );
 		ImGui::SameLine();
 		float spacing = ImGui::GetStyle().ItemSpacing.x * 0.5f;
-		float width   = ( ImGui::GetContentRegionAvail().x - spacing * ( kCuePoints - 1 ) ) / kCuePoints;
+		bool anyCue   = std::any_of( std::begin( clip->cues ), std::end( clip->cues ), []( double c ) { return c >= 0; } );
+		float clearW  = ImGui::GetFrameHeight();
+		float width   = ( ImGui::GetContentRegionAvail().x - spacing * kCuePoints - clearW ) / kCuePoints;
+		const float crossW = std::min( Ui( 13 ), width * 0.45f );
 		for( int i = 0; i < kCuePoints; ++i )
 		{
 			ImGui::PushID( i );
@@ -1787,29 +1965,58 @@ void DrawClipPanel( App& app )
 				ImGui::PushStyleColor( ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4( theme::AccentDim ) );
 				ImGui::PushStyleColor( ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4( theme::Accent ) );
 			}
-			char label[ 4 ];
-			std::snprintf( label, sizeof( label ), "%d", i + 1 );
-			if( ImGui::Button( label, ImVec2( width, 0 ) ) )
+			char label[ 16 ];
+			std::snprintf( label, sizeof( label ), set ? "%d##cue" : "%d", i + 1 );
+			ImGui::PushStyleVar( ImGuiStyleVar_ButtonTextAlign, ImVec2( set ? 0.25f : 0.5f, 0.5f ) );
+			bool pressed = ImGui::Button( label, ImVec2( width, 0 ) );
+			ImGui::PopStyleVar();
+			ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+			bool onCross = set && ImGui::IsItemHovered() && ImGui::GetIO().MousePos.x >= b.x - crossW;
+			if( pressed )
 			{
-				if( set )
-					app.JumpToCue( comp.selectedRow, comp.selectedColumn, i );
-				else
+				if( !set )
 					clip->cues[ i ] = clip->time;
+				else if( ImGui::GetIO().MouseClickedPos[ 0 ].x >= b.x - crossW )
+					clip->cues[ i ] = -1;
+				else
+					app.JumpToCue( comp.selectedRow, comp.selectedColumn, i );
 			}
 			if( set )
+			{
 				ImGui::PopStyleColor( 2 );
+				// The delete cross on the right of the button.
+				ImDrawList* draw = ImGui::GetWindowDrawList();
+				ImVec2 c( b.x - crossW * 0.5f, ( a.y + b.y ) * 0.5f );
+				float r = Ui( 3 );
+				if( onCross )
+					draw->AddRectFilled( ImVec2( b.x - crossW, a.y ), b, IM_COL32( 200, 60, 60, 200 ), ImGui::GetStyle().FrameRounding );
+				ImU32 col = onCross ? IM_COL32( 255, 255, 255, 255 ) : IM_COL32( 255, 255, 255, 150 );
+				draw->AddLine( ImVec2( c.x - r, c.y - r ), ImVec2( c.x + r, c.y + r ), col, Ui( 1.5f ) );
+				draw->AddLine( ImVec2( c.x - r, c.y + r ), ImVec2( c.x + r, c.y - r ), col, Ui( 1.5f ) );
+			}
 			if( set && ImGui::IsItemHovered() && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
 				clip->cues[ i ] = -1;
 			if( ImGui::IsItemHovered() && !app.learning )
 			{
-				if( set )
-					ImGui::SetTooltip( "Cue %d at %s\nClick: play from here (map it to a key or MIDI with Ctrl+M)\nRight-click: clear", i + 1, FormatTime( clip->cues[ i ] ).c_str() );
+				if( onCross )
+					ImGui::SetTooltip( "Delete cue %d", i + 1 );
+				else if( set )
+					ImGui::SetTooltip( "Cue %d at %s\nClick: play from here (map it with Shortcuts > Map Keys or Map MIDI)\nx or right-click: delete it", i + 1,
+					                   FormatTime( clip->cues[ i ] ).c_str() );
 				else
 					ImGui::SetTooltip( "Click: put cue %d here (%s)", i + 1, FormatTime( clip->time ).c_str() );
 			}
 			MapTarget( app, clipAddress + "/cue/" + std::to_string( i + 1 ) );
 			ImGui::PopID();
 		}
+		ImGui::SameLine( 0, spacing );
+		ImGui::BeginDisabled( !anyCue );
+		if( IconButton( "##clearCues", Icon::Close, false ) )
+			for( double& cue : clip->cues )
+				cue = -1;
+		ImGui::EndDisabled();
+		if( ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenDisabled ) && !app.learning )
+			ImGui::SetTooltip( anyCue ? "Delete all the cues of this clip" : "No cues to delete" );
 	}
 
 	// Settings that can follow the beat: while one moves its slider shows where it is and takes no edits.
@@ -2016,14 +2223,22 @@ void DrawOutputPanel( App& app )
 	}
 	ImGui::SameLine();
 	if( modeButton( "Advanced", app.outputMode == OutputMode::Advanced ) )
+	{
 		app.SetOutputMode( OutputMode::Advanced );
+		app.panels.advancedOutput = true;
+	}
 	ImGui::PushTextWrapPos( 0 );
 	switch( app.outputMode )
 	{
 	case OutputMode::Off: ImGui::TextDisabled( "Nothing is shown outside this window." ); break;
 	case OutputMode::Window:
 	case OutputMode::Fullscreen: ImGui::TextDisabled( "The whole composition - %s. Escape on the output turns it off.", app.quickOutputs.DeviceStatus( 0 ).c_str() ); break;
-	case OutputMode::Advanced: ImGui::TextDisabled( "The screens below, with their slices, warps and masks." ); break;
+	case OutputMode::Advanced:
+		if( std::none_of( app.advancedOutput.screens.begin(), app.advancedOutput.screens.end(), []( const Screen& s ) { return s.device != OutputDevice::Virtual; } ) )
+			ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( theme::Warning ), "Every screen is a Virtual Output, so nothing is shown: choose a display or Window for a screen below." );
+		else
+			ImGui::TextDisabled( "The screens below, with their slices, warps and masks." );
+		break;
 	}
 	ImGui::PopTextWrapPos();
 
@@ -2046,7 +2261,7 @@ void DrawOutputPanel( App& app )
 		if( ImGui::BeginCombo( "##device", current.c_str() ) )
 		{
 			if( ImGui::Selectable( "Virtual Output (not shown)", screen.device == OutputDevice::Virtual ) )
-				screen.device = OutputDevice::Virtual;
+				app.ShowScreenOn( s, OutputDevice::Virtual );
 			if( ImGui::Selectable( "Window", screen.device == OutputDevice::Window ) )
 				app.ShowScreenOn( s, OutputDevice::Window );
 			for( const OutputWindow::Display& d : displays )

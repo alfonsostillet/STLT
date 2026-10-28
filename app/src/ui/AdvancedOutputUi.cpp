@@ -1140,7 +1140,10 @@ void DrawScreenProps( App& app, Screen& screen )
 		ImGui::EndCombo();
 	}
 	Row( "" );
-	ImGui::TextDisabled( "%s", app.outputs.DeviceStatus( (size_t)editor.screen ).c_str() );
+	if( screen.device == OutputDevice::Virtual )
+		ImGui::TextWrapped( "Virtual Output: drawn here only. Choose a display or Window above to show it." );
+	else
+		ImGui::TextDisabled( "%s", app.outputs.DeviceStatus( (size_t)editor.screen ).c_str() );
 	Row( "Size" );
 	int size[ 2 ] = { screen.width, screen.height };
 	if( ImGui::InputInt2( "##size", size, ImGuiInputTextFlags_EnterReturnsTrue ) )
@@ -1385,10 +1388,74 @@ void ShowAdvancedOutputTab( int tab, int screen, int slice )
 	editor.slice  = slice;
 }
 
+void DrawAdvancedOutputSavePrompt( App& app )
+{
+	// The editor closed (View menu, Ctrl+Shift+A) with unsaved edits: it stays open and asks, at its top.
+	if( app.advancedEditorWasOpen && !app.panels.advancedOutput && app.outputSavePrompt == 0 && app.OutputUnsaved() )
+	{
+		app.panels.advancedOutput = true;
+		app.outputSavePrompt      = 1;
+	}
+	if( app.outputSavePrompt != 0 && !app.advancedEditorWasOpen )
+		ImGui::SetWindowFocus( panel::AdvancedOutput );
+	app.advancedEditorWasOpen = app.panels.advancedOutput;
+}
+
+namespace
+{
+// The question when the editor closes, or the app quits, with unsaved edits: save, discard, or go on editing.
+void DrawSaveQuestion( App& app )
+{
+	bool quitting = app.outputSavePrompt == 2;
+	ImGui::PushStyleColor( ImGuiCol_ChildBg, ImVec4( 0.55f, 0.16f, 0.14f, 0.85f ) );
+	ImGui::BeginChild( "##saveQuestion", ImVec2( 0, ImGui::GetFrameHeightWithSpacing() + Ui( 10 ) ), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar );
+	ImGui::SetCursorPos( ImVec2( Ui( 8 ), Ui( 5 ) ) );
+	ImGui::AlignTextToFramePadding();
+	ImGui::TextUnformatted( quitting ? "Quitting: save the changes to the Advanced Output?" : "Closing: save the changes to the Advanced Output?" );
+	ImGui::SameLine();
+	int choice = 0;
+	if( ImGui::Button( "Save" ) )
+		choice = 1;
+	ImGui::SameLine();
+	if( ImGui::Button( "Discard" ) )
+		choice = 2;
+	ImGui::SameLine();
+	if( ImGui::Button( quitting ? "Don't Quit" : "Keep Editing" ) || ImGui::IsKeyPressed( ImGuiKey_Escape, false ) )
+		choice = 3;
+	ImGui::EndChild();
+	ImGui::PopStyleColor();
+	if( choice == 0 )
+		return;
+	if( choice == 1 )
+		app.SaveOutputSetup();
+	else if( choice == 2 )
+		app.RevertOutputSetup();
+	if( choice == 3 )
+	{
+		app.outputSavePrompt = 0;
+		return;
+	}
+	app.panels.advancedOutput = false;
+	app.advancedEditorWasOpen = false;
+	// When quitting the question stays answered (2), so the app may close.
+	if( quitting )
+		app.quitRequested = true;
+	else
+		app.outputSavePrompt = 0;
+}
+}
+
 void DrawAdvancedOutputPanel( App& app )
 {
 	ImGui::SetNextWindowSize( ImVec2( Ui( 1290 ), Ui( 740 ) ), ImGuiCond_FirstUseEver );
-	if( !ImGui::Begin( panel::AdvancedOutput, &app.panels.advancedOutput ) )
+	bool shown = ImGui::Begin( panel::AdvancedOutput, &app.panels.advancedOutput );
+	// Closed with unsaved edits: it stays, and asks (DrawAdvancedOutputSavePrompt).
+	if( !app.panels.advancedOutput && app.outputSavePrompt == 0 && app.OutputUnsaved() )
+	{
+		app.panels.advancedOutput = true;
+		app.outputSavePrompt      = 1;
+	}
+	if( !shown )
 	{
 		ImGui::End();
 		return;
@@ -1400,19 +1467,64 @@ void DrawAdvancedOutputPanel( App& app )
 	if( editor.slice >= (int)setup.screens[ editor.screen ].slices.size() )
 		editor.slice = -1;
 
-	if( app.outputMode != OutputMode::Advanced )
+	if( app.outputSavePrompt != 0 )
+		DrawSaveQuestion( app );
+	// Save or discard: the edits show live, but are kept only when saved.
 	{
-		// The setup is edited but not on show: say so, with the switch at hand.
+		bool unsaved = app.OutputUnsaved();
+		ImGui::BeginDisabled( !unsaved );
+		if( unsaved )
+			ImGui::PushStyleColor( ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4( theme::AccentDim ) );
+		if( ImGui::Button( "Save" ) )
+			app.SaveOutputSetup();
+		if( unsaved )
+			ImGui::PopStyleColor();
+		ImGui::SameLine();
+		if( ImGui::Button( "Discard Changes" ) )
+			app.RevertOutputSetup();
+		ImGui::EndDisabled();
+		if( ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenDisabled ) )
+			ImGui::SetTooltip( "Back to the setup as it was last saved" );
+		ImGui::SameLine();
+		ImGui::AlignTextToFramePadding();
+		if( unsaved )
+			ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( theme::Warning ), "Unsaved changes: they show now, but are lost unless saved" );
+		else
+			ImGui::TextDisabled( "Saved" );
+	}
+
+	// Banners: the setup is not on show, or nothing of it reaches a screen.
+	auto banner = [ & ]( const char* id, const std::string& text, const char* button ) {
 		ImGui::PushStyleColor( ImGuiCol_ChildBg, ImVec4( 0.45f, 0.32f, 0.10f, 0.55f ) );
-		ImGui::BeginChild( "##notLive", ImVec2( 0, ImGui::GetFrameHeightWithSpacing() + Ui( 8 ) ), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar );
+		ImGui::BeginChild( id, ImVec2( 0, ImGui::GetFrameHeightWithSpacing() + Ui( 8 ) ), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar );
 		ImGui::SetCursorPos( ImVec2( Ui( 8 ), Ui( 4 ) ) );
 		ImGui::AlignTextToFramePadding();
-		ImGui::Text( "This setup is not on show (Output: %s).", app.OutputModeLabel().c_str() );
-		ImGui::SameLine();
-		if( ImGui::Button( "Use Advanced Output" ) )
-			app.SetOutputMode( OutputMode::Advanced );
+		ImGui::TextUnformatted( text.c_str() );
+		bool pressed = false;
+		if( button )
+		{
+			ImGui::SameLine();
+			pressed = ImGui::Button( button );
+		}
 		ImGui::EndChild();
 		ImGui::PopStyleColor();
+		return pressed;
+	};
+	bool anyDevice = std::any_of( setup.screens.begin(), setup.screens.end(), []( const Screen& s ) { return s.device != OutputDevice::Virtual && s.enabled; } );
+	if( app.outputMode != OutputMode::Advanced )
+	{
+		if( banner( "##notLive", "This setup is not on show (Output: " + app.OutputModeLabel() + ").", "Use Advanced Output" ) )
+			app.SetOutputMode( OutputMode::Advanced );
+	}
+	else if( !anyDevice )
+	{
+		if( banner( "##virtual",
+		            "Nothing is shown: every screen is a Virtual Output. Select a screen in the list, then choose its Device on the right (a display or Window).",
+		            "Select Screen 1" ) )
+		{
+			editor.screen = 0;
+			editor.slice  = -1;
+		}
 	}
 
 	if( ImGui::BeginTable( "##ao", 3, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV, ImGui::GetContentRegionAvail() ) )

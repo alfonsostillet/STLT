@@ -35,41 +35,58 @@ void MapTarget( App& app, const std::string& address )
 	if( !app.learning )
 		return;
 	ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
-	// What the control is mapped to: keys and MIDI.
+	// Two separate maps: keys (blue) and MIDI (green). Only the one being mapped shows.
+	bool keys = app.learnKeys;
 	std::string names;
-	for( const KeyMapping& k : app.control.keys )
-		if( k.address == address )
-			names += ( names.empty() ? "" : "  " ) + KeyChordName( k.chord );
-	for( const MidiMapping& m : app.control.midi )
-		if( m.address == address )
-			names += ( names.empty() ? "" : "  " ) + MidiKeyName( m.key );
+	if( keys )
+	{
+		for( const KeyMapping& k : app.control.keys )
+			if( k.address == address )
+				names += ( names.empty() ? "" : "  " ) + KeyChordName( k.chord );
+	}
+	else
+		for( const MidiMapping& m : app.control.midi )
+			if( m.address == address )
+				names += ( names.empty() ? "" : "  " ) + MidiKeyName( m.key );
 	bool mapped      = !names.empty();
 	bool chosen      = app.learnTarget == address;
 	ImDrawList* draw = ImGui::GetWindowDrawList();
-	ImU32 fill       = chosen ? IM_COL32( 255, 200, 80, 120 ) : mapped ? IM_COL32( 102, 225, 192, 80 ) : IM_COL32( 80, 140, 255, 70 );
-	ImU32 edge       = chosen ? IM_COL32( 255, 200, 80, 255 ) : mapped ? theme::Accent : IM_COL32( 110, 160, 255, 200 );
+	ImU32 fill, edge;
+	if( keys )
+	{
+		fill = chosen ? IM_COL32( 90, 150, 255, 170 ) : mapped ? IM_COL32( 70, 120, 255, 120 ) : IM_COL32( 70, 120, 255, 45 );
+		edge = chosen ? IM_COL32( 190, 215, 255, 255 ) : IM_COL32( 100, 150, 255, mapped ? 255 : 170 );
+	}
+	else
+	{
+		fill = chosen ? IM_COL32( 80, 220, 120, 170 ) : mapped ? IM_COL32( 60, 190, 100, 120 ) : IM_COL32( 60, 190, 100, 45 );
+		edge = chosen ? IM_COL32( 190, 255, 205, 255 ) : IM_COL32( 80, 210, 120, mapped ? 255 : 170 );
+	}
 	draw->AddRectFilled( a, b, fill );
 	draw->AddRect( a, b, edge, 0, 0, chosen ? Ui( 2 ) : Ui( 1 ) );
 	if( mapped )
 	{
 		draw->PushClipRect( a, b, true );
-		draw->AddText( ImVec2( a.x + Ui( 2 ), a.y ), IM_COL32( 255, 255, 255, 230 ), names.c_str() );
+		draw->AddText( ImVec2( a.x + Ui( 2 ), a.y ), IM_COL32( 255, 255, 255, 235 ), names.c_str() );
 		draw->PopClipRect();
 	}
-	bool hovered = ImGui::IsMouseHoveringRect( a, b ) && ImGui::IsWindowHovered();
+	const char* what = keys ? "press a key" : "move a MIDI control";
+	bool hovered     = ImGui::IsMouseHoveringRect( a, b ) && ImGui::IsWindowHovered();
 	if( hovered )
-		ImGui::SetTooltip( "%s%s%s\n%s", address.c_str(), mapped ? "\nMapped to " : "", names.c_str(),
-		                   chosen ? "Now press a key or move a MIDI control" : "Click, then press a key or move a MIDI control to map it" );
+		ImGui::SetTooltip( "%s%s%s\n%s%s%s", address.c_str(), mapped ? "\nMapped to " : "", names.c_str(), chosen ? "Now " : "Click, then ", what,
+		                   mapped ? "\nRight-click to forget it" : "" );
 	if( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
 		app.learnTarget = address;
 	if( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) && mapped )
 	{
-		// Right-click: forget its keys and MIDI.
+		// Right-click: forget its keys, or its MIDI, whichever map is open.
 		ControlSettings& c = app.control;
-		c.keys.erase( std::remove_if( c.keys.begin(), c.keys.end(), [ & ]( const KeyMapping& k ) { return k.address == address; } ), c.keys.end() );
-		c.midi.erase( std::remove_if( c.midi.begin(), c.midi.end(), [ & ]( const MidiMapping& m ) { return m.address == address; } ), c.midi.end() );
+		if( keys )
+			c.keys.erase( std::remove_if( c.keys.begin(), c.keys.end(), [ & ]( const KeyMapping& k ) { return k.address == address; } ), c.keys.end() );
+		else
+			c.midi.erase( std::remove_if( c.midi.begin(), c.midi.end(), [ & ]( const MidiMapping& m ) { return m.address == address; } ), c.midi.end() );
 		app.SaveControlSettings();
-		app.SetStatus( "Removed the shortcuts of " + address );
+		app.SetStatus( std::string( keys ? "Removed the keys of " : "Removed the MIDI of " ) + address );
 	}
 }
 
@@ -83,24 +100,33 @@ void DrawControlPanel( App& app )
 	ControlSettings& c = app.control;
 	bool changed       = false;
 
-	// Learning.
-	if( app.learning )
-		ImGui::PushStyleColor( ImGuiCol_Button, ImVec4( 1.0f, 0.62f, 0.2f, 1 ) );
-	if( ImGui::Button( app.learning ? "Mapping... (click or Escape to stop)" : "Map Keys and MIDI (Ctrl+M)", ImVec2( -FLT_MIN, 0 ) ) )
-	{
-		app.learning = !app.learning;
-		app.learnTarget.clear();
-	}
-	if( app.learning )
-		ImGui::PopStyleColor();
+	// Learning: one map for the keyboard, one for MIDI.
+	auto mapButton = [ & ]( bool keys, const char* label, const char* on, ImVec4 colour ) {
+		bool active = app.learning && app.learnKeys == keys;
+		if( active )
+			ImGui::PushStyleColor( ImGuiCol_Button, colour );
+		if( ImGui::Button( active ? on : label, ImVec2( ( ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x ) * ( keys ? 0.5f : 1.0f ), 0 ) ) )
+			app.ToggleMapping( keys );
+		if( active )
+			ImGui::PopStyleColor();
+	};
+	mapButton( true, "Map Keys (Ctrl+K)", "Mapping keys...", ImVec4( 0.27f, 0.47f, 1.0f, 1 ) );
+	ImGui::SameLine();
+	mapButton( false, "Map MIDI (Ctrl+M)", "Mapping MIDI...", ImVec4( 0.2f, 0.7f, 0.4f, 1 ) );
 	ImGui::PushTextWrapPos( 0 );
 	if( app.learning )
-		ImGui::TextWrapped( "%s", app.learnTarget.empty() ? "Click a highlighted control (clips, columns, layer buttons, opacity, volume, BPM, effect parameters...), "
-		                                              "then press a key or move a knob. Right-click a mapped control to forget it."
-		                                                  : ( "Now press a key or move a MIDI control for " + app.learnTarget ).c_str() );
+	{
+		const char* what = app.learnKeys ? "press a key" : "move a MIDI control";
+		if( app.learnTarget.empty() )
+			ImGui::TextWrapped( "Click a highlighted control (clips, columns, layer buttons, opacity, volume, BPM, effect parameters...), then %s. "
+			                    "Right-click a mapped control to forget it. Escape or the same button stops.",
+			                    what );
+		else
+			ImGui::TextWrapped( "Now %s for %s", what, app.learnTarget.c_str() );
+	}
 	else
-		ImGui::TextDisabled( "Keys and MIDI controls launch clips and columns, flip layers and move sliders. Press the button, click a control, "
-		                     "then press a key or move a knob." );
+		ImGui::TextDisabled( "Keys and MIDI controls launch clips and columns, flip layers and move sliders. Each has its own map: "
+		                     "Map Keys shows the keys in blue, Map MIDI shows the MIDI in green." );
 	ImGui::PopTextWrapPos();
 
 	ImGui::SeparatorText( "Keyboard" );

@@ -255,14 +255,25 @@ bool App::Init( const LaunchOptions& launch )
 			std::fprintf( stderr, "Ignoring --fx %s=%s\n", fx.scope.c_str(), fx.id.c_str() );
 	}
 	lastTime = startTime = glfwGetTime();
+	savedOutput          = SaveAdvancedOutput( advancedOutput );
 	history.Reset( Snapshot() );
 	return true;
 }
 
 void App::Run()
 {
-	while( !glfwWindowShouldClose( window ) && !quitRequested )
+	while( true )
 	{
+		if( glfwWindowShouldClose( window ) || quitRequested )
+		{
+			// Unsaved edits to the Advanced Output: ask first (the editor opens with the question).
+			if( outputSavePrompt == 2 || !OutputUnsaved() )
+				break;
+			glfwSetWindowShouldClose( window, GLFW_FALSE );
+			quitRequested         = false;
+			panels.advancedOutput = true;
+			outputSavePrompt      = 2;
+		}
 		glfwPollEvents();
 		Frame();
 	}
@@ -274,7 +285,7 @@ void App::Shutdown()
 		return;
 	if( !options.fresh )
 		WriteTextFile( ( fs::u8path( configDir ) / "last-session.stltvj" ).u8string(), SaveComposition( composition ) );
-	WriteTextFile( ( fs::u8path( configDir ) / "advanced-output.json" ).u8string(), SaveAdvancedOutput( advancedOutput ) );
+	WriteTextFile( ( fs::u8path( configDir ) / "advanced-output.json" ).u8string(), savedOutput );
 	if( !options.fresh )
 		SaveOutputMode();
 	glfwMakeContextCurrent( window );
@@ -377,6 +388,103 @@ void App::MoveClip( int fromLayer, int fromColumn, int toLayer, int toColumn )
 		std::swap( a.clips[ fromColumn ], b.clips[ toColumn ] );
 	}
 	Select( toLayer, toColumn );
+}
+
+void App::SetMoveMode( bool on )
+{
+	moveMode = on;
+	if( !on )
+		movePicked.clear();
+	SetStatus( on ? "Move: pick clips, then drag them (or use the arrows) to move them together" : "Move off" );
+}
+
+bool App::IsPicked( int row, int column ) const
+{
+	return std::find( movePicked.begin(), movePicked.end(), std::make_pair( row, column ) ) != movePicked.end();
+}
+
+void App::TogglePicked( int row, int column )
+{
+	auto it = std::find( movePicked.begin(), movePicked.end(), std::make_pair( row, column ) );
+	if( it != movePicked.end() )
+		movePicked.erase( it );
+	else if( row >= 0 && row < (int)composition.layers.size() && column >= 0 && column < composition.ColumnCount()
+	         && !composition.layers[ row ].clips[ column ].Empty() )
+		movePicked.emplace_back( row, column );
+}
+
+void App::PickAllClips()
+{
+	movePicked.clear();
+	for( int r = 0; r < (int)composition.layers.size(); ++r )
+		for( int c = 0; c < composition.ColumnCount(); ++c )
+			if( !composition.layers[ r ].clips[ c ].Empty() )
+				movePicked.emplace_back( r, c );
+}
+
+bool App::MovePicked( int rows, int columns )
+{
+	int layers = (int)composition.layers.size();
+	movePicked.erase( std::remove_if( movePicked.begin(), movePicked.end(),
+	                                  [ & ]( const std::pair< int, int >& p ) {
+		                                  return p.first < 0 || p.first >= layers || p.second < 0 || p.second >= composition.ColumnCount()
+		                                         || composition.layers[ p.first ].clips[ p.second ].Empty();
+	                                  } ),
+	                  movePicked.end() );
+	if( movePicked.empty() || ( rows == 0 && columns == 0 ) )
+		return false;
+	int lastColumn = 0;
+	for( auto [ r, c ] : movePicked )
+	{
+		if( r + rows < 0 || r + rows >= layers || c + columns < 0 )
+		{
+			SetStatus( "Cannot move there: the clips would leave the deck" );
+			return false;
+		}
+		lastColumn = std::max( lastColumn, c + columns );
+	}
+	for( auto [ r, c ] : movePicked )
+	{
+		int tr = r + rows, tc = c + columns;
+		if( tc < composition.ColumnCount() && !composition.layers[ tr ].clips[ tc ].Empty() && !IsPicked( tr, tc ) )
+		{
+			SetStatus( "Cannot move there: " + composition.layers[ tr ].name + ", column " + std::to_string( tc + 1 ) + " holds another clip" );
+			return false;
+		}
+	}
+	while( composition.ColumnCount() <= lastColumn )
+		composition.AddColumn();
+	for( int l = 0; l < layers; ++l )
+		FinishTransition( l );
+	queuedLaunches.clear();
+	// Take the clips out, then put them in their new cells; what plays and what is selected follow them.
+	std::vector< Clip > moving;
+	moving.reserve( movePicked.size() );
+	for( auto [ r, c ] : movePicked )
+	{
+		moving.push_back( std::move( composition.layers[ r ].clips[ c ] ) );
+		composition.layers[ r ].clips[ c ] = Clip{};
+	}
+	auto moved = [ & ]( int& row, int& column ) {
+		if( IsPicked( row, column ) )
+		{
+			row += rows;
+			column += columns;
+		}
+	};
+	for( Layer& layer : composition.layers )
+		if( layer.active >= 0 )
+			moved( layer.activeRow, layer.active );
+	moved( composition.selectedRow, composition.selectedColumn );
+	for( size_t i = 0; i < movePicked.size(); ++i )
+	{
+		auto& [ r, c ] = movePicked[ i ];
+		r += rows;
+		c += columns;
+		composition.layers[ r ].clips[ c ] = std::move( moving[ i ] );
+	}
+	SetStatus( "Moved " + std::to_string( movePicked.size() ) + ( movePicked.size() == 1 ? " clip" : " clips" ) );
+	return true;
 }
 
 void App::Launch( int row, int column, bool now, int onLayer )
@@ -618,6 +726,7 @@ void App::NewComposition()
 {
 	composition     = Composition::MakeDefault();
 	compositionPath.clear();
+	movePicked.clear();
 	history.Reset( Snapshot() );
 	SetStatus( "New composition" );
 }
@@ -644,6 +753,7 @@ bool App::OpenComposition( const std::string& path )
 		return false;
 	}
 	composition = std::move( loaded );
+	movePicked.clear();
 	RestoreEffects();
 	history.Reset( Snapshot() );
 	int failures = 0;
@@ -720,6 +830,7 @@ void ReuseEffects( EffectChain& fresh, EffectChain* old )
 
 void App::RestoreComposition( const std::string& text )
 {
+	movePicked.clear(); // the picks were cells of the composition being replaced
 	Composition fresh;
 	std::string error;
 	if( !LoadComposition( text, fresh, error ) )
@@ -886,7 +997,7 @@ void App::PollRemote()
 		lastMidiValues[ id ] = e.value;
 		std::snprintf( value, sizeof( value ), " %.2f", e.value );
 		lastControl = "MIDI " + MidiKeyName( e.key ) + value + "  (" + e.device + ")";
-		if( learning && !learnTarget.empty() && e.value > 0 )
+		if( learning && !learnKeys && !learnTarget.empty() && e.value > 0 )
 		{
 			// One control per key: learning again moves it.
 			control.midi.erase( std::remove_if( control.midi.begin(), control.midi.end(), [ & ]( const MidiMapping& m ) { return m.key == e.key; } ),
@@ -913,11 +1024,18 @@ bool MappableKey( ImGuiKey key, bool ctrl, bool shift, bool alt )
 	    || ( key >= ImGuiKey_LeftCtrl && key <= ImGuiKey_RightSuper ) || ( key == ImGuiKey_Space && !ctrl && !shift && !alt ) )
 		return false;
 	if( ctrl )
-		for( ImGuiKey own : { ImGuiKey_Z, ImGuiKey_Y, ImGuiKey_S, ImGuiKey_O, ImGuiKey_I, ImGuiKey_M } )
+		for( ImGuiKey own : { ImGuiKey_Z, ImGuiKey_Y, ImGuiKey_S, ImGuiKey_O, ImGuiKey_I, ImGuiKey_M, ImGuiKey_K } )
 			if( key == own )
 				return false;
 	return !( ctrl && shift && key == ImGuiKey_A );
 }
+}
+
+void App::ToggleMapping( bool keys )
+{
+	learning    = !( learning && learnKeys == keys );
+	learnKeys   = keys;
+	learnTarget.clear();
 }
 
 void App::PollKeyboard()
@@ -945,7 +1063,7 @@ void App::PollKeyboard()
 		KeyChord chord{ ImGui::GetKeyName( key ), io.KeyCtrl, io.KeyShift, io.KeyAlt };
 		if( learning )
 		{
-			if( learnTarget.empty() )
+			if( !learnKeys || learnTarget.empty() )
 				continue;
 			// One control per key: learning again moves it.
 			control.keys.erase( std::remove_if( control.keys.begin(), control.keys.end(), [ & ]( const KeyMapping& m ) { return m.chord == chord; } ),
@@ -1268,9 +1386,37 @@ void App::ShowScreenOn( size_t index, OutputDevice device, const std::string& di
 		advancedOutput = AdvancedOutputSetup::MakeDefault( composition.width, composition.height );
 	if( index >= advancedOutput.screens.size() )
 		return;
+	// From the Output panel this is a choice of its own: saved at once, unless the editor holds unsaved edits.
+	bool clean = !OutputUnsaved();
 	PlaceScreen( advancedOutput.screens[ index ], device, display );
+	if( clean )
+		SaveOutputSetup();
 	if( device != OutputDevice::Virtual )
 		SetOutputMode( OutputMode::Advanced );
+}
+
+bool App::OutputUnsaved() const
+{
+	return SaveAdvancedOutput( advancedOutput ) != savedOutput;
+}
+
+void App::SaveOutputSetup()
+{
+	savedOutput = SaveAdvancedOutput( advancedOutput );
+	if( WriteTextFile( ( fs::u8path( configDir ) / "advanced-output.json" ).u8string(), savedOutput ) )
+		SetStatus( "Advanced Output saved" );
+	else
+		SetStatus( "Cannot save the Advanced Output in " + configDir );
+}
+
+void App::RevertOutputSetup()
+{
+	std::string error;
+	AdvancedOutputSetup saved;
+	if( !LoadAdvancedOutput( savedOutput, saved, error ) || saved.screens.empty() )
+		return;
+	advancedOutput = std::move( saved );
+	SetStatus( "Advanced Output: back to the saved setup" );
 }
 
 void App::SetOutputMode( OutputMode mode, const std::string& display )
@@ -1646,13 +1792,12 @@ void App::DrawUi()
 	DrawStatusBar( *this );
 	ImGui::End();
 
-	// Mapping keys and MIDI: Ctrl+M, like Resolume's mapping mode; Escape leaves it.
+	// Mapping MIDI (Ctrl+M) or keys (Ctrl+K), like Resolume's mapping modes; Escape leaves them.
 	ImGuiIO& io = ImGui::GetIO();
 	if( io.KeyCtrl && !io.WantTextInput && ImGui::IsKeyPressed( ImGuiKey_M, false ) )
-	{
-		learning = !learning;
-		learnTarget.clear();
-	}
+		ToggleMapping( false );
+	else if( io.KeyCtrl && !io.WantTextInput && ImGui::IsKeyPressed( ImGuiKey_K, false ) )
+		ToggleMapping( true );
 	else if( learning && ImGui::IsKeyPressed( ImGuiKey_Escape, false ) )
 		learning = false;
 	else
@@ -1682,6 +1827,7 @@ void App::DrawUi()
 		DrawPerformancePanel( *this );
 	if( panels.effects )
 		DrawEffectsPanel( *this );
+	DrawAdvancedOutputSavePrompt( *this );
 	if( panels.advancedOutput )
 		DrawAdvancedOutputPanel( *this );
 	droppedPaths.clear();
