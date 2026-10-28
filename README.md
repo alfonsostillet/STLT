@@ -65,6 +65,12 @@ Effects in Resolume work in a chain: each one only sees what the one above lets 
 
 The working document lives in `%APPDATA%\Stilletchaser` on Windows and `~/Library/Application Support/Stilletchaser` on macOS; see [docs/FORMAT.md](docs/FORMAT.md).
 
+## STLT-VJ (in development)
+
+[app/](app/README.md) holds STLT-VJ, a live HAP video player with dockable panels that will host these effects and map them onto slices itself.
+
+![STLT-VJ](docs/images/stlt-vj.png)
+
 ## Building from source
 
 Clone with the FFGL SDK submodule:

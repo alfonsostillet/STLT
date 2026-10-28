@@ -1,0 +1,338 @@
+#include "ClipPlayer.h"
+#include <hap.h>
+#include <chrono>
+#include "media/ThreadPool.h"
+
+namespace stltvj
+{
+namespace
+{
+using Clock = std::chrono::steady_clock;
+
+float Smooth( float average, float sample )
+{
+	return average == 0 ? sample : average * 0.9f + sample * 0.1f;
+}
+
+GLenum GlFormat( unsigned hapFormat )
+{
+	return hapFormat == HapTextureFormat_YCoCg_DXT5 ? GL_COMPRESSED_RGBA_S3TC_DXT5_EXT : (GLenum)hapFormat;
+}
+}
+
+ClipPlayer::~ClipPlayer()
+{
+	Deactivate();
+}
+
+bool ClipPlayer::Open( const std::string& path )
+{
+	Deactivate();
+	error.clear();
+	if( !movie.Open( path ) )
+	{
+		error = movie.Error();
+		return false;
+	}
+	const VideoTrack& video = movie.Video();
+	if( !IsHapCodec( video.codec ) )
+	{
+		error = "Codec " + FourccString( video.codec ) + " is not supported: convert the clip to HAP";
+		return false;
+	}
+	std::vector< uint8_t > first;
+	if( !movie.ReadSample( 0, first ) || !ProbeHapFrame( first.data(), video.samples[ 0 ].size, video.width, video.height, layout ) )
+	{
+		error = "The first frame is not valid HAP";
+		return false;
+	}
+	for( unsigned i = 0; i < layout.textureCount; ++i )
+	{
+		unsigned f = layout.formats[ i ];
+		bool bptc  = f == HapTextureFormat_RGBA_BPTC_UNORM || f == HapTextureFormat_RGB_BPTC_UNSIGNED_FLOAT || f == HapTextureFormat_RGB_BPTC_SIGNED_FLOAT;
+		if( bptc && !Caps().bptc )
+		{
+			error = std::string( HapCodecName( video.codec ) ) + " needs BPTC texture support, which this GPU driver lacks";
+			return false;
+		}
+	}
+	if( layout.textureCount == 2 )
+		shading = Shading::YCoCgAlpha;
+	else if( layout.formats[ 0 ] == HapTextureFormat_YCoCg_DXT5 )
+		shading = Shading::YCoCg;
+	else if( layout.formats[ 0 ] == HapTextureFormat_A_RGTC1 )
+		shading = Shading::AlphaOnly;
+	else if( layout.formats[ 0 ] == HapTextureFormat_RGBA_DXT5 || layout.formats[ 0 ] == HapTextureFormat_RGBA_BPTC_UNORM )
+		shading = Shading::Rgba;
+	else
+		shading = Shading::Rgb;
+	return true;
+}
+
+bool ClipPlayer::Activate()
+{
+	if( Active() )
+		return true;
+	if( !layout.textureCount )
+		return false;
+
+	std::vector< uint8_t > zeros( layout.TotalBytes() );
+	for( unsigned i = 0; i < layout.textureCount; ++i )
+	{
+		internalFormats[ i ] = GlFormat( layout.formats[ i ] );
+		glGenTextures( 1, &textures[ i ] );
+		glBindTexture( GL_TEXTURE_2D, textures[ i ] );
+		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
+		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
+		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
+		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
+		glCompressedTexImage2D( GL_TEXTURE_2D, 0, internalFormats[ i ], layout.paddedWidth, layout.paddedHeight, 0, (GLsizei)layout.bytes[ i ], zeros.data() );
+	}
+	glBindTexture( GL_TEXTURE_2D, 0 );
+
+	glBindBuffer( GL_PIXEL_UNPACK_BUFFER, 0 );
+	for( Slot& slot : slots )
+	{
+		glGenBuffers( 1, &slot.buffer );
+		slot.state = SlotState::Free;
+		slot.frame = -1;
+		Remap( slot );
+	}
+	shownFrame = -1;
+	lastWanted = -1;
+	stopping   = false;
+	thread     = std::thread( [ this ] { DecodeLoop(); } );
+	return true;
+}
+
+void ClipPlayer::Deactivate()
+{
+	if( !Active() )
+		return;
+	{
+		std::lock_guard< std::mutex > lock( mutex );
+		stopping = true;
+	}
+	wake.notify_all();
+	thread.join();
+
+	for( Slot& slot : slots )
+	{
+		if( slot.mapped )
+		{
+			glBindBuffer( GL_PIXEL_UNPACK_BUFFER, slot.buffer );
+			glUnmapBuffer( GL_PIXEL_UNPACK_BUFFER );
+		}
+		glDeleteBuffers( 1, &slot.buffer );
+		slot = Slot{};
+	}
+	glBindBuffer( GL_PIXEL_UNPACK_BUFFER, 0 );
+	glDeleteTextures( 2, textures );
+	textures[ 0 ] = textures[ 1 ] = 0;
+	shownFrame                    = -1;
+}
+
+// Gives the slot a fresh mapped buffer. Orphaning (glBufferData with no data) means the driver never
+// waits for an upload still reading the previous storage.
+void ClipPlayer::Remap( Slot& slot )
+{
+	GLsizeiptr size = (GLsizeiptr)layout.TotalBytes();
+	glBindBuffer( GL_PIXEL_UNPACK_BUFFER, slot.buffer );
+	glBufferData( GL_PIXEL_UNPACK_BUFFER, size, nullptr, GL_STREAM_DRAW );
+	slot.mapped = (uint8_t*)glMapBufferRange( GL_PIXEL_UNPACK_BUFFER, 0, size, GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT );
+	glBindBuffer( GL_PIXEL_UNPACK_BUFFER, 0 );
+}
+
+void ClipPlayer::Upload( Slot& slot )
+{
+	Clock::time_point start = Clock::now();
+	glBindBuffer( GL_PIXEL_UNPACK_BUFFER, slot.buffer );
+	glUnmapBuffer( GL_PIXEL_UNPACK_BUFFER );
+	slot.mapped   = nullptr;
+	size_t offset = 0;
+	for( unsigned i = 0; i < layout.textureCount; ++i )
+	{
+		glBindTexture( GL_TEXTURE_2D, textures[ i ] );
+		glCompressedTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, layout.paddedWidth, layout.paddedHeight, internalFormats[ i ], (GLsizei)layout.bytes[ i ],
+		                           (const void*)offset );
+		offset += layout.bytes[ i ];
+	}
+	glBindTexture( GL_TEXTURE_2D, 0 );
+	glBindBuffer( GL_PIXEL_UNPACK_BUFFER, 0 );
+	Remap( slot );
+	uploadMs = Smooth( uploadMs, std::chrono::duration< float, std::milli >( Clock::now() - start ).count() );
+}
+
+int64_t ClipPlayer::Wrap( int64_t frame ) const
+{
+	int64_t count = (int64_t)FrameCount();
+	if( count <= 0 )
+		return 0;
+	frame %= count;
+	return frame < 0 ? frame + count : frame;
+}
+
+bool ClipPlayer::InWindow( int64_t frame ) const
+{
+	int span = wantedDirection == 0 ? 1 : kSlots;
+	for( int k = 0; k < span; ++k )
+		if( Wrap( wanted + k * wantedDirection ) == frame )
+			return true;
+	return false;
+}
+
+// The nearest frame ahead of the playhead that nobody has decoded yet, and a free slot for it.
+bool ClipPlayer::PickWork( int& slotIndex, int64_t& frame ) const
+{
+	slotIndex = -1;
+	for( int i = 0; i < kSlots; ++i )
+		if( slots[ i ].state == SlotState::Free && slots[ i ].mapped )
+		{
+			slotIndex = i;
+			break;
+		}
+	if( slotIndex < 0 )
+		return false;
+	int span = wantedDirection == 0 ? 1 : kSlots;
+	for( int k = 0; k < span; ++k )
+	{
+		int64_t candidate = Wrap( wanted + k * wantedDirection );
+		if( candidate == shownFrame )
+			continue;
+		bool taken = false;
+		for( const Slot& s : slots )
+			if( s.state != SlotState::Free && s.frame == candidate )
+				taken = true;
+		if( !taken )
+		{
+			frame = candidate;
+			return true;
+		}
+	}
+	return false;
+}
+
+bool ClipPlayer::DecodeInto( int64_t frame, uint8_t* destination, std::vector< uint8_t >& compressed )
+{
+	const VideoTrack& video = movie.Video();
+	if( !movie.ReadSample( (size_t)frame, compressed ) )
+		return false;
+	size_t size = video.samples[ (size_t)frame ].size;
+	HapLayout frameLayout;
+	if( !ProbeHapFrame( compressed.data(), size, video.width, video.height, frameLayout ) || frameLayout.textureCount != layout.textureCount
+	    || frameLayout.formats[ 0 ] != layout.formats[ 0 ] || frameLayout.formats[ 1 ] != layout.formats[ 1 ] )
+		return false;
+	void* outputs[ 2 ] = { destination, destination + layout.bytes[ 0 ] };
+	return DecodeHapFrame( compressed.data(), size, frameLayout, outputs, &ThreadPool::Shared() );
+}
+
+void ClipPlayer::DecodeLoop()
+{
+	std::vector< uint8_t > compressed;
+	std::unique_lock< std::mutex > lock( mutex );
+	for( ;; )
+	{
+		int slotIndex = -1;
+		int64_t frame = 0;
+		wake.wait( lock, [ & ] { return stopping || PickWork( slotIndex, frame ); } );
+		if( stopping )
+			return;
+		Slot& slot           = slots[ slotIndex ];
+		slot.state           = SlotState::Decoding;
+		slot.frame           = frame;
+		uint8_t* destination = slot.mapped;
+		lock.unlock();
+
+		Clock::time_point start = Clock::now();
+		bool ok                 = DecodeInto( frame, destination, compressed );
+		decodeMs.store( Smooth( decodeMs.load(), std::chrono::duration< float, std::milli >( Clock::now() - start ).count() ) );
+		decodedCount++;
+
+		lock.lock();
+		slot.state = ok ? SlotState::Ready : SlotState::Failed;
+	}
+}
+
+void ClipPlayer::Update( int64_t frame, int direction )
+{
+	if( !Active() )
+		return;
+	frame      = Wrap( frame );
+	Slot* show = nullptr;
+	{
+		std::lock_guard< std::mutex > lock( mutex );
+		wanted          = frame;
+		wantedDirection = direction > 0 ? 1 : direction < 0 ? -1 : 0;
+		for( Slot& s : slots )
+		{
+			bool done = s.state == SlotState::Ready || s.state == SlotState::Failed;
+			if( done && ( !InWindow( s.frame ) || s.frame == shownFrame ) )
+			{
+				s.state = SlotState::Free;
+				s.frame = -1;
+			}
+			if( s.state == SlotState::Ready && s.frame == frame )
+				show = &s;
+		}
+	}
+	if( show && frame != shownFrame )
+	{
+		// The decoder never touches a Ready slot, so the upload runs without the lock.
+		Upload( *show );
+		std::lock_guard< std::mutex > lock( mutex );
+		shownFrame  = frame;
+		show->state = SlotState::Free;
+		show->frame = -1;
+	}
+	else if( frame != shownFrame && frame != lastWanted && shownFrame >= 0 )
+	{
+		lateCount++;
+	}
+	lastWanted = frame;
+	wake.notify_one();
+}
+
+bool ClipPlayer::ShowNow( int64_t frame )
+{
+	if( !Active() )
+		return false;
+	frame      = Wrap( frame );
+	Slot* slot = nullptr;
+	{
+		std::lock_guard< std::mutex > lock( mutex );
+		for( Slot& s : slots )
+			if( s.state == SlotState::Free && s.mapped )
+			{
+				slot        = &s;
+				s.state     = SlotState::Decoding;
+				s.frame     = frame;
+				break;
+			}
+	}
+	if( !slot )
+		return false;
+	std::vector< uint8_t > compressed;
+	bool ok = DecodeInto( frame, slot->mapped, compressed );
+	if( ok )
+		Upload( *slot );
+	{
+		std::lock_guard< std::mutex > lock( mutex );
+		if( ok )
+			shownFrame = frame;
+		slot->state = SlotState::Free;
+		slot->frame = -1;
+	}
+	wake.notify_one();
+	return ok;
+}
+
+ClipPlayer::Stats ClipPlayer::GetStats() const
+{
+	Stats stats;
+	stats.decodeMs = decodeMs.load();
+	stats.uploadMs = uploadMs;
+	stats.decoded  = decodedCount.load();
+	stats.late     = lateCount;
+	return stats;
+}
+}

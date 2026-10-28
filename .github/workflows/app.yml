@@ -1,0 +1,52 @@
+name: STLT-VJ app
+
+# Builds and tests the app on every push or pull request that touches it.
+on:
+  push:
+    paths: ['app/**', '.github/workflows/app.yml']
+  pull_request:
+    paths: ['app/**', '.github/workflows/app.yml']
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-2022
+            artifact: windows
+            files: app/build/Release/stlt-vj.exe
+          - os: macos-14
+            artifact: macos
+            files: app/build/stlt-vj.app.zip
+          - os: ubuntu-24.04
+            artifact: linux
+            files: app/build/stlt-vj
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install X11 and OpenGL headers
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev libxkbcommon-dev
+
+      - name: Build
+        run: |
+          cmake -S app -B app/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build app/build --config Release --parallel
+
+      - name: Test the media engine
+        run: ctest --test-dir app/build -C Release --output-on-failure
+
+      - name: Zip the macOS app
+        if: runner.os == 'macOS'
+        run: ditto -c -k --keepParent app/build/stlt-vj.app app/build/stlt-vj.app.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: STLT-VJ-${{ matrix.artifact }}
+          path: ${{ matrix.files }}
+          if-no-files-found: error
