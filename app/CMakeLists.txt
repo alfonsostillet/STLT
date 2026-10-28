@@ -4,6 +4,11 @@ cmake_minimum_required(VERSION 3.20)
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Oldest macOS the app runs on")
 
 project(STLT-VJ VERSION 0.1.0 LANGUAGES C CXX)
+# Objective-C for Syphon and the macOS bits of the dependencies: enabled here, before any of them, or a
+# dependency enabling it in its own folder first would leave this one without the compile rules.
+if(APPLE)
+    enable_language(OBJC OBJCXX)
+endif()
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -292,7 +297,6 @@ if(WIN32)
     target_sources(stltvj-core PRIVATE src/output/SpoutSharing.cpp)
     target_link_libraries(stltvj-core PUBLIC spout)
 elseif(APPLE)
-    enable_language(OBJC OBJCXX)
     FetchContent_Declare(syphon
         GIT_REPOSITORY https://github.com/Syphon/Syphon-Framework.git
         GIT_TAG 5
