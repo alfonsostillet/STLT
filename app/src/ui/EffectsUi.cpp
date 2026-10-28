@@ -9,6 +9,7 @@
 #include <filesystem>
 #include <map>
 #include "App.h"
+#include "ui/ControlUi.h"
 #include "ui/FileDialogs.h"
 #include "ui/Theme.h"
 #include "ui/Workspaces.h"
@@ -120,6 +121,11 @@ void ParamLabel( const char* label )
 	ImGui::TableSetColumnIndex( 1 );
 	ImGui::SetNextItemWidth( -FLT_MIN );
 }
+
+// The effect whose parameters are being drawn, for MIDI mapping: its chain's address and place (none: -1).
+App* mapApp = nullptr;
+std::string mapScope;
+int mapSlot = -1;
 
 // Draws parameter i (and the ones a colour picker groups with it); returns how many parameters it used.
 int ParamWidget( Effect& effect, int i )
@@ -236,6 +242,8 @@ int ParamWidget( Effect& effect, int i )
 	}
 	}
 	AnimatedMark( animated );
+	if( mapApp && mapSlot >= 0 && p.kind != ParamKind::Text && p.kind != ParamKind::File && p.kind != ParamKind::Buffer )
+		MapTarget( *mapApp, EffectParamAddress( mapScope, mapSlot, p.name ) );
 	ParamMenu( effect, i );
 	ImGui::PopID();
 	return used;
@@ -308,7 +316,7 @@ bool AcceptEffectDrop( App& app, EffectChain& chain )
 	return dropped;
 }
 
-void DrawEffectChain( App& app, EffectChain& chain, const char* id )
+void DrawEffectChain( App& app, EffectChain& chain, const char* id, const std::string& scope )
 {
 	ImGui::PushID( id );
 	int removeAt = -1, moveFrom = -1, moveTo = -1;
@@ -396,7 +404,15 @@ void DrawEffectChain( App& app, EffectChain& chain, const char* id )
 						slot.mix = 1;
 					ImGui::EndTable();
 				}
+				if( !scope.empty() )
+				{
+					mapApp   = &app;
+					mapScope = scope;
+					mapSlot  = i;
+				}
 				DrawEffectParams( *slot.effect );
+				mapApp  = nullptr;
+				mapSlot = -1;
 			}
 			else
 			{

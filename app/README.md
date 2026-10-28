@@ -5,7 +5,7 @@ It is an independent project, written from public specifications (HAP, FFGL, Ope
 
 ![STLT-VJ: the clip deck on top, monitors, composition, clip and performance panels below](../docs/images/stlt-vj.png)
 
-> 🇮🇹 In breve: STLT-VJ riproduce clip su più layer con pannelli agganciabili e flottanti. Legge HAP (il formato più veloce) e anche H.264, ProRes, DXV, PNG, JPEG e gli altri formati comuni, ma **con HAP le prestazioni sono nettamente migliori**: decodifica 5 volte più veloce, salti istantanei a qualsiasi frame e quasi niente CPU (vedi *Performance: HAP or not*). Trascina i file sulla griglia, dal pannello Files o con *Composition → Import Media...* (selettore file del sistema), clicca una clip per lanciarla, clicca l'intestazione di una colonna per lanciare tutta la colonna. Dal pannello *Effects* trascina un effetto su una clip, sull'intestazione di un layer o sul Composition Monitor; trascina una *Source* su una cella vuota. I plugin FFGL (anche STLT-CHASER) vengono caricati dalla cartella *Extra Effects* di Resolume. Click destro su un parametro per animarlo a tempo di BPM. *Output → Advanced Output...* (Ctrl+Shift+A) apre l'editor di mappatura: più screen (display, finestra o virtuali), slice e poligoni con selezione dell'input, warp a 4 punti, griglia lineare o curva per superfici piegate, *Contour* per adattare il contorno dello slice alla superficie reale punto per punto (Edit Points, con Point Mode Bezier o Linear a destra, doppio clic sul contorno per aggiungere un punto) o tutto insieme (Transform: scala e ruota), soft edge per la fusione tra proiettori, maschere (rettangolo o ellisse, anche invertite e sfumate), test pattern, uscite Spout (Windows), Syphon (Mac) e NDI in rete, preset e import dell'`AdvancedOutput.xml` di Resolume (anche warp, soft edge e maschere). *Workspace → Save Workspace As...* salva la disposizione dei pannelli. Ctrl+Z / Ctrl+Shift+Z annullano e ripetono qualsiasi modifica (anche nell'Advanced Output).
+> 🇮🇹 In breve: STLT-VJ riproduce clip su più layer con pannelli agganciabili e flottanti. Legge HAP (il formato più veloce) e anche H.264, ProRes, DXV, PNG, JPEG e gli altri formati comuni, ma **con HAP le prestazioni sono nettamente migliori**: decodifica 5 volte più veloce, salti istantanei a qualsiasi frame e quasi niente CPU (vedi *Performance: HAP or not*). Trascina i file sulla griglia, dal pannello Files o con *Composition → Import Media...* (selettore file del sistema), clicca una clip per lanciarla, clicca l'intestazione di una colonna per lanciare tutta la colonna. Dal pannello *Effects* trascina un effetto su una clip, sull'intestazione di un layer o sul Composition Monitor; trascina una *Source* su una cella vuota. I plugin FFGL (anche STLT-CHASER) vengono caricati dalla cartella *Extra Effects* di Resolume. Click destro su un parametro per animarlo a tempo di BPM. *Output → Advanced Output...* (Ctrl+Shift+A) apre l'editor di mappatura: più screen (display, finestra o virtuali), slice e poligoni con selezione dell'input, warp a 4 punti, griglia lineare o curva per superfici piegate, *Contour* per adattare il contorno dello slice alla superficie reale punto per punto (Edit Points, con Point Mode Bezier o Linear a destra, doppio clic sul contorno per aggiungere un punto) o tutto insieme (Transform: scala e ruota), soft edge per la fusione tra proiettori, maschere (rettangolo o ellisse, anche invertite e sfumate), test pattern, uscite Spout (Windows), Syphon (Mac) e NDI in rete, preset e import dell'`AdvancedOutput.xml` di Resolume (anche warp, soft edge e maschere). *Workspace → Save Workspace As...* salva la disposizione dei pannelli. Ctrl+Z / Ctrl+Shift+Z annullano e ripetono qualsiasi modifica (anche nell'Advanced Output). Dal pannello *Control*: MIDI Learn (Ctrl+M, clicca un controllo e muovi una manopola) e OSC su porta UDP con indirizzi come quelli di Resolume.
 
 ## What works now
 
@@ -17,6 +17,7 @@ It is an independent project, written from public specifications (HAP, FFGL, Ope
 - **Clips**: forward / reverse / pause, loop, bounce or play once, speed, timeline scrubbing, opacity, fit (Fit, Fill, Stretch, Native), position, scale, rotation.
 - **Composition**: any size up to 16K, master, global speed, BPM with tap tempo.
 - **Advanced Output** (*Output → Advanced Output...*, Ctrl+Shift+A): see below.
+- **MIDI and OSC** (*Control* panel): press *Learn MIDI* (Ctrl+M), click a control (a clip, a column, a layer's buttons or opacity, master, speed, BPM, tap, any effect parameter) and move a knob or press a key: it is mapped (right-click a mapped control to forget it; mappings are kept between sessions). OSC arrives on a UDP port with addresses modelled on Resolume's: `/composition/layers/1/clips/2/connect`, `/composition/columns/3/connect`, `/composition/layers/2/video/opacity 0.5`, `/composition/master`, `/composition/tempocontroller/tempo`, `/composition/tempocontroller/tempotap`, `/composition/layers/1/video/effects/1/params/amount` (values 0..1). In Learn mode, hovering a control shows its address.
 - **Workspace**: every panel can be docked, tabbed, split, or pulled out as its own window onto another monitor. Layouts are saved as named workspaces; the last layout and composition come back on the next start.
 - **Performance panel**: frame time graph, decode and upload time per layer, late frames.
 - **Effects**: chains on every clip, layer and on the composition, each effect with bypass, dry/wet mix and reordering (drag the headers or use the arrows). Drag effects from the Effects panel onto a clip cell, a layer name, the Composition Monitor or any effects list.
@@ -97,6 +98,7 @@ Width and height must be multiples of 4.
 | Ctrl+S / Ctrl+O | Save / open composition |
 | Ctrl+I | Import media into the selected layer |
 | Ctrl+Shift+A | Advanced Output editor |
+| Ctrl+M | MIDI Learn on or off (Escape leaves it) |
 | Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) | Undo / redo: clips, layers, effects, settings and the whole Advanced Output (also in the *Edit* menu) |
 | Double-click a slider | Reset it |
 | Right-click a clip or column | Clip and column options |
@@ -134,9 +136,10 @@ Settings live in `%APPDATA%\STLT-VJ`, `~/Library/Application Support/STLT-VJ` or
 | `src/fx` | Effect parameters and beat animations, built-in GLSL effects and sources, the FFGL 2 host, the effect registry. |
 | `src/ui` | Panels, theme, workspaces. |
 | `src/App.*` | Main loop and the actions panels share (load, launch, move, save, undo). |
+| `src/control` | Remote control: the OSC/MIDI address space, OSC parsing, MIDI messages and mappings, the UDP and MIDI inputs. |
 | `src/History.*` | Undo and redo by snapshots of the composition and the output setup. |
 
 ## Next milestones
 
 1. FFGL mixers as layer transitions, audio/FFT input for plugins that ask for it, clip parameter animation (opacity, transform).
-2. MIDI and OSC mapping; hardware decoding (VideoToolbox, D3D11) for H.264 and HEVC.
+2. Hardware decoding (VideoToolbox, D3D11) for H.264 and HEVC.

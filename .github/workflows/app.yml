@@ -32,11 +32,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install X11, OpenGL, GTK and FFmpeg headers
+      - name: Install X11, OpenGL, GTK, ALSA and FFmpeg headers
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev libxkbcommon-dev libgtk-3-dev \
+          sudo apt-get install -y libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev libxkbcommon-dev libgtk-3-dev libasound2-dev \
             libavformat-dev libavcodec-dev libswscale-dev libavutil-dev
 
       # macOS links a small static FFmpeg built from source; it only changes with the script, so it is cached.

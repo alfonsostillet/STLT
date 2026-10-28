@@ -1,7 +1,8 @@
 // STLT-VJ: live HAP playback with dockable panels.
 //   stlt-vj [--fresh] [--clip LAYER,COLUMN,PATH]... [--source LAYER,COLUMN,EFFECT-ID]...
 //           [--fx comp|layer:L|clip:L,C=EFFECT-ID]... [--launch LAYER,COLUMN]... [--list-effects]
-//           [--output-setup FILE.json|AdvancedOutput.xml] [--advanced-output input|output] [--size WxH] [--capture FILE.bmp [--frames N]]
+//           [--output-setup FILE.json|AdvancedOutput.xml] [--advanced-output input|output] [--osc PORT]
+//           [--size WxH] [--capture FILE.bmp [--frames N]]
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -28,6 +29,8 @@ int main( int argc, char** argv )
 			options.capturePath = argv[ ++i ];
 		else if( arg == "--frames" && hasValue )
 			options.captureFrames = std::max( 1, std::atoi( argv[ ++i ] ) );
+		else if( arg == "--osc" && hasValue )
+			options.oscPort = std::clamp( std::atoi( argv[ ++i ] ), 0, 65535 );
 		else if( arg == "--size" && hasValue )
 			std::sscanf( argv[ ++i ], "%dx%d", &options.width, &options.height );
 		else if( arg == "--clip" && hasValue )

@@ -12,6 +12,7 @@
 #include "Settings.h"
 #include "media/ThreadPool.h"
 #include "media/FrameSource.h"
+#include "ui/ControlUi.h"
 #include "ui/EffectsUi.h"
 #include "ui/FileDialogs.h"
 #include "ui/Theme.h"
@@ -359,6 +360,7 @@ void DrawMainMenu( App& app )
 			ImGui::MenuItem( panel::Output, nullptr, &p.output );
 			ImGui::MenuItem( panel::Performance, nullptr, &p.performance );
 			ImGui::MenuItem( panel::Effects, nullptr, &p.effects );
+			ImGui::MenuItem( panel::Control, nullptr, &p.control );
 			ImGui::MenuItem( panel::AdvancedOutput, nullptr, &p.advancedOutput );
 			ImGui::EndMenu();
 		}
@@ -501,6 +503,7 @@ void DrawToolbar( App& app )
 	ImGui::BeginGroup();
 	if( IconButton( "##play", comp.paused ? Icon::Play : Icon::Pause, false ) )
 		comp.paused = !comp.paused;
+	MapTarget( app, "/composition/pause" );
 	if( ImGui::IsItemHovered() )
 		ImGui::SetTooltip( comp.paused ? "Resume (Space)" : "Pause everything (Space)" );
 	ImGui::SameLine();
@@ -510,6 +513,7 @@ void DrawToolbar( App& app )
 			app.ClearLayer( l );
 		comp.activeColumn = -1;
 	}
+	MapTarget( app, "/composition/stop" );
 	if( ImGui::IsItemHovered() )
 		ImGui::SetTooltip( "Clear every layer" );
 	if( !ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed( ImGuiKey_Space, false ) )
@@ -523,6 +527,7 @@ void DrawToolbar( App& app )
 	ImGui::SetNextItemWidth( Ui( 64 ) );
 	if( ImGui::DragFloat( "##bpm", &bpm, 0.1f, 20.0f, 500.0f, "%.2f" ) )
 		comp.bpm = bpm;
+	MapTarget( app, "/composition/tempocontroller/tempo" );
 	ImGui::SameLine();
 	if( ImGui::Button( "/2" ) )
 		comp.bpm = std::max( 20.0, comp.bpm / 2 );
@@ -532,9 +537,11 @@ void DrawToolbar( App& app )
 	ImGui::SameLine();
 	if( ImGui::Button( "TAP" ) )
 		app.TapTempo();
+	MapTarget( app, "/composition/tempocontroller/tempotap" );
 	ImGui::SameLine();
 	if( ImGui::Button( "RESYNC" ) )
 		app.ResyncBeat();
+	MapTarget( app, "/composition/tempocontroller/resync" );
 	if( ImGui::IsItemHovered() )
 		ImGui::SetTooltip( "Start the beat over: the next beat begins now" );
 	// Beat light.
@@ -556,6 +563,7 @@ void DrawToolbar( App& app )
 	ImGui::SliderFloat( "##speed", &comp.speed, 0.0f, 4.0f, "%.2f" );
 	if( ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
 		comp.speed = 1.0f;
+	MapTarget( app, "/composition/speed" );
 
 	// Right side: output state and frame rate.
 	float fps = 0;
@@ -632,6 +640,7 @@ void DrawClipGrid( App& app )
 		draw->AddText( ImVec2( pos.x + ( cellW - textSize.x ) / 2 + Ui( 6 ), pos.y + ( max.y - pos.y - textSize.y ) / 2 ), fg, comp.columns[ c ].c_str() );
 		if( clicked )
 			app.LaunchColumn( c );
+		MapTarget( app, "/composition/columns/" + std::to_string( c + 1 ) + "/connect" );
 		if( ImGui::BeginPopupContextItem( "##columnMenu" ) )
 		{
 			ImGui::SetNextItemWidth( Ui( 160 ) );
@@ -664,18 +673,22 @@ void DrawClipGrid( App& app )
 		if( layer.active >= 0 )
 			draw->AddRectFilled( stripMin, ImVec2( stripMin.x + Ui( 3 ), stripMax.y ), theme::Accent );
 		ImGui::SetCursorScreenPos( ImVec2( origin.x + Ui( 6 ), y + Ui( 4 ) ) );
+		std::string layerAddress = "/composition/layers/" + std::to_string( l + 1 );
 		if( IconButton( "##clear", Icon::Close ) )
 			app.ClearLayer( l );
+		MapTarget( app, layerAddress + "/clear" );
 		if( ImGui::IsItemHovered() )
 			ImGui::SetTooltip( "Clear layer" );
 		ImGui::SameLine();
 		if( LetterButton( "bypass", "B", layer.bypass, IM_COL32( 230, 170, 70, 255 ) ) )
 			layer.bypass = !layer.bypass;
+		MapTarget( app, layerAddress + "/bypassed" );
 		if( ImGui::IsItemHovered() )
 			ImGui::SetTooltip( "Bypass" );
 		ImGui::SameLine();
 		if( LetterButton( "solo", "S", layer.solo, theme::Solo ) )
 			layer.solo = !layer.solo;
+		MapTarget( app, layerAddress + "/solo" );
 		if( ImGui::IsItemHovered() )
 			ImGui::SetTooltip( "Solo" );
 		ImGui::SameLine();
@@ -689,6 +702,7 @@ void DrawClipGrid( App& app )
 		ImGui::SetCursorScreenPos( ImVec2( origin.x + Ui( 6 ), y + cellH - ImGui::GetFrameHeight() - Ui( 6 ) ) );
 		ImGui::SetNextItemWidth( leftW - Ui( 18 ) );
 		PercentSlider( "##opacity", &layer.opacity );
+		MapTarget( app, layerAddress + "/video/opacity" );
 
 		// Cells.
 		for( int c = 0; c < comp.ColumnCount(); ++c )
@@ -700,6 +714,7 @@ void DrawClipGrid( App& app )
 			ImGui::PushID( c );
 			bool clicked = ImGui::InvisibleButton( "##cell", ImVec2( cellW, cellH ) );
 			bool hovered = ImGui::IsItemHovered();
+			ImVec2 cellMin = ImGui::GetItemRectMin(), cellMax = ImGui::GetItemRectMax();
 			draw->AddRectFilled( min, max, hovered ? IM_COL32( 40, 40, 40, 255 ) : theme::CellEmpty );
 			if( !clip.Empty() )
 			{
@@ -787,6 +802,13 @@ void DrawClipGrid( App& app )
 				if( ImGui::MenuItem( "Remove Clip", nullptr, false, !clip.Empty() ) )
 					app.RemoveClip( l, c );
 				ImGui::EndPopup();
+			}
+			if( app.learning )
+			{
+				// The highlight goes over the drawn cell (the cell button is the item it belongs to).
+				ImGui::SetCursorScreenPos( cellMin );
+				ImGui::Dummy( ImVec2( cellMax.x - cellMin.x, cellMax.y - cellMin.y ) );
+				MapTarget( app, layerAddress + "/clips/" + std::to_string( c + 1 ) + "/connect" );
 			}
 			if( dropPending && dropPoint.x >= min.x && dropPoint.x < max.x && dropPoint.y >= min.y && dropPoint.y < max.y )
 			{
@@ -890,12 +912,15 @@ void DrawCompositionPanel( App& app )
 		ImGui::InputText( "##name", &comp.name );
 		ParamLabel( "Master" );
 		PercentSlider( "##master", &comp.master );
+		MapTarget( app, "/composition/master" );
 		ParamLabel( "Speed" );
 		ImGui::SliderFloat( "##speed", &comp.speed, 0.0f, 4.0f, "%.2f" );
+		MapTarget( app, "/composition/speed" );
 		ParamLabel( "BPM" );
 		float bpm = (float)comp.bpm;
 		if( ImGui::DragFloat( "##bpm", &bpm, 0.1f, 20.0f, 500.0f, "%.2f" ) )
 			comp.bpm = bpm;
+		MapTarget( app, "/composition/tempocontroller/tempo" );
 		ParamLabel( "Size" );
 		struct Preset
 		{
@@ -926,7 +951,7 @@ void DrawCompositionPanel( App& app )
 		ImGui::EndTable();
 	}
 	if( ImGui::CollapsingHeader( "Effects", ImGuiTreeNodeFlags_DefaultOpen ) )
-		DrawEffectChain( app, comp.effects, "compositionFx" );
+		DrawEffectChain( app, comp.effects, "compositionFx", "/composition" );
 	ImGui::End();
 }
 
@@ -951,18 +976,23 @@ void DrawLayerPanel( App& app )
 	{
 		ParamLabel( "Name" );
 		ImGui::InputText( "##name", &layer.name );
+		std::string layerAddress = "/composition/layers/" + std::to_string( l + 1 );
 		ParamLabel( "Opacity" );
 		PercentSlider( "##opacity", &layer.opacity );
+		MapTarget( app, layerAddress + "/video/opacity" );
 		ParamLabel( "Blend Mode" );
 		EnumCombo( "##blend", &layer.blend, BlendModeName );
 		ParamLabel( "Bypass" );
 		ImGui::Checkbox( "##bypass", &layer.bypass );
+		MapTarget( app, layerAddress + "/bypassed" );
 		ParamLabel( "Solo" );
 		ImGui::Checkbox( "##solo", &layer.solo );
+		MapTarget( app, layerAddress + "/solo" );
 		ImGui::EndTable();
 	}
 	if( ImGui::Button( "Clear Layer" ) )
 		app.ClearLayer( l );
+	MapTarget( app, "/composition/layers/" + std::to_string( l + 1 ) + "/clear" );
 	ImGui::SameLine();
 	if( ImGui::Button( "Delete Layer" ) && comp.layers.size() > 1 )
 	{
@@ -973,7 +1003,7 @@ void DrawLayerPanel( App& app )
 		return;
 	}
 	if( ImGui::CollapsingHeader( "Effects", ImGuiTreeNodeFlags_DefaultOpen ) )
-		DrawEffectChain( app, layer.effects, "layerFx" );
+		DrawEffectChain( app, layer.effects, "layerFx", "/composition/layers/" + std::to_string( l + 1 ) );
 	ImGui::End();
 }
 
@@ -1096,7 +1126,8 @@ void DrawClipPanel( App& app )
 		ImGui::EndTable();
 	}
 	if( ImGui::CollapsingHeader( "Effects", ImGuiTreeNodeFlags_DefaultOpen ) )
-		DrawEffectChain( app, clip->effects, "clipFx" );
+		DrawEffectChain( app, clip->effects, "clipFx",
+		                 "/composition/layers/" + std::to_string( app.composition.selectedLayer + 1 ) + "/clips/" + std::to_string( app.composition.selectedColumn + 1 ) );
 	if( clip->Loaded() && ImGui::CollapsingHeader( "Playback Health" ) && BeginParams( "##health" ) )
 	{
 		ClipPlayer::Stats stats = clip->player->GetStats();

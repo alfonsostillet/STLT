@@ -4,12 +4,14 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <filesystem>
 #include "Settings.h"
 #include "fx/BuiltinEffects.h"
 #include "gl/Gl.h"
 #include "ui/AdvancedOutputUi.h"
+#include "ui/ControlUi.h"
 #include "ui/EffectsUi.h"
 #include "ui/FileDialogs.h"
 #include "ui/Panels.h"
@@ -114,6 +116,16 @@ bool App::Init( const LaunchOptions& launch )
 		std::fprintf( stderr, "Warning: this GPU driver reports no S3TC (DXT) support; HAP needs it\n" );
 
 	configDir = ConfigDirectory();
+	{
+		std::string text;
+		if( ReadTextFile( ( fs::u8path( configDir ) / "control.json" ).u8string(), text ) )
+			control.Load( text );
+		if( options.oscPort > 0 )
+		{
+			control.oscEnabled = true;
+			control.oscPort    = options.oscPort;
+		}
+	}
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO();
@@ -620,6 +632,172 @@ bool App::Redo()
 	return true;
 }
 
+void App::SaveControlSettings() const
+{
+	WriteTextFile( ( fs::u8path( configDir ) / "control.json" ).u8string(), control.Save() );
+}
+
+void App::PollRemote()
+{
+	// Devices come and go: look again every couple of seconds.
+	double now = glfwGetTime();
+	if( now - lastRemoteConfigure > 2 )
+	{
+		remote.Configure( control );
+		lastRemoteConfigure = now;
+	}
+	char value[ 32 ];
+	for( RemoteInputs::Event& e : remote.Poll() )
+	{
+		if( !e.midi )
+		{
+			bool has = !e.values.empty();
+			value[ 0 ] = 0;
+			if( has )
+				std::snprintf( value, sizeof( value ), " %.3g", e.values[ 0 ] );
+			lastControl = "OSC " + e.address + value;
+			if( !ApplyControl( e.address, has, has ? e.values[ 0 ] : 1.0f ) )
+				lastControl += "  (not an STLT-VJ address)";
+			continue;
+		}
+		int id         = (int)e.key.type * 4096 + e.key.channel * 128 + e.key.number;
+		float previous = lastMidiValues[ id ];
+		lastMidiValues[ id ] = e.value;
+		std::snprintf( value, sizeof( value ), " %.2f", e.value );
+		lastControl = "MIDI " + MidiKeyName( e.key ) + value + "  (" + e.device + ")";
+		if( learning && !learnTarget.empty() && e.value > 0 )
+		{
+			// One control per key: learning again moves it.
+			control.midi.erase( std::remove_if( control.midi.begin(), control.midi.end(), [ & ]( const MidiMapping& m ) { return m.key == e.key; } ),
+			                    control.midi.end() );
+			control.midi.push_back( { e.key, learnTarget } );
+			SetStatus( "Mapped " + MidiKeyName( e.key ) + " to " + learnTarget );
+			learnTarget.clear();
+			SaveControlSettings();
+			continue;
+		}
+		for( const MidiMapping& m : control.midi )
+			if( m.key == e.key )
+				ApplyControl( m.address, true, e.value, e.key.type == MidiKey::Type::Note, previous );
+	}
+}
+
+bool App::ApplyControl( const std::string& address, bool hasValue, float value, bool momentary, float previous )
+{
+	using Kind = ControlTarget::Kind;
+	ControlTarget t;
+	if( !ParseControlAddress( address, t ) )
+		return false;
+	bool press   = !hasValue || ( value > 0 && previous <= 0 );
+	float unit   = std::clamp( value, 0.0f, 1.0f );
+	bool layerOk = t.layer >= 0 && t.layer < (int)composition.layers.size();
+	bool columnOk = t.column >= 0 && t.column < composition.ColumnCount();
+	// A switch flips on a press (a key, or a message without value) and otherwise follows the value.
+	auto flip = [ & ]( bool& flag ) {
+		if( !hasValue || momentary )
+		{
+			if( press )
+				flag = !flag;
+		}
+		else
+			flag = value >= 0.5f;
+	};
+	switch( t.kind )
+	{
+	case Kind::ClipConnect:
+		if( press && layerOk && columnOk )
+			Launch( t.layer, t.column );
+		return layerOk && columnOk;
+	case Kind::ColumnConnect:
+		if( press && columnOk )
+			LaunchColumn( t.column );
+		return columnOk;
+	case Kind::LayerClear:
+		if( press && layerOk )
+			ClearLayer( t.layer );
+		return layerOk;
+	case Kind::LayerBypass:
+		if( layerOk )
+			flip( composition.layers[ t.layer ].bypass );
+		return layerOk;
+	case Kind::LayerSolo:
+		if( layerOk )
+			flip( composition.layers[ t.layer ].solo );
+		return layerOk;
+	case Kind::LayerOpacity:
+		if( layerOk )
+			composition.layers[ t.layer ].opacity = unit;
+		return layerOk;
+	case Kind::Master: composition.master = unit; return true;
+	case Kind::Speed: composition.speed = unit * 4; return true;
+	case Kind::Tempo: composition.bpm = value <= 1 ? 20.0 + unit * 480.0 : std::clamp( (double)value, 20.0, 500.0 ); return true;
+	case Kind::TempoTap:
+		if( press )
+			TapTempo();
+		return true;
+	case Kind::Resync:
+		if( press )
+			ResyncBeat();
+		return true;
+	case Kind::Pause: flip( composition.paused ); return true;
+	case Kind::Stop:
+		if( press )
+		{
+			for( int l = 0; l < (int)composition.layers.size(); ++l )
+				ClearLayer( l );
+			composition.activeColumn = -1;
+		}
+		return true;
+	case Kind::EffectParam:
+	{
+		EffectChain* chain = t.layer < 0 ? &composition.effects
+		                     : !layerOk   ? nullptr
+		                     : t.column < 0 ? &composition.layers[ t.layer ].effects
+		                     : columnOk     ? &composition.layers[ t.layer ].clips[ t.column ].effects
+		                                    : nullptr;
+		if( !chain || t.slot >= (int)chain->size() || !( *chain )[ t.slot ].effect )
+			return false;
+		Effect& effect = *( *chain )[ t.slot ].effect;
+		for( int i = 0; i < (int)effect.Params().size(); ++i )
+		{
+			const ParamInfo& p = effect.Params()[ i ];
+			if( AddressName( p.name ) != t.param )
+				continue;
+			switch( p.kind )
+			{
+			case ParamKind::Bool:
+			{
+				bool on = effect.Value( i ) >= 0.5f;
+				flip( on );
+				effect.SetValue( i, on ? 1.0f : 0.0f );
+				break;
+			}
+			case ParamKind::Event:
+				if( press )
+					effect.Trigger( i );
+				break;
+			case ParamKind::Option:
+				if( !p.optionValues.empty() )
+					effect.SetValue( i, p.optionValues[ std::min( (size_t)std::lround( unit * ( p.optionValues.size() - 1 ) ), p.optionValues.size() - 1 ) ] );
+				break;
+			case ParamKind::Text:
+			case ParamKind::File:
+			case ParamKind::Buffer: return false;
+			default:
+			{
+				float v = p.min + unit * ( p.max - p.min );
+				effect.SetValue( i, p.kind == ParamKind::Integer ? std::round( v ) : v );
+			}
+			}
+			return true;
+		}
+		return false;
+	}
+	case Kind::None: break;
+	}
+	return false;
+}
+
 void App::RestoreEffects()
 {
 	registry->Restore( composition.effects );
@@ -862,6 +1040,7 @@ void App::Frame()
 	if( frameTimes.size() > 240 )
 		frameTimes.pop_front();
 
+	PollRemote();
 	UpdatePlayback( dt );
 	if( !composition.paused )
 		composition.beat += dt * composition.speed * composition.bpm / 60.0;
@@ -950,7 +1129,9 @@ void App::DrawUi()
 	ImGui::PopStyleVar( 3 );
 
 	DrawMainMenu( *this );
+	BeginMappable( *this );
 	DrawToolbar( *this );
+	EndMappable( *this );
 
 	float statusHeight = ImGui::GetFrameHeight();
 	ImVec2 dockSize    = ImGui::GetContentRegionAvail();
@@ -961,6 +1142,17 @@ void App::DrawUi()
 	DrawStatusBar( *this );
 	ImGui::End();
 
+	// Learning MIDI: Ctrl+M, like Resolume's mapping mode; Escape leaves it.
+	ImGuiIO& io = ImGui::GetIO();
+	if( io.KeyCtrl && !io.WantTextInput && ImGui::IsKeyPressed( ImGuiKey_M, false ) )
+	{
+		learning = !learning;
+		learnTarget.clear();
+	}
+	if( learning && ImGui::IsKeyPressed( ImGuiKey_Escape, false ) )
+		learning = false;
+
+	BeginMappable( *this );
 	if( panels.clips )
 		DrawClipGrid( *this );
 	if( panels.compositionMonitor )
@@ -973,6 +1165,9 @@ void App::DrawUi()
 		DrawLayerPanel( *this );
 	if( panels.clip )
 		DrawClipPanel( *this );
+	EndMappable( *this );
+	if( panels.control )
+		DrawControlPanel( *this );
 	if( panels.files )
 		DrawFilesPanel( *this );
 	if( panels.output )

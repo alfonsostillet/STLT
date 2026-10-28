@@ -18,6 +18,7 @@ struct PanelVisibility
 	bool output             = true;
 	bool performance        = true;
 	bool effects            = true;
+	bool control            = true;
 	bool advancedOutput     = false; // a big editor: floats on top when opened
 };
 
@@ -34,6 +35,7 @@ constexpr const char* Files              = "Files";
 constexpr const char* Output             = "Output";
 constexpr const char* Performance        = "Performance";
 constexpr const char* Effects            = "Effects";
+constexpr const char* Control            = "Control";
 constexpr const char* AdvancedOutput     = "Advanced Output";
 }
 

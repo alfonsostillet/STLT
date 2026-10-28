@@ -1,10 +1,12 @@
 #pragma once
 #include <deque>
+#include <map>
 #include <string>
 #include <vector>
 #include <memory>
 #include "Composition.h"
 #include "History.h"
+#include "control/RemoteInputs.h"
 #include "fx/EffectRegistry.h"
 #include "render/Compositor.h"
 #include "render/Fbo.h"
@@ -39,6 +41,7 @@ struct LaunchOptions
 	std::string outputSetup;          // --output-setup: an output setup (.json) or Resolume AdvancedOutput.xml to load
 	int advancedOutputTab = -1;       // --advanced-output input|output: open the editor on that tab
 	int width = 0, height = 0;        // window size override
+	int oscPort = 0;                  // --osc PORT: listen for OSC on this port
 };
 
 class App
@@ -86,6 +89,16 @@ public:
 	bool Redo();
 	History history;
 
+	// Remote control: OSC and MIDI (see control/Control.h for the addresses). Learning: the next MIDI note or
+	// controller is mapped to learnTarget, the control last clicked.
+	bool ApplyControl( const std::string& address, bool hasValue, float value, bool momentary = false, float previous = 0 );
+	void SaveControlSettings() const;
+	ControlSettings control;
+	RemoteInputs remote;
+	bool learning = false;
+	std::string learnTarget;
+	std::string lastControl; // the last message, for the panel
+
 	// Panel state.
 	Composition composition;
 	Compositor compositor;
@@ -120,6 +133,9 @@ private:
 	void RestoreEffects(); // turns the effects of a just-loaded composition into live ones
 	void SavePluginFolders() const;
 	History::State Snapshot() const;
+	void PollRemote();
+	double lastRemoteConfigure = -1e9;
+	std::map< int, float > lastMidiValues; // by note or controller: buttons act on the press
 	// Takes a composition back to an earlier state, keeping the players, generators and effects that are still
 	// there (playback goes on) and opening the rest.
 	void RestoreComposition( const std::string& text );

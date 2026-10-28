@@ -30,6 +30,7 @@ const Flag kFlags[] = {
 	{ "Output", &PanelVisibility::output },
 	{ "Performance", &PanelVisibility::performance },
 	{ "Effects", &PanelVisibility::effects },
+	{ "Control", &PanelVisibility::control },
 	{ "AdvancedOutput", &PanelVisibility::advancedOutput },
 };
 
@@ -180,6 +181,7 @@ void Workspaces::BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size )
 	ImGui::DockBuilderDockWindow( panel::Effects, browser );
 	ImGui::DockBuilderDockWindow( panel::Output, browser );
 	ImGui::DockBuilderDockWindow( panel::Performance, browser );
+	ImGui::DockBuilderDockWindow( panel::Control, browser );
 	ImGui::DockBuilderFinish( dockspace );
 }
 }

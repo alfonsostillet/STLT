@@ -41,6 +41,12 @@ FetchContent_Declare(nfd
     GIT_REPOSITORY https://github.com/btzy/nativefiledialog-extended.git
     GIT_TAG v1.2.1
     GIT_SHALLOW TRUE)
+# MIDI input on every system (MIT). Its sources are built below with the right system API.
+FetchContent_Declare(rtmidi
+    GIT_REPOSITORY https://github.com/thestk/rtmidi.git
+    GIT_TAG 6.0.0
+    GIT_SHALLOW TRUE
+    SOURCE_SUBDIR no-cmake)
 
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -197,6 +203,10 @@ add_library(stltvj-core STATIC
     src/output/OutputRenderer.h
     src/output/NdiSender.cpp
     src/output/Sharing.h
+    src/control/Control.cpp
+    src/control/Control.h
+    src/control/RemoteInputs.cpp
+    src/control/RemoteInputs.h
 )
 target_include_directories(stltvj-core PUBLIC src third_party/khronos "${THIRD_PARTY}/nlohmann")
 target_compile_definitions(stltvj-core PUBLIC GLFW_INCLUDE_NONE)
@@ -211,6 +221,32 @@ elseif(APPLE)
 else()
     find_package(OpenGL REQUIRED)
     target_link_libraries(stltvj-core PUBLIC OpenGL::GL ${CMAKE_DL_LIBS})
+endif()
+
+# MIDI through RtMidi: Windows Multimedia, CoreMIDI or ALSA.
+FetchContent_MakeAvailable(rtmidi)
+add_library(rtmidi STATIC "${rtmidi_SOURCE_DIR}/RtMidi.cpp")
+target_include_directories(rtmidi PUBLIC "${rtmidi_SOURCE_DIR}")
+if(WIN32)
+    target_compile_definitions(rtmidi PRIVATE __WINDOWS_MM__)
+    target_link_libraries(rtmidi PUBLIC winmm)
+elseif(APPLE)
+    target_compile_definitions(rtmidi PRIVATE __MACOSX_CORE__)
+    target_link_libraries(rtmidi PUBLIC "-framework CoreMIDI" "-framework CoreAudio" "-framework CoreFoundation")
+else()
+    find_package(ALSA)
+    find_package(Threads REQUIRED)
+    if(ALSA_FOUND)
+        target_compile_definitions(rtmidi PRIVATE __LINUX_ALSA__)
+        target_link_libraries(rtmidi PUBLIC ALSA::ALSA Threads::Threads)
+    else()
+        message(WARNING "ALSA development files not found: STLT-VJ is built without MIDI input")
+        target_compile_definitions(rtmidi PRIVATE __RTMIDI_DUMMY__)
+    endif()
+endif()
+target_link_libraries(stltvj-core PUBLIC rtmidi)
+if(WIN32)
+    target_link_libraries(stltvj-core PUBLIC ws2_32) # OSC over UDP
 endif()
 
 # Screens shared with other programs on the same computer: Spout on Windows, Syphon on macOS, both BSD-licensed
@@ -263,6 +299,8 @@ add_executable(stlt-vj WIN32 MACOSX_BUNDLE
     src/App.h
     src/ui/AdvancedOutputUi.cpp
     src/ui/AdvancedOutputUi.h
+    src/ui/ControlUi.cpp
+    src/ui/ControlUi.h
     src/ui/EffectsUi.cpp
     src/ui/EffectsUi.h
     src/ui/FileDialogs.cpp
@@ -291,6 +329,12 @@ add_executable(output_test tests/output_test.cpp)
 target_link_libraries(output_test PRIVATE stltvj-core)
 add_test(NAME output_test COMMAND output_test)
 stltvj_ffmpeg_runtime(output_test)
+
+# Remote control: addresses, OSC packets, MIDI messages, settings.
+add_executable(control_test tests/control_test.cpp)
+target_link_libraries(control_test PRIVATE stltvj-core)
+add_test(NAME control_test COMMAND control_test)
+stltvj_ffmpeg_runtime(control_test)
 
 # Undo and redo.
 add_executable(history_test tests/history_test.cpp)
