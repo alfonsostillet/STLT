@@ -101,7 +101,23 @@ struct MidiMapping
 	std::string address;
 };
 
-// What the control panel sets: the mappings and the inputs in use, saved apart from compositions.
+// A key of the computer's keyboard, with the modifiers held with it. `key` is the key's name as the interface
+// library gives it ("Q", "F5", "Space", "Keypad1"...).
+struct KeyChord
+{
+	std::string key;
+	bool ctrl = false, shift = false, alt = false;
+	bool operator==( const KeyChord& other ) const { return key == other.key && ctrl == other.ctrl && shift == other.shift && alt == other.alt; }
+};
+std::string KeyChordName( const KeyChord& chord ); // "Ctrl+Shift+Q"
+
+struct KeyMapping
+{
+	KeyChord chord;
+	std::string address;
+};
+
+// What the Shortcuts panel sets: the keyboard and MIDI mappings and the inputs in use, saved apart from compositions.
 struct ControlSettings
 {
 	bool oscEnabled = false;
@@ -109,6 +125,7 @@ struct ControlSettings
 	bool midiEnabled = true;
 	std::vector< std::string > midiInputsOff; // input names the user switched off (new devices are on)
 	std::vector< MidiMapping > midi;
+	std::vector< KeyMapping > keys;
 
 	std::string Save() const;
 	bool Load( const std::string& json );

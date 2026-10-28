@@ -27,13 +27,22 @@ public:
 	bool Init( std::string& error );
 	void Shutdown();
 
-	// Main context. `composition` is an FBO texture (first row at the bottom) of compWidth x compHeight.
-	void Render( const AdvancedOutputSetup& setup, GLuint composition, int compWidth, int compHeight );
+	// Main context. `composition` is an FBO texture (first row at the bottom) of compWidth x compHeight. Not
+	// `live`: the screens are drawn (for the editor's views) but not shared with other programs.
+	void Render( const AdvancedOutputSetup& setup, GLuint composition, int compWidth, int compHeight, bool live = true );
 	// The finished picture of screen `index` (FBO texture), or 0.
 	GLuint ScreenTexture( size_t index ) const;
 
-	// Opens, moves or closes output windows so each screen shows on its device. Main context current.
-	void SyncWindows( const AdvancedOutputSetup& setup, GLFWwindow* main );
+	// Opens, moves or closes output windows so each screen shows on its device (none when not `live`). Main
+	// context current.
+	void SyncWindows( const AdvancedOutputSetup& setup, GLFWwindow* main, bool live = true );
+	// Whether its user closed an output window since the last call.
+	bool TakeWindowClosed()
+	{
+		bool closed  = windowClosed;
+		windowClosed = false;
+		return closed;
+	}
 	void CloseWindows();
 	// Shows every open output (after the main window's swap). Leaves `main`'s context current.
 	void Present( Compositor& compositor, GLFWwindow* main );
@@ -68,5 +77,6 @@ private:
 	Fbo maskCoverage, maskBlur; // shared by every screen, sized to the one being drawn
 	GLuint vao = 0, vbo = 0;
 	std::vector< float > vertices;
+	bool windowClosed = false;
 };
 }

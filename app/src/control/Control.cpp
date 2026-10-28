@@ -311,6 +311,11 @@ std::string MidiKeyName( const MidiKey& key )
 	return std::string( names[ key.number % 12 ] ) + std::to_string( key.number / 12 - 2 ) + channel; // middle C (60) is C3
 }
 
+std::string KeyChordName( const KeyChord& chord )
+{
+	return std::string( chord.ctrl ? "Ctrl+" : "" ) + ( chord.shift ? "Shift+" : "" ) + ( chord.alt ? "Alt+" : "" ) + chord.key;
+}
+
 // ---- Settings
 
 std::string ControlSettings::Save() const
@@ -329,6 +334,10 @@ std::string ControlSettings::Save() const
 		                      { "number", m.key.number },
 		                      { "address", m.address } } );
 	root[ "midi" ] = mappings;
+	json keyMappings = json::array();
+	for( const KeyMapping& k : keys )
+		keyMappings.push_back( { { "key", k.chord.key }, { "ctrl", k.chord.ctrl }, { "shift", k.chord.shift }, { "alt", k.chord.alt }, { "address", k.address } } );
+	root[ "keys" ] = keyMappings;
 	return root.dump( 1 );
 }
 
@@ -357,6 +366,19 @@ bool ControlSettings::Load( const std::string& text )
 			mapping.key.number  = std::clamp( m.value( "number", 0 ), 0, 127 );
 			mapping.address     = m.value( "address", "" );
 			s.midi.push_back( mapping );
+		}
+	if( root.contains( "keys" ) && root[ "keys" ].is_array() )
+		for( const json& k : root[ "keys" ] )
+		{
+			if( !k.is_object() || k.value( "key", "" ).empty() || k.value( "address", "" ).empty() )
+				continue;
+			KeyMapping mapping;
+			mapping.chord.key   = k.value( "key", "" );
+			mapping.chord.ctrl  = k.value( "ctrl", false );
+			mapping.chord.shift = k.value( "shift", false );
+			mapping.chord.alt   = k.value( "alt", false );
+			mapping.address     = k.value( "address", "" );
+			s.keys.push_back( mapping );
 		}
 	*this = std::move( s );
 	return true;

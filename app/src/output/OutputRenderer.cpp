@@ -329,7 +329,7 @@ void OutputRenderer::ApplyMask( const Slice& mask, const Screen& screen, Fbo& ta
 	glBindTexture( GL_TEXTURE_2D, composition );
 }
 
-void OutputRenderer::Render( const AdvancedOutputSetup& setup, GLuint composition, int compWidth, int compHeight )
+void OutputRenderer::Render( const AdvancedOutputSetup& setup, GLuint composition, int compWidth, int compHeight, bool live )
 {
 	Match( setup.screens.size() );
 	const float identity[ 9 ] = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
@@ -378,7 +378,16 @@ void OutputRenderer::Render( const AdvancedOutputSetup& setup, GLuint compositio
 		glBindTexture( GL_TEXTURE_2D, state.target.Texture() );
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 		ResetGlState();
-		Share( screen, state );
+		if( live )
+			Share( screen, state );
+		else
+		{
+			state.local.reset();
+			state.ndi.reset();
+			state.localName.clear();
+			state.ndiName.clear();
+			state.ndiError.clear();
+		}
 	}
 	glBindFramebuffer( GL_FRAMEBUFFER, 0 );
 }
@@ -446,7 +455,7 @@ GLuint OutputRenderer::ScreenTexture( size_t index ) const
 	return index < screens.size() ? screens[ index ]->finished.Texture() : 0;
 }
 
-void OutputRenderer::SyncWindows( const AdvancedOutputSetup& setup, GLFWwindow* main )
+void OutputRenderer::SyncWindows( const AdvancedOutputSetup& setup, GLFWwindow* main, bool live )
 {
 	Match( setup.screens.size() );
 	bool vsyncTaken = false;
@@ -454,11 +463,12 @@ void OutputRenderer::SyncWindows( const AdvancedOutputSetup& setup, GLFWwindow* 
 	{
 		const Screen& screen = setup.screens[ s ];
 		ScreenState& state   = *screens[ s ];
-		OutputDevice wanted  = screen.enabled ? screen.device : OutputDevice::Virtual;
+		OutputDevice wanted  = live && screen.enabled ? screen.device : OutputDevice::Virtual;
 		if( state.window && state.window->CloseRequested() )
 		{
 			// Closing an output window turns that screen virtual until it is chosen again.
 			state.window.reset();
+			windowClosed = true;
 			continue;
 		}
 		bool changed = wanted != state.device || ( wanted == OutputDevice::Display && screen.display != state.display );

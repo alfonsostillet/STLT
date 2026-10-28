@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
+#include <json.hpp>
 #include "Settings.h"
 #include "audio/AudioEngine.h"
 #include "fx/BuiltinEffects.h"
@@ -134,7 +135,8 @@ bool App::Init( const LaunchOptions& launch )
 	IMGUI_CHECKVERSION();
 	ImGui::CreateContext();
 	ImGuiIO& io = ImGui::GetIO();
-	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_ViewportsEnable | ImGuiConfigFlags_NavEnableKeyboard;
+	// No keyboard navigation: the keys belong to the user's shortcuts (text fields still take typing).
+	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_ViewportsEnable;
 	io.ConfigWindowsMoveFromTitleBarOnly = true;
 	io.ConfigDockingAlwaysTabBar         = true; // every panel has a tab to grab, docked or floating
 	iniPath        = ( fs::u8path( configDir ) / "layout.ini" ).u8string();
@@ -157,7 +159,7 @@ bool App::Init( const LaunchOptions& launch )
 		return false;
 	}
 	preview.Ensure( 480, 270 );
-	if( !outputs.Init( error ) )
+	if( !outputs.Init( error ) || !quickOutputs.Init( error ) )
 	{
 		std::fprintf( stderr, "%s\n", error.c_str() );
 		return false;
@@ -198,6 +200,21 @@ bool App::Init( const LaunchOptions& launch )
 	if( options.fresh || !ReadTextFile( ( fs::u8path( configDir ) / "advanced-output.json" ).u8string(), outputText )
 	    || !LoadAdvancedOutput( outputText, advancedOutput, outputError ) || advancedOutput.screens.empty() )
 		advancedOutput = AdvancedOutputSetup::MakeDefault( composition.width, composition.height );
+	// The output mode of the last session; before modes existed the setup's screens were always live.
+	std::string modeText;
+	nlohmann::json mode;
+	if( !options.fresh && ReadTextFile( ( fs::u8path( configDir ) / "output-mode.json" ).u8string(), modeText ) )
+		mode = nlohmann::json::parse( modeText, nullptr, false );
+	if( mode.is_object() )
+	{
+		std::string name = mode.value( "mode", "off" );
+		outputMode       = name == "window" ? OutputMode::Window : name == "fullscreen" ? OutputMode::Fullscreen : name == "advanced" ? OutputMode::Advanced : OutputMode::Off;
+		outputDisplay    = mode.value( "display", "" );
+	}
+	else if( !options.fresh )
+		outputMode = std::any_of( advancedOutput.screens.begin(), advancedOutput.screens.end(), []( const Screen& s ) { return s.device != OutputDevice::Virtual; } )
+		                 ? OutputMode::Advanced
+		                 : OutputMode::Off;
 	for( const LaunchOptions::ClipArg& clip : options.clips )
 	{
 		LoadClip( clip.layer - 1, clip.column - 1, clip.path );
@@ -215,6 +232,7 @@ bool App::Init( const LaunchOptions& launch )
 			ImportResolumeOutput( options.outputSetup );
 		else if( !ReadTextFile( options.outputSetup, text ) || !LoadAdvancedOutput( text, advancedOutput, setupError ) )
 			std::fprintf( stderr, "Cannot load %s %s\n", options.outputSetup.c_str(), setupError.c_str() );
+		outputMode = OutputMode::Advanced;
 	}
 	if( options.advancedOutputTab >= 0 )
 	{
@@ -257,9 +275,12 @@ void App::Shutdown()
 	if( !options.fresh )
 		WriteTextFile( ( fs::u8path( configDir ) / "last-session.stltvj" ).u8string(), SaveComposition( composition ) );
 	WriteTextFile( ( fs::u8path( configDir ) / "advanced-output.json" ).u8string(), SaveAdvancedOutput( advancedOutput ) );
+	if( !options.fresh )
+		SaveOutputMode();
 	glfwMakeContextCurrent( window );
 	audio.Stop();
 	outputs.Shutdown();
+	quickOutputs.Shutdown();
 	composition = Composition{}; // frees the players' GPU memory and plugin instances while the context is alive
 	preview.Release();
 	compositor.Shutdown();
@@ -698,6 +719,69 @@ void App::PollRemote()
 	}
 }
 
+namespace
+{
+// Keys that can be mapped: not the modifiers (they go with a key), Escape (it leaves mapping), Space alone
+// (pause), the app's own Ctrl shortcuts, the mouse or game pads.
+bool MappableKey( ImGuiKey key, bool ctrl, bool shift, bool alt )
+{
+	if( key < ImGuiKey_Tab || key >= ImGuiKey_GamepadStart || key == ImGuiKey_Escape || key == ImGuiKey_Menu
+	    || ( key >= ImGuiKey_LeftCtrl && key <= ImGuiKey_RightSuper ) || ( key == ImGuiKey_Space && !ctrl && !shift && !alt ) )
+		return false;
+	if( ctrl )
+		for( ImGuiKey own : { ImGuiKey_Z, ImGuiKey_Y, ImGuiKey_S, ImGuiKey_O, ImGuiKey_I, ImGuiKey_M } )
+			if( key == own )
+				return false;
+	return !( ctrl && shift && key == ImGuiKey_A );
+}
+}
+
+void App::PollKeyboard()
+{
+	// A mapped key acts like a MIDI note: 1 while it is held, 0 when it is let go (buttons act on the press,
+	// switches flip). Nothing while a text field has the keyboard.
+	ImGuiIO& io = ImGui::GetIO();
+	for( auto held = keysHeld.begin(); held != keysHeld.end(); )
+	{
+		if( ImGui::IsKeyDown( (ImGuiKey)held->first ) )
+		{
+			++held;
+			continue;
+		}
+		ApplyControl( held->second, true, 0.0f, true, 1.0f );
+		held = keysHeld.erase( held );
+	}
+	if( io.WantTextInput || ImGui::IsPopupOpen( "", ImGuiPopupFlags_AnyPopupId ) )
+		return;
+	for( int k = ImGuiKey_Tab; k < ImGuiKey_GamepadStart; ++k )
+	{
+		ImGuiKey key = (ImGuiKey)k;
+		if( !ImGui::IsKeyPressed( key, false ) || !MappableKey( key, io.KeyCtrl, io.KeyShift, io.KeyAlt ) )
+			continue;
+		KeyChord chord{ ImGui::GetKeyName( key ), io.KeyCtrl, io.KeyShift, io.KeyAlt };
+		if( learning )
+		{
+			if( learnTarget.empty() )
+				continue;
+			// One control per key: learning again moves it.
+			control.keys.erase( std::remove_if( control.keys.begin(), control.keys.end(), [ & ]( const KeyMapping& m ) { return m.chord == chord; } ),
+			                    control.keys.end() );
+			control.keys.push_back( { chord, learnTarget } );
+			SetStatus( "Mapped the key " + KeyChordName( chord ) + " to " + learnTarget );
+			learnTarget.clear();
+			SaveControlSettings();
+			continue;
+		}
+		for( const KeyMapping& m : control.keys )
+			if( m.chord == chord )
+			{
+				lastControl = "Key " + KeyChordName( chord );
+				ApplyControl( m.address, true, 1.0f, true, 0.0f );
+				keysHeld.push_back( { k, m.address } );
+			}
+	}
+}
+
 bool App::ApplyControl( const std::string& address, bool hasValue, float value, bool momentary, float previous )
 {
 	using Kind = ControlTarget::Kind;
@@ -934,13 +1018,11 @@ void App::RemovePluginFolder( const std::string& folder )
 	SavePluginFolders();
 }
 
-void App::ShowScreenOn( size_t index, OutputDevice device, const std::string& display )
+namespace
 {
-	if( advancedOutput.screens.empty() )
-		advancedOutput = AdvancedOutputSetup::MakeDefault( composition.width, composition.height );
-	if( index >= advancedOutput.screens.size() )
-		return;
-	Screen& screen = advancedOutput.screens[ index ];
+// Shows `screen` on `device`; a simple one-slice screen also takes the display's resolution.
+void PlaceScreen( Screen& screen, OutputDevice device, const std::string& display )
+{
 	screen.device  = device;
 	screen.display = display;
 	screen.enabled = true;
@@ -955,11 +1037,63 @@ void App::ShowScreenOn( size_t index, OutputDevice device, const std::string& di
 					screen.slices[ 0 ].FitOutput( (float)d.width, (float)d.height );
 			}
 }
+}
 
-void App::StopOutputs()
+void App::ShowScreenOn( size_t index, OutputDevice device, const std::string& display )
 {
-	for( Screen& screen : advancedOutput.screens )
-		screen.device = OutputDevice::Virtual;
+	if( advancedOutput.screens.empty() )
+		advancedOutput = AdvancedOutputSetup::MakeDefault( composition.width, composition.height );
+	if( index >= advancedOutput.screens.size() )
+		return;
+	PlaceScreen( advancedOutput.screens[ index ], device, display );
+	if( device != OutputDevice::Virtual )
+		SetOutputMode( OutputMode::Advanced );
+}
+
+void App::SetOutputMode( OutputMode mode, const std::string& display )
+{
+	outputMode = mode;
+	if( mode == OutputMode::Fullscreen )
+		outputDisplay = display;
+	UpdateQuickOutput();
+	SaveOutputMode();
+	SetStatus( "Output: " + OutputModeLabel() );
+}
+
+std::string App::OutputModeLabel() const
+{
+	switch( outputMode )
+	{
+	case OutputMode::Off: return "Off";
+	case OutputMode::Window: return "Window";
+	case OutputMode::Fullscreen:
+		for( const OutputWindow::Display& d : OutputWindow::Displays() )
+			if( d.monitorName == outputDisplay )
+				return "Fullscreen on " + d.name;
+		return "Fullscreen (display not connected)";
+	case OutputMode::Advanced: return "Advanced";
+	}
+	return "";
+}
+
+void App::UpdateQuickOutput()
+{
+	// The composition alone on one screen, made again when the mode, the display or the composition's size change.
+	bool quick      = outputMode == OutputMode::Window || outputMode == OutputMode::Fullscreen;
+	std::string key = std::to_string( (int)outputMode ) + "|" + outputDisplay + "|" + std::to_string( composition.width ) + "x" + std::to_string( composition.height );
+	if( !quick || key == quickOutputKey )
+		return;
+	quickOutputKey = key;
+	quickOutput    = AdvancedOutputSetup::MakeDefault( composition.width, composition.height );
+	quickOutput.screens[ 0 ].name = "Output";
+	PlaceScreen( quickOutput.screens[ 0 ], outputMode == OutputMode::Window ? OutputDevice::Window : OutputDevice::Display, outputDisplay );
+}
+
+void App::SaveOutputMode() const
+{
+	const char* names[] = { "off", "window", "fullscreen", "advanced" };
+	nlohmann::json mode = { { "mode", names[ (int)outputMode ] }, { "display", outputDisplay } };
+	WriteTextFile( ( fs::u8path( configDir ) / "output-mode.json" ).u8string(), mode.dump( 1 ) );
 }
 
 std::string App::OutputPresetDirectory() const
@@ -1076,6 +1210,36 @@ void App::UpdatePlayback( double dt )
 	}
 }
 
+void App::UpdatePreview( double dt )
+{
+	int l          = composition.selectedLayer;
+	int c          = composition.selectedColumn;
+	Clip* selected = composition.SelectedClip();
+	bool live      = selected && composition.layers[ l ].active == c;
+	ClipPlayer* wanted = selected && !live && selected->Loaded() && selected->Playable() ? selected->player.get() : nullptr;
+	if( previewPlayer && previewPlayer != wanted )
+	{
+		// Stop the clip previewed until now, unless it has since been launched (or removed: then it is gone).
+		for( Layer& layer : composition.layers )
+			for( int column = 0; column < (int)layer.clips.size(); ++column )
+				if( layer.clips[ column ].player.get() == previewPlayer && layer.active != column )
+					previewPlayer->Deactivate();
+		previewPlayer = nullptr;
+	}
+	if( !wanted )
+		return;
+	if( !previewPlayer )
+	{
+		if( !wanted->Activate() )
+			return;
+		selected->Restart();
+		previewPlayer = wanted;
+	}
+	if( !composition.paused )
+		selected->Advance( dt * composition.speed );
+	wanted->Update( selected->CurrentFrame(), composition.paused ? 0 : selected->PlayDirection() );
+}
+
 void App::Frame()
 {
 	workspaces.ApplyPending();
@@ -1096,7 +1260,15 @@ void App::Frame()
 	frame.bpm   = composition.bpm;
 	frame.beat  = composition.beat;
 	compositor.Render( composition, frame );
-	outputs.Render( advancedOutput, compositor.CompositionTexture(), composition.width, composition.height );
+	UpdateQuickOutput();
+	bool advancedLive = outputMode == OutputMode::Advanced;
+	bool quickLive    = outputMode == OutputMode::Window || outputMode == OutputMode::Fullscreen;
+	// The Advanced Output setup is drawn when it is shown and for the editor's views.
+	if( advancedLive || panels.advancedOutput )
+		outputs.Render( advancedOutput, compositor.CompositionTexture(), composition.width, composition.height, advancedLive );
+	if( quickLive )
+		quickOutputs.Render( quickOutput, compositor.CompositionTexture(), composition.width, composition.height );
+	UpdatePreview( dt );
 	if( Clip* selected = composition.SelectedClip() )
 		if( selected->generator || ( selected->Loaded() && selected->player->Active() ) )
 			compositor.RenderClipAlone( *selected, preview, composition.width, composition.height, frame );
@@ -1137,15 +1309,20 @@ void App::Frame()
 	}
 
 	// Only one window may wait for vsync, or the frame rate halves: the output when it is open.
-	bool wantOutputVsync = outputs.AnyWindowOpen();
+	bool wantOutputVsync = outputs.AnyWindowOpen() || quickOutputs.AnyWindowOpen();
 	if( wantOutputVsync != outputVsync )
 	{
 		glfwSwapInterval( wantOutputVsync ? 0 : 1 );
 		outputVsync = wantOutputVsync;
 	}
 	glfwSwapBuffers( window );
-	outputs.SyncWindows( advancedOutput, window );
+	outputs.SyncWindows( advancedOutput, window, advancedLive );
+	quickOutputs.SyncWindows( quickOutput, window, quickLive );
+	outputs.TakeWindowClosed();
+	if( quickOutputs.TakeWindowClosed() )
+		SetOutputMode( OutputMode::Off ); // the output window closed by hand
 	outputs.Present( compositor, window );
+	quickOutputs.Present( compositor, window );
 }
 
 void App::Capture()
@@ -1189,15 +1366,17 @@ void App::DrawUi()
 	DrawStatusBar( *this );
 	ImGui::End();
 
-	// Learning MIDI: Ctrl+M, like Resolume's mapping mode; Escape leaves it.
+	// Mapping keys and MIDI: Ctrl+M, like Resolume's mapping mode; Escape leaves it.
 	ImGuiIO& io = ImGui::GetIO();
 	if( io.KeyCtrl && !io.WantTextInput && ImGui::IsKeyPressed( ImGuiKey_M, false ) )
 	{
 		learning = !learning;
 		learnTarget.clear();
 	}
-	if( learning && ImGui::IsKeyPressed( ImGuiKey_Escape, false ) )
+	else if( learning && ImGui::IsKeyPressed( ImGuiKey_Escape, false ) )
 		learning = false;
+	else
+		PollKeyboard();
 
 	BeginMappable( *this );
 	if( panels.clips )

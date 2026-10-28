@@ -152,7 +152,14 @@ void Workspaces::BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size )
 	// First run (no saved layout yet) or an explicit reset.
 	ImGuiDockNode* node = ImGui::DockBuilderGetNode( dockspace );
 	if( !buildDefault && node && ( node->IsSplitNode() || node->Windows.Size > 0 ) )
+	{
+		// A layout saved before a panel existed (or under its old name): the panel joins the Files panel's tabs
+		// instead of floating over everything.
+		ImGuiWindowSettings* files = ImGui::FindWindowSettingsByID( ImHashStr( panel::Files ) );
+		if( files && files->DockId && !ImGui::FindWindowSettingsByID( ImHashStr( panel::Control ) ) && !ImGui::FindWindowByName( panel::Control ) )
+			ImGui::DockBuilderDockWindow( panel::Control, files->DockId );
 		return;
+	}
 	buildDefault = false;
 
 	ImGui::DockBuilderRemoveNode( dockspace );

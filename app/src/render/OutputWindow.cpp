@@ -66,6 +66,12 @@ bool OutputWindow::Open( GLFWwindow* shareWith, GLFWmonitor* monitor, const std:
 	glfwDefaultWindowHints();
 	if( !window )
 		return false;
+	// Escape on the output (it only has the keyboard once clicked, or when it covers the interface's display)
+	// closes it, like its close button.
+	glfwSetKeyCallback( window, []( GLFWwindow* w, int key, int, int action, int ) {
+		if( key == GLFW_KEY_ESCAPE && action == GLFW_PRESS )
+			glfwSetWindowShouldClose( w, GLFW_TRUE );
+	} );
 	glfwMakeContextCurrent( window );
 	glfwSwapInterval( vsync ? 1 : 0 );
 	glGenVertexArrays( 1, &vao );

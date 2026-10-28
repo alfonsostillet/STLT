@@ -35,7 +35,7 @@ constexpr const char* Files              = "Files";
 constexpr const char* Output             = "Output";
 constexpr const char* Performance        = "Performance";
 constexpr const char* Effects            = "Effects";
-constexpr const char* Control            = "Control";
+constexpr const char* Control            = "Shortcuts"; // keyboard, MIDI and OSC
 constexpr const char* AdvancedOutput     = "Advanced Output";
 }
 

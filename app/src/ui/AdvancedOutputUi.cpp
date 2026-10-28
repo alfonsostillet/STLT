@@ -1391,6 +1391,21 @@ void DrawAdvancedOutputPanel( App& app )
 	if( editor.slice >= (int)setup.screens[ editor.screen ].slices.size() )
 		editor.slice = -1;
 
+	if( app.outputMode != OutputMode::Advanced )
+	{
+		// The setup is edited but not on show: say so, with the switch at hand.
+		ImGui::PushStyleColor( ImGuiCol_ChildBg, ImVec4( 0.45f, 0.32f, 0.10f, 0.55f ) );
+		ImGui::BeginChild( "##notLive", ImVec2( 0, ImGui::GetFrameHeightWithSpacing() + Ui( 8 ) ), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar );
+		ImGui::SetCursorPos( ImVec2( Ui( 8 ), Ui( 4 ) ) );
+		ImGui::AlignTextToFramePadding();
+		ImGui::Text( "This setup is not on show (Output: %s).", app.OutputModeLabel().c_str() );
+		ImGui::SameLine();
+		if( ImGui::Button( "Use Advanced Output" ) )
+			app.SetOutputMode( OutputMode::Advanced );
+		ImGui::EndChild();
+		ImGui::PopStyleColor();
+	}
+
 	if( ImGui::BeginTable( "##ao", 3, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV, ImGui::GetContentRegionAvail() ) )
 	{
 		ImGui::TableSetupColumn( "list", ImGuiTableColumnFlags_WidthFixed, Ui( 230 ) );

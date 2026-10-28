@@ -101,10 +101,10 @@ void ParamLabel( const char* label )
 	ImGui::SetNextItemWidth( -FLT_MIN );
 }
 
-bool PercentSlider( const char* id, float* value, float max = 1.0f )
+bool PercentSlider( const char* id, float* value, float max = 1.0f, const char* format = "%.0f %%" )
 {
 	float percent = *value * 100.0f;
-	bool changed  = FilledSlider( id, &percent, 0.0f, max * 100.0f, "%.0f %%" );
+	bool changed  = FilledSlider( id, &percent, 0.0f, max * 100.0f, format );
 	if( changed )
 		*value = percent / 100.0f;
 	if( ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
@@ -269,6 +269,27 @@ bool IconButton( const char* id, Icon icon, bool active, float size )
 	return clicked;
 }
 
+// The output modes, as in Resolume's Output menu: one of them is on.
+static void DrawOutputModeItems( App& app )
+{
+	if( ImGui::MenuItem( "Off", nullptr, app.outputMode == OutputMode::Off ) )
+		app.SetOutputMode( OutputMode::Off );
+	if( ImGui::MenuItem( "Window", nullptr, app.outputMode == OutputMode::Window ) )
+		app.SetOutputMode( OutputMode::Window );
+	if( ImGui::BeginMenu( "Fullscreen", true ) )
+	{
+		for( const OutputWindow::Display& d : OutputWindow::Displays() )
+		{
+			std::string label = d.name + "  (" + std::to_string( d.width ) + "x" + std::to_string( d.height ) + ")";
+			if( ImGui::MenuItem( label.c_str(), nullptr, app.outputMode == OutputMode::Fullscreen && app.outputDisplay == d.monitorName ) )
+				app.SetOutputMode( OutputMode::Fullscreen, d.monitorName );
+		}
+		ImGui::EndMenu();
+	}
+	if( ImGui::MenuItem( "Advanced (slices, warps, masks)", nullptr, app.outputMode == OutputMode::Advanced ) )
+		app.SetOutputMode( OutputMode::Advanced );
+}
+
 void DrawMainMenu( App& app )
 {
 	bool openComposition = false, saveCompositionAs = false, saveWorkspace = false, openPath = false, savePath = false;
@@ -332,21 +353,35 @@ void DrawMainMenu( App& app )
 		}
 		if( ImGui::BeginMenu( "Output" ) )
 		{
-			if( ImGui::MenuItem( "Advanced Output...", "Ctrl+Shift+A" ) )
+			DrawOutputModeItems( app );
+			ImGui::Separator();
+			if( ImGui::MenuItem( "Advanced Output Settings...", "Ctrl+Shift+A" ) )
 				app.panels.advancedOutput = true;
-			ImGui::Separator();
-			ImGui::TextDisabled( "Quick: first screen" );
-			for( const OutputWindow::Display& d : OutputWindow::Displays() )
+			ImGui::EndMenu();
+		}
+		if( ImGui::BeginMenu( "Shortcuts" ) )
+		{
+			if( ImGui::MenuItem( "Map Keys and MIDI", "Ctrl+M", app.learning ) )
 			{
-				std::string label = "Fullscreen on " + d.name + "  (" + std::to_string( d.width ) + "x" + std::to_string( d.height ) + ")";
-				if( ImGui::MenuItem( label.c_str() ) )
-					app.ShowScreenOn( 0, OutputDevice::Display, d.monitorName );
+				app.learning = !app.learning;
+				app.learnTarget.clear();
 			}
-			if( ImGui::MenuItem( "In a Window" ) )
-				app.ShowScreenOn( 0, OutputDevice::Window );
+			if( ImGui::MenuItem( "Shortcuts Panel (keys, MIDI, OSC)" ) )
+			{
+				app.panels.control = true;
+				ImGui::SetWindowFocus( panel::Control );
+			}
 			ImGui::Separator();
-			if( ImGui::MenuItem( "Stop All Outputs", nullptr, false, app.outputs.AnyWindowOpen() ) )
-				app.StopOutputs();
+			if( ImGui::MenuItem( "Clear All Keys", nullptr, false, !app.control.keys.empty() ) )
+			{
+				app.control.keys.clear();
+				app.SaveControlSettings();
+			}
+			if( ImGui::MenuItem( "Clear All MIDI", nullptr, false, !app.control.midi.empty() ) )
+			{
+				app.control.midi.clear();
+				app.SaveControlSettings();
+			}
 			ImGui::EndMenu();
 		}
 		if( ImGui::BeginMenu( "View" ) )
@@ -539,7 +574,9 @@ void DrawToolbar( App& app )
 	if( ImGui::IsItemHovered() )
 		ImGui::SetTooltip( "Clear every layer" );
 	MapTarget( app, "/composition/stop" );
-	if( !ImGui::GetIO().WantTextInput && ImGui::IsKeyPressed( ImGuiKey_Space, false ) )
+	// Space alone pauses (with a modifier it is free for the user's shortcuts).
+	const ImGuiIO& io = ImGui::GetIO();
+	if( !io.WantTextInput && !io.KeyCtrl && !io.KeyShift && !io.KeyAlt && ImGui::IsKeyPressed( ImGuiKey_Space, false ) )
 		comp.paused = !comp.paused;
 
 	// Tempo: the BPM in figures that do not jump about, halve, double, tap, resync, and the beats of the bar.
@@ -618,28 +655,50 @@ void DrawToolbar( App& app )
 			sum += t;
 		fps = sum > 0 ? 1000.0f * app.frameTimes.size() / sum : 0;
 	}
-	int shown = 0;
-	for( size_t s = 0; s < app.advancedOutput.screens.size(); ++s )
-		if( app.outputs.DeviceStatus( s ).rfind( "virtual", 0 ) != 0 && app.outputs.DeviceStatus( s ).find( "not connected" ) == std::string::npos )
-			shown++;
-	char output[ 64 ], rate[ 32 ];
-	std::snprintf( output, sizeof( output ), "Output %d/%d", shown, (int)app.advancedOutput.screens.size() );
+	// The output mode, and whether anything is on show: a chip that opens the mode menu.
+	bool shown = false;
+	std::string output = "Output: " + app.OutputModeLabel();
+	if( app.outputMode == OutputMode::Advanced )
+	{
+		int count = 0;
+		for( size_t s = 0; s < app.advancedOutput.screens.size(); ++s )
+			if( app.outputs.DeviceStatus( s ).rfind( "virtual", 0 ) != 0 && app.outputs.DeviceStatus( s ).find( "not connected" ) == std::string::npos )
+				count++;
+		shown = count > 0;
+		output += " " + std::to_string( count ) + "/" + std::to_string( app.advancedOutput.screens.size() );
+	}
+	else
+		shown = app.quickOutputs.AnyWindowOpen();
+	char rate[ 32 ];
 	std::snprintf( rate, sizeof( rate ), "%.0f fps", fps );
 	ImGui::PushFont( Fonts().mono );
 	float rateWidth = ImGui::CalcTextSize( rate ).x;
 	ImGui::PopFont();
 	float chipPad   = Ui( 10 );
-	float chipWidth = ImGui::CalcTextSize( output ).x + chipPad * 2 + Ui( 14 );
+	float chipWidth = ImGui::CalcTextSize( output.c_str() ).x + chipPad * 2 + Ui( 14 );
 	ImGui::SameLine( ImGui::GetWindowWidth() - chipWidth - rateWidth - Ui( 34 ) );
 	{
-		// A chip: a dot (lit when a screen is shown) and the count.
-		ImVec2 p        = ImGui::GetCursorScreenPos();
-		float h         = ImGui::GetFrameHeight();
-		ImDrawList* d   = ImGui::GetWindowDrawList();
-		d->AddRectFilled( p, ImVec2( p.x + chipWidth, p.y + h ), theme::Raised, h / 2 );
+		// A chip: a dot (lit when something is on show) and the mode.
+		ImVec2 p      = ImGui::GetCursorScreenPos();
+		float h       = ImGui::GetFrameHeight();
+		bool clicked  = ImGui::InvisibleButton( "##outputChip", ImVec2( chipWidth, h ) );
+		bool hovered  = ImGui::IsItemHovered();
+		ImDrawList* d = ImGui::GetWindowDrawList();
+		d->AddRectFilled( p, ImVec2( p.x + chipWidth, p.y + h ), hovered ? theme::RaisedHover : theme::Raised, h / 2 );
 		d->AddCircleFilled( ImVec2( p.x + chipPad + Ui( 3 ), p.y + h / 2 ), Ui( 3.5f ), shown ? theme::Accent : theme::TextDim );
-		d->AddText( ImVec2( p.x + chipPad + Ui( 14 ), p.y + ( h - ImGui::GetTextLineHeight() ) / 2 ), shown ? theme::Text : theme::TextDim, output );
-		ImGui::Dummy( ImVec2( chipWidth, h ) );
+		d->AddText( ImVec2( p.x + chipPad + Ui( 14 ), p.y + ( h - ImGui::GetTextLineHeight() ) / 2 ), shown ? theme::Text : theme::TextDim, output.c_str() );
+		if( hovered )
+			ImGui::SetTooltip( "Where the composition goes: off, a window, fullscreen on a display, or the Advanced Output setup" );
+		if( clicked )
+			ImGui::OpenPopup( "##outputMode" );
+		if( ImGui::BeginPopup( "##outputMode" ) )
+		{
+			DrawOutputModeItems( app );
+			ImGui::Separator();
+			if( ImGui::MenuItem( "Advanced Output Settings...", "Ctrl+Shift+A" ) )
+				app.panels.advancedOutput = true;
+			ImGui::EndPopup();
+		}
 	}
 	ImGui::SameLine( 0, Ui( 12 ) );
 	ImGui::AlignTextToFramePadding();
@@ -662,7 +721,7 @@ void DrawClipGrid( App& app )
 	const float thumbH  = std::floor( cellW * 9 / 16 );
 	const float labelH  = ImGui::GetTextLineHeight() + Ui( 8 );
 	const float cellH   = thumbH + labelH;
-	const float leftW   = Ui( 184 );
+	const float leftW   = Ui( 204 );
 	const float gap     = Ui( 6 );
 	const float round   = Ui( 6 );
 	const float headerH = ImGui::GetFrameHeight() + Ui( 6 );
@@ -744,7 +803,14 @@ void DrawClipGrid( App& app )
 			draw->AddRect( stripMin, stripMax, IM_COL32( 255, 255, 255, 22 ), round );
 		if( layer.active >= 0 )
 			draw->AddRectFilled( ImVec2( stripMin.x + Ui( 3 ), stripMin.y + Ui( 8 ) ), ImVec2( stripMin.x + Ui( 6 ), stripMax.y - Ui( 8 ) ), theme::Accent, Ui( 2 ) );
-		ImGui::SetCursorScreenPos( ImVec2( origin.x + Ui( 12 ), y + Ui( 8 ) ) );
+		// Three rows of compact controls: clear, bypass, solo and the name; blend mode and volume; opacity.
+		ImGui::PushStyleVar( ImGuiStyleVar_FramePadding, ImVec2( ImGui::GetStyle().FramePadding.x, Ui( 2 ) ) );
+		const float rowH   = ImGui::GetFrameHeight();
+		const float innerW = stripMax.x - stripMin.x - Ui( 20 );
+		const float row0   = y + Ui( 6 );
+		const float row2   = y + cellH - rowH - Ui( 6 );
+		const float row1   = ( row0 + rowH + row2 ) / 2 - rowH / 2;
+		ImGui::SetCursorScreenPos( ImVec2( origin.x + Ui( 12 ), row0 ) );
 		std::string layerAddress = "/composition/layers/" + std::to_string( l + 1 );
 		if( IconButton( "##clear", Icon::Close ) )
 			app.ClearLayer( l );
@@ -768,17 +834,42 @@ void DrawClipGrid( App& app )
 		ImGui::PushFont( Fonts().bold );
 		ImGui::PushStyleColor( ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4( selectedLayer ? theme::Text : theme::TextDim ) );
 		if( ImGui::Selectable( layer.name.c_str(), false, 0, ImVec2( std::max( 1.0f, stripMax.x - ImGui::GetCursorScreenPos().x - Ui( 8 ) ), 0 ) ) )
+		{
+			// The Layer panel comes forward with the layer's settings and effects.
 			comp.selectedLayer = l;
+			ImGui::SetWindowFocus( panel::Layer );
+		}
 		ImGui::PopStyleColor();
 		ImGui::PopFont();
 		if( AcceptEffectDrop( app, layer.effects ) )
 			comp.selectedLayer = l;
-		if( !layer.effects.empty() && ImGui::IsItemHovered() )
-			ImGui::SetTooltip( "%d effect%s on this layer", (int)layer.effects.size(), layer.effects.size() == 1 ? "" : "s" );
-		ImGui::SetCursorScreenPos( ImVec2( origin.x + Ui( 12 ), y + cellH - ImGui::GetFrameHeight() - Ui( 8 ) ) );
-		ImGui::SetNextItemWidth( stripMax.x - stripMin.x - Ui( 20 ) );
-		PercentSlider( "##opacity", &layer.opacity );
+		if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) )
+			ImGui::SetTooltip( "Click: the layer's settings and effects%s", layer.effects.empty() ? "" : ( "\n" + std::to_string( layer.effects.size() ) + ( layer.effects.size() == 1 ? " effect" : " effects" ) + " on this layer" ).c_str() );
+
+		ImGui::SetCursorScreenPos( ImVec2( origin.x + Ui( 12 ), row1 ) );
+		float blendW = std::floor( innerW * 0.52f );
+		ImGui::SetNextItemWidth( blendW );
+		if( ImGui::BeginCombo( "##blend", BlendModeName( layer.blend ), ImGuiComboFlags_HeightLarge ) )
+		{
+			for( int b = 0; b < (int)BlendMode::Count; ++b )
+				if( ImGui::Selectable( BlendModeName( (BlendMode)b ), (int)layer.blend == b ) )
+					layer.blend = (BlendMode)b;
+			ImGui::EndCombo();
+		}
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "Blend mode: how this layer mixes with the layers below it" );
+		ImGui::SameLine( 0, Ui( 6 ) );
+		ImGui::SetNextItemWidth( innerW - blendW - Ui( 6 ) );
+		PercentSlider( "##volume", &layer.volume, 1.0f, "Vol %.0f %%" );
+		MapTarget( app, layerAddress + "/audio/volume" );
+		if( ImGui::IsItemHovered() && !app.learning )
+			ImGui::SetTooltip( "Volume of this layer's clips (double-click: 100 %%)" );
+
+		ImGui::SetCursorScreenPos( ImVec2( origin.x + Ui( 12 ), row2 ) );
+		ImGui::SetNextItemWidth( innerW );
+		PercentSlider( "##opacity", &layer.opacity, 1.0f, "Opacity %.0f %%" );
 		MapTarget( app, layerAddress + "/video/opacity" );
+		ImGui::PopStyleVar();
 
 		// Cells.
 		for( int c = 0; c < comp.ColumnCount(); ++c )
@@ -792,6 +883,9 @@ void DrawClipGrid( App& app )
 			bool hovered = ImGui::IsItemHovered();
 			ImVec2 cellMin = ImGui::GetItemRectMin(), cellMax = ImGui::GetItemRectMax();
 			bool playing = layer.active == c;
+			bool selected = comp.selectedLayer == l && comp.selectedColumn == c;
+			// The picture launches the clip; the name strip below only selects it (Clip panel and Preview Monitor).
+			bool overName = ImGui::GetIO().MousePos.y >= min.y + thumbH;
 			draw->AddRectFilled( min, max, hovered ? theme::RaisedHover : theme::CellEmpty, round );
 			if( clip.Empty() && hovered )
 			{
@@ -815,7 +909,8 @@ void DrawClipGrid( App& app )
 				}
 				else
 					draw->AddRectFilled( min, thumbMax, IM_COL32( 70, 30, 34, 255 ), round, ImDrawFlags_RoundCornersTop );
-				draw->AddRectFilled( ImVec2( min.x, thumbMax.y ), max, playing ? IM_COL32( 22, 52, 46, 255 ) : theme::Raised, round, ImDrawFlags_RoundCornersBottom );
+				ImU32 strip = playing ? IM_COL32( 22, 52, 46, 255 ) : hovered && overName ? theme::RaisedHover : selected ? IM_COL32( 50, 56, 66, 255 ) : theme::Raised;
+				draw->AddRectFilled( ImVec2( min.x, thumbMax.y ), max, strip, round, ImDrawFlags_RoundCornersBottom );
 				if( !clip.effects.empty() )
 				{
 					// An FX badge in the corner.
@@ -844,17 +939,19 @@ void DrawClipGrid( App& app )
 					ImGui::SetTooltip( "Source not installed: %s", clip.generatorId.c_str() );
 				else if( hovered && ImGui::GetIO().KeyAlt )
 					ImGui::SetTooltip( "%s", clip.path.c_str() );
+				else if( hovered && ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) )
+					ImGui::SetTooltip( "%s", overName ? "Click the name: preview and edit, without launching" : "Click the picture: launch" );
 			}
 			if( playing )
 				draw->AddRect( ImVec2( min.x - Ui( 1 ), min.y - Ui( 1 ) ), ImVec2( max.x + Ui( 1 ), max.y + Ui( 1 ) ), theme::Accent, round + Ui( 1 ), 0, Ui( 2 ) );
-			else if( comp.selectedLayer == l && comp.selectedColumn == c )
+			else if( selected )
 				draw->AddRect( min, max, IM_COL32( 230, 233, 238, 160 ), round, 0, Ui( 1.5f ) );
 			else
 				draw->AddRect( min, max, theme::CellBorder, round );
 
 			if( clicked )
 			{
-				if( clip.Empty() )
+				if( clip.Empty() || ImGui::GetIO().MouseClickedPos[ ImGuiMouseButton_Left ].y >= min.y + thumbH )
 					app.Select( l, c );
 				else
 					app.Launch( l, c );
@@ -923,7 +1020,7 @@ void DrawClipGrid( App& app )
 	if( ImGui::Button( "+ Layer" ) )
 		comp.AddLayer();
 	ImGui::SameLine();
-	ImGui::TextDisabled( "Drop HAP clips or sources on cells and effects on clips or layers. Drag a clip to move it, right-click for options." );
+	ImGui::TextDisabled( "Click a picture to launch a clip, its name to preview it. Drop clips and sources on cells, effects on clips or layers; drag a clip to move it, right-click for options." );
 	ImGui::Dummy( ImVec2( leftW + comp.ColumnCount() * ( cellW + gap ) + headerH, 0 ) );
 	ImGui::EndChild();
 
@@ -1335,14 +1432,70 @@ void DrawOutputPanel( App& app )
 		ImGui::End();
 		return;
 	}
-	if( ImGui::Button( "Advanced Output...", ImVec2( -FLT_MIN, 0 ) ) )
-		app.panels.advancedOutput = true;
 	std::vector< OutputWindow::Display > displays = OutputWindow::Displays();
+
+	// The mode: four buttons side by side, the one in use lit.
+	ImGui::SeparatorText( "Show the composition" );
+	float spacing = ImGui::GetStyle().ItemSpacing.x;
+	float width   = ( ImGui::GetContentRegionAvail().x - spacing * 3 ) / 4;
+	auto modeButton = [ & ]( const char* label, bool on ) {
+		if( on )
+		{
+			ImGui::PushStyleColor( ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4( theme::Accent ) );
+			ImGui::PushStyleColor( ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4( theme::Accent ) );
+			ImGui::PushStyleColor( ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4( theme::OnAccent ) );
+		}
+		bool clicked = ImGui::Button( label, ImVec2( width, 0 ) );
+		if( on )
+			ImGui::PopStyleColor( 3 );
+		return clicked;
+	};
+	if( modeButton( "Off", app.outputMode == OutputMode::Off ) )
+		app.SetOutputMode( OutputMode::Off );
+	ImGui::SameLine();
+	if( modeButton( "Window", app.outputMode == OutputMode::Window ) )
+		app.SetOutputMode( OutputMode::Window );
+	ImGui::SameLine();
+	if( modeButton( "Fullscreen", app.outputMode == OutputMode::Fullscreen ) )
+		ImGui::OpenPopup( "##fullscreenOn" );
+	if( ImGui::BeginPopup( "##fullscreenOn" ) )
+	{
+		ImGui::TextDisabled( "Fullscreen on" );
+		for( const OutputWindow::Display& d : displays )
+		{
+			std::string label = d.name + "  " + std::to_string( d.width ) + "x" + std::to_string( d.height ) + " @ " + std::to_string( d.refresh ) + " Hz";
+			if( ImGui::MenuItem( label.c_str(), nullptr, app.outputMode == OutputMode::Fullscreen && app.outputDisplay == d.monitorName ) )
+				app.SetOutputMode( OutputMode::Fullscreen, d.monitorName );
+		}
+		ImGui::EndPopup();
+	}
+	ImGui::SameLine();
+	if( modeButton( "Advanced", app.outputMode == OutputMode::Advanced ) )
+		app.SetOutputMode( OutputMode::Advanced );
+	ImGui::PushTextWrapPos( 0 );
+	switch( app.outputMode )
+	{
+	case OutputMode::Off: ImGui::TextDisabled( "Nothing is shown outside this window." ); break;
+	case OutputMode::Window:
+	case OutputMode::Fullscreen: ImGui::TextDisabled( "The whole composition - %s. Escape on the output turns it off.", app.quickOutputs.DeviceStatus( 0 ).c_str() ); break;
+	case OutputMode::Advanced: ImGui::TextDisabled( "The screens below, with their slices, warps and masks." ); break;
+	}
+	ImGui::PopTextWrapPos();
+
+	// The Advanced Output setup: kept whatever the mode, shown in Advanced.
+	ImGui::SeparatorText( "Advanced Output" );
+	if( ImGui::Button( "Advanced Output Settings...", ImVec2( -FLT_MIN, 0 ) ) )
+		app.panels.advancedOutput = true;
+	bool advanced = app.outputMode == OutputMode::Advanced;
+	if( !advanced )
+		ImGui::TextDisabled( "Not in use: press Advanced above to show it." );
 	for( size_t s = 0; s < app.advancedOutput.screens.size(); ++s )
 	{
 		Screen& screen = app.advancedOutput.screens[ s ];
 		ImGui::PushID( (int)s );
-		ImGui::SeparatorText( screen.name.c_str() );
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextUnformatted( screen.name.c_str() );
+		ImGui::SameLine( Ui( 90 ) );
 		std::string current = screen.device == OutputDevice::Display ? screen.display : OutputDeviceName( screen.device );
 		ImGui::SetNextItemWidth( -FLT_MIN );
 		if( ImGui::BeginCombo( "##device", current.c_str() ) )
@@ -1359,13 +1512,10 @@ void DrawOutputPanel( App& app )
 			}
 			ImGui::EndCombo();
 		}
-		ImGui::TextDisabled( "%dx%d, %d slice%s - %s", screen.width, screen.height, (int)screen.slices.size(), screen.slices.size() == 1 ? "" : "s",
-		                     app.outputs.DeviceStatus( s ).c_str() );
+		ImGui::TextDisabled( "%dx%d, %d slice%s%s%s", screen.width, screen.height, (int)screen.slices.size(), screen.slices.size() == 1 ? "" : "s",
+		                     advanced ? " - " : "", advanced ? app.outputs.DeviceStatus( s ).c_str() : "" );
 		ImGui::PopID();
 	}
-	ImGui::Spacing();
-	if( ImGui::Button( "Stop All Outputs", ImVec2( -FLT_MIN, 0 ) ) )
-		app.StopOutputs();
 	ImGui::End();
 }
 

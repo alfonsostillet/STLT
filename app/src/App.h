@@ -45,6 +45,16 @@ struct LaunchOptions
 	int oscPort = 0;                  // --osc PORT: listen for OSC on this port
 };
 
+// What the outputs show, as in Resolume's Output menu: nothing, the composition in a window or fullscreen on one
+// display, or the Advanced Output setup (screens, slices, warps, masks). The setup is kept whatever the mode.
+enum class OutputMode
+{
+	Off,
+	Window,
+	Fullscreen,
+	Advanced,
+};
+
 class App
 {
 public:
@@ -75,9 +85,14 @@ public:
 	void AddPluginFolder( const std::string& folder );
 	void RemovePluginFolder( const std::string& folder );
 
-	// Outputs: screen 0 on a display or in a window (the quick choices of the Output menu), all off.
+	// Outputs. SetOutputMode switches what is shown (`display`: the monitor for Fullscreen); ShowScreenOn puts a
+	// screen of the Advanced Output setup on a display or in a window, and makes Advanced the mode.
+	void SetOutputMode( OutputMode mode, const std::string& display = {} );
+	std::string OutputModeLabel() const; // "Off", "Window", "Fullscreen on DELL U2415", "Advanced"
 	void ShowScreenOn( size_t screen, OutputDevice device, const std::string& display = {} );
-	void StopOutputs();
+	void StopOutputs() { SetOutputMode( OutputMode::Off ); }
+	OutputMode outputMode = OutputMode::Off;
+	std::string outputDisplay;
 	bool SaveOutputPreset( const std::string& name );
 	bool LoadOutputPreset( const std::string& name );
 	std::vector< std::string > OutputPresets() const;
@@ -90,8 +105,8 @@ public:
 	bool Redo();
 	History history;
 
-	// Remote control: OSC and MIDI (see control/Control.h for the addresses). Learning: the next MIDI note or
-	// controller is mapped to learnTarget, the control last clicked.
+	// Remote control: OSC, MIDI and the computer's keyboard (see control/Control.h for the addresses). Learning:
+	// the next key, MIDI note or controller is mapped to learnTarget, the control last clicked.
 	bool ApplyControl( const std::string& address, bool hasValue, float value, bool momentary = false, float previous = 0 );
 	void SaveControlSettings() const;
 	ControlSettings control;
@@ -108,7 +123,9 @@ public:
 	std::vector< std::string > extraPluginFolders; // added by the user, besides the default ones
 	FrameInfo frame;
 	AdvancedOutputSetup advancedOutput;
-	OutputRenderer outputs;
+	OutputRenderer outputs;      // the Advanced Output setup: shown in Advanced mode, drawn for the editor's views
+	OutputRenderer quickOutputs; // the composition alone, in a window or fullscreen (Window and Fullscreen modes)
+	AdvancedOutputSetup quickOutput;
 	Workspaces workspaces;
 	PanelVisibility panels;
 	Fbo preview;
@@ -136,7 +153,16 @@ private:
 	void SavePluginFolders() const;
 	History::State Snapshot() const;
 	void PollRemote();
+	void PollKeyboard();
 	void UpdateAudio();
+	// The Preview Monitor plays the selected clip even when it is not playing on its layer, with the clip's own
+	// player (started for the preview and stopped when another clip is selected).
+	void UpdatePreview( double dt );
+	ClipPlayer* previewPlayer = nullptr;
+	void UpdateQuickOutput();
+	void SaveOutputMode() const;
+	std::string quickOutputKey; // what quickOutput was made for
+	std::vector< std::pair< int, std::string > > keysHeld; // mapped keys down (ImGuiKey), to release them
 	double lastRemoteConfigure = -1e9;
 	std::map< int, float > lastMidiValues; // by note or controller: buttons act on the press
 	// Takes a composition back to an earlier state, keeping the players, generators and effects that are still

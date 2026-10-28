@@ -115,8 +115,14 @@ static void TestSettings()
 	s.midiInputsOff = { "Launchpad" };
 	s.midi.push_back( { { MidiKey::Type::Controller, 2, 14 }, "/composition/master" } );
 	s.midi.push_back( { { MidiKey::Type::Note, 0, 36 }, "/composition/layers/1/clips/1/connect" } );
+	KeyChord chord{ "Q", true, true, false };
+	s.keys.push_back( { chord, "/composition/layers/2/clear" } );
+	s.keys.push_back( { { "F5" }, "/composition/tempocontroller/tempotap" } );
 	ControlSettings loaded;
 	CHECK( loaded.Load( s.Save() ) );
+	CHECK( loaded.keys.size() == 2 && loaded.keys[ 0 ].chord == chord && loaded.keys[ 0 ].address == "/composition/layers/2/clear" );
+	CHECK( loaded.keys.size() == 2 && loaded.keys[ 1 ].chord == KeyChord{ "F5" } );
+	CHECK( KeyChordName( chord ) == "Ctrl+Shift+Q" && KeyChordName( { "Space" } ) == "Space" );
 	CHECK( loaded.oscEnabled && loaded.oscPort == 9000 && loaded.midiInputsOff.size() == 1 && loaded.midi.size() == 2 );
 	CHECK( loaded.midi.size() == 2 && loaded.midi[ 0 ].key == s.midi[ 0 ].key && loaded.midi[ 1 ].address == s.midi[ 1 ].address );
 	CHECK( !loaded.Load( "{}" ) && loaded.oscPort == 9000 );
