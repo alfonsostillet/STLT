@@ -10,7 +10,8 @@ bool ControlTarget::IsButton() const
 {
 	return kind == Kind::ClipConnect || kind == Kind::ColumnConnect || kind == Kind::LayerClear || kind == Kind::TempoTap || kind == Kind::Resync
 	       || kind == Kind::Stop || kind == Kind::ClipCue || kind == Kind::LayerCue || kind == Kind::LayerNextClip || kind == Kind::LayerPrevClip
-	       || kind == Kind::SelectedNextClip || kind == Kind::SelectedPrevClip || kind == Kind::NextColumn || kind == Kind::PrevColumn;
+	       || kind == Kind::SelectedNextClip || kind == Kind::SelectedPrevClip || kind == Kind::NextColumn || kind == Kind::PrevColumn
+	       || kind == Kind::DeckSelect || kind == Kind::NextDeck || kind == Kind::PrevDeck;
 }
 
 bool ControlTarget::IsSwitch() const
@@ -110,6 +111,10 @@ bool ParseControlAddress( const std::string& address, ControlTarget& t )
 			t.kind = Kind::NextColumn;
 		else if( p[ 1 ] == "connectprevcolumn" )
 			t.kind = Kind::PrevColumn;
+		else if( p[ 1 ] == "selectnextdeck" )
+			t.kind = Kind::NextDeck;
+		else if( p[ 1 ] == "selectprevdeck" )
+			t.kind = Kind::PrevDeck;
 		return t.kind != Kind::None;
 	}
 	if( n == 3 && p[ 1 ] == "video" && p[ 2 ] == "opacity" )
@@ -129,6 +134,12 @@ bool ParseControlAddress( const std::string& address, ControlTarget& t )
 		else if( p[ 2 ] == "resync" )
 			t.kind = Kind::Resync;
 		return t.kind != Kind::None;
+	}
+	if( n == 4 && p[ 1 ] == "decks" && p[ 3 ] == "select" )
+	{
+		t.slot = Index( p[ 2 ] );
+		t.kind = Kind::DeckSelect;
+		return t.slot >= 0;
 	}
 	if( n == 4 && p[ 1 ] == "columns" && p[ 3 ] == "connect" )
 	{

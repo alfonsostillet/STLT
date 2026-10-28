@@ -223,6 +223,95 @@ void Composition::AddLayer()
 	layer.name = "Layer " + std::to_string( layers.size() + 1 );
 	layer.clips.resize( columns.size() );
 	layers.push_back( std::move( layer ) );
+	Normalise(); // a row in the other decks too
+}
+
+void Composition::RemoveLayer( int index )
+{
+	if( index < 0 || index >= (int)layers.size() || layers.size() <= 1 )
+		return;
+	layers.erase( layers.begin() + index );
+	for( int d = 0; d < (int)decks.size(); ++d )
+		if( d != deck && index < (int)decks[ d ].rows.size() )
+			decks[ d ].rows.erase( decks[ d ].rows.begin() + index );
+	// Clips playing from the rows above move down with them.
+	for( Layer& layer : layers )
+	{
+		if( layer.activeRow == index )
+			layer.active = layer.activeRow = -1;
+		else if( layer.activeRow > index )
+			--layer.activeRow;
+		if( layer.previousRow == index )
+			layer.previous = layer.previousRow = -1;
+		else if( layer.previousRow > index )
+			--layer.previousRow;
+	}
+	Normalise();
+}
+
+void Composition::AddDeck( const std::string& name )
+{
+	Deck d;
+	d.name = name;
+	for( int i = 0; i < 9; ++i )
+		d.columns.push_back( "Column " + std::to_string( i + 1 ) );
+	decks.push_back( std::move( d ) );
+	Normalise();
+}
+
+void Composition::ShowDeck( int index )
+{
+	if( index < 0 || index >= (int)decks.size() || index == deck )
+		return;
+	// The deck on show goes back to its place; the other one comes into the layers. Moving the vectors keeps the
+	// clips where they are in memory.
+	Deck& shown = decks[ deck ];
+	shown.columns = std::move( columns );
+	shown.rows.resize( layers.size() );
+	for( int l = 0; l < (int)layers.size(); ++l )
+		shown.rows[ l ] = std::move( layers[ l ].clips );
+	Deck& next = decks[ index ];
+	columns    = std::move( next.columns );
+	next.columns.clear();
+	for( int l = 0; l < (int)layers.size(); ++l )
+		layers[ l ].clips = l < (int)next.rows.size() ? std::move( next.rows[ l ] ) : std::vector< Clip >{};
+	next.rows.clear();
+	deck           = index;
+	selectedColumn = -1;
+	activeColumn   = -1;
+	Normalise();
+}
+
+void Composition::RemoveDeck( int index )
+{
+	if( index < 0 || index >= (int)decks.size() || decks.size() <= 1 )
+		return;
+	if( index == deck )
+		ShowDeck( index == 0 ? 1 : index - 1 );
+	decks.erase( decks.begin() + index );
+	if( deck > index )
+		--deck;
+	for( Layer& layer : layers )
+	{
+		if( layer.active >= 0 && layer.activeDeck == index )
+			layer.active = layer.activeRow = -1;
+		else if( layer.activeDeck > index )
+			--layer.activeDeck;
+		if( layer.previous >= 0 && layer.previousDeck == index )
+			layer.previous = layer.previousRow = -1;
+		else if( layer.previousDeck > index )
+			--layer.previousDeck;
+	}
+	Normalise();
+}
+
+Clip* Composition::ClipIn( int d, int row, int column )
+{
+	if( d == deck )
+		return ClipAt( row, column );
+	if( d < 0 || d >= (int)decks.size() || row < 0 || row >= (int)decks[ d ].rows.size() || column < 0 || column >= (int)decks[ d ].rows[ row ].size() )
+		return nullptr;
+	return &decks[ d ].rows[ row ][ column ];
 }
 
 void Composition::AddColumn()
@@ -233,15 +322,38 @@ void Composition::AddColumn()
 
 void Composition::Normalise()
 {
+	if( decks.empty() )
+		decks = FirstDeck();
+	deck = std::clamp( deck, 0, (int)decks.size() - 1 );
+	// Every deck has a row per layer, as wide as its columns.
+	for( int d = 0; d < (int)decks.size(); ++d )
+	{
+		Deck& k = decks[ d ];
+		if( d == deck )
+		{
+			k.columns.clear();
+			k.rows.clear();
+			continue;
+		}
+		size_t widest = k.columns.size();
+		for( const std::vector< Clip >& row : k.rows )
+			widest = std::max( widest, row.size() );
+		while( k.columns.size() < widest )
+			k.columns.push_back( "Column " + std::to_string( k.columns.size() + 1 ) );
+		k.rows.resize( layers.size() );
+		for( std::vector< Clip >& row : k.rows )
+			row.resize( k.columns.size() );
+	}
+	auto width = [ & ]( int d ) { return d == deck ? (int)columns.size() : d >= 0 && d < (int)decks.size() ? (int)decks[ d ].columns.size() : 0; };
 	for( int l = 0; l < (int)layers.size(); ++l )
 	{
 		Layer& layer = layers[ l ];
 		layer.clips.resize( columns.size() );
 		if( layer.active >= 0 && layer.activeRow < 0 )
 			layer.activeRow = l;
-		if( layer.active >= (int)columns.size() || layer.activeRow >= (int)layers.size() )
+		if( layer.active >= width( layer.activeDeck ) || layer.activeRow >= (int)layers.size() )
 			layer.active = layer.activeRow = -1;
-		if( layer.previous >= (int)columns.size() || layer.previousRow >= (int)layers.size() || layer.previous < 0 )
+		if( layer.previous >= width( layer.previousDeck ) || layer.previousRow >= (int)layers.size() || layer.previous < 0 )
 			layer.previous = layer.previousRow = -1;
 	}
 	selectedLayer = std::clamp( selectedLayer, 0, std::max( 0, (int)layers.size() - 1 ) );
@@ -269,24 +381,21 @@ Clip* Composition::ActiveClip( int layer )
 {
 	if( layer < 0 || layer >= (int)layers.size() || layers[ layer ].active < 0 )
 		return nullptr;
-	return ClipAt( layers[ layer ].activeRow, layers[ layer ].active );
+	return ClipIn( layers[ layer ].activeDeck, layers[ layer ].activeRow, layers[ layer ].active );
 }
 
 Clip* Composition::OutgoingClip( int layer )
 {
 	if( layer < 0 || layer >= (int)layers.size() || layers[ layer ].previous < 0 )
 		return nullptr;
-	return ClipAt( layers[ layer ].previousRow, layers[ layer ].previous );
+	return ClipIn( layers[ layer ].previousDeck, layers[ layer ].previousRow, layers[ layer ].previous );
 }
 
-int Composition::LayerShowing( int row, int column ) const
+int Composition::LayerShowingIn( int d, int row, int column ) const
 {
 	for( int l = 0; l < (int)layers.size(); ++l )
-	{
-		const Layer& layer = layers[ l ];
-		if( ( layer.active == column && layer.activeRow == row ) || ( layer.previous == column && layer.previousRow == row ) )
+		if( layers[ l ].Plays( d, row, column ) || layers[ l ].FadesOut( d, row, column ) )
 			return l;
-	}
 	return -1;
 }
 
@@ -352,7 +461,55 @@ static Animation LoadAnimation( const nlohmann::json& j )
 	return a;
 }
 
-std::string SaveComposition( const Composition& c )
+static nlohmann::json SaveClip( const Clip& clip )
+{
+	using nlohmann::json;
+	if( clip.Empty() )
+		return nullptr;
+	json k;
+	if( clip.IsGenerator() )
+	{
+		json state       = json::parse( clip.generator ? SaveEffectState( *clip.generator ) : clip.generatorState, nullptr, false );
+		k[ "generator" ] = state.is_object() ? state : json{ { "id", clip.generatorId } };
+	}
+	else
+		k[ "path" ] = clip.path;
+	k[ "name" ]      = clip.name;
+	k[ "speed" ]     = clip.speed;
+	k[ "direction" ] = clip.direction;
+	k[ "playMode" ]  = PlayModeName( clip.playMode );
+	k[ "opacity" ]   = clip.opacity;
+	k[ "fit" ]       = FitModeName( clip.fit );
+	k[ "position" ]  = { clip.positionX, clip.positionY };
+	k[ "scale" ]     = clip.scale;
+	k[ "rotation" ]  = clip.rotation;
+	k[ "volume" ]    = clip.volume;
+	if( clip.inPoint > 0 )
+		k[ "in" ] = clip.inPoint;
+	if( clip.outPoint >= 0 )
+		k[ "out" ] = clip.outPoint;
+	json cues = json::array();
+	bool anyCue = false;
+	for( double cue : clip.cues )
+	{
+		cues.push_back( cue >= 0 ? json( cue ) : json( nullptr ) );
+		anyCue |= cue >= 0;
+	}
+	if( anyCue )
+		k[ "cues" ] = cues;
+	if( clip.syncBeats > 0 )
+		k[ "syncBeats" ] = clip.syncBeats;
+	json animations = json::object();
+	for( int p = 0; p < (int)ClipProperty::Count; ++p )
+		if( clip.animations[ p ].mode != AnimMode::Off )
+			animations[ ClipPropertyName( (ClipProperty)p ) ] = SaveAnimation( clip.animations[ p ] );
+	if( !animations.empty() )
+		k[ "animations" ] = animations;
+	k[ "effects" ]   = SaveChain( clip.effects );
+	return k;
+}
+
+std::string SaveComposition( const Composition& c, bool withShownDeck )
 {
 	using nlohmann::json;
 	json root;
@@ -368,7 +525,6 @@ std::string SaveComposition( const Composition& c )
 	root[ "launchQuantize" ] = LaunchQuantizeName( c.quantize );
 	root[ "crossfader" ] = c.crossfader;
 	root[ "clipTarget" ] = ClipTargetName( c.target );
-	root[ "columns" ] = c.columns;
 	root[ "effects" ] = SaveChain( c.effects );
 	json layers       = json::array();
 	for( const Layer& layer : c.layers )
@@ -386,60 +542,35 @@ std::string SaveComposition( const Composition& c )
 		if( layer.opacityAnimation.mode != AnimMode::Off )
 			l[ "opacityAnimation" ] = SaveAnimation( layer.opacityAnimation );
 		l[ "transition" ] = { { "mode", TransitionModeName( layer.transition ) }, { "duration", layer.transitionDuration }, { "beats", layer.transitionInBeats } };
-		json clips     = json::array();
-		for( const Clip& clip : layer.clips )
-		{
-			if( clip.Empty() )
-			{
-				clips.push_back( nullptr );
-				continue;
-			}
-			json k;
-			if( clip.IsGenerator() )
-			{
-				json state       = json::parse( clip.generator ? SaveEffectState( *clip.generator ) : clip.generatorState, nullptr, false );
-				k[ "generator" ] = state.is_object() ? state : json{ { "id", clip.generatorId } };
-			}
-			else
-				k[ "path" ] = clip.path;
-			k[ "name" ]      = clip.name;
-			k[ "speed" ]     = clip.speed;
-			k[ "direction" ] = clip.direction;
-			k[ "playMode" ]  = PlayModeName( clip.playMode );
-			k[ "opacity" ]   = clip.opacity;
-			k[ "fit" ]       = FitModeName( clip.fit );
-			k[ "position" ]  = { clip.positionX, clip.positionY };
-			k[ "scale" ]     = clip.scale;
-			k[ "rotation" ]  = clip.rotation;
-			k[ "volume" ]    = clip.volume;
-			if( clip.inPoint > 0 )
-				k[ "in" ] = clip.inPoint;
-			if( clip.outPoint >= 0 )
-				k[ "out" ] = clip.outPoint;
-			json cues = json::array();
-			bool anyCue = false;
-			for( double cue : clip.cues )
-			{
-				cues.push_back( cue >= 0 ? json( cue ) : json( nullptr ) );
-				anyCue |= cue >= 0;
-			}
-			if( anyCue )
-				k[ "cues" ] = cues;
-			if( clip.syncBeats > 0 )
-				k[ "syncBeats" ] = clip.syncBeats;
-			json animations = json::object();
-			for( int p = 0; p < (int)ClipProperty::Count; ++p )
-				if( clip.animations[ p ].mode != AnimMode::Off )
-					animations[ ClipPropertyName( (ClipProperty)p ) ] = SaveAnimation( clip.animations[ p ] );
-			if( !animations.empty() )
-				k[ "animations" ] = animations;
-			k[ "effects" ]   = SaveChain( clip.effects );
-			clips.push_back( k );
-		}
-		l[ "clips" ] = clips;
 		layers.push_back( l );
 	}
 	root[ "layers" ] = layers;
+	// The clips, deck by deck: its columns, then a row of clips per layer.
+	json decks = json::array();
+	for( int d = 0; d < (int)c.decks.size(); ++d )
+	{
+		bool shown = d == c.deck;
+		json k;
+		k[ "name" ]    = c.decks[ d ].name;
+		k[ "columns" ] = shown ? c.columns : c.decks[ d ].columns;
+		json rows      = json::array();
+		for( int r = 0; r < (int)c.layers.size(); ++r )
+		{
+			json row = json::array();
+			if( shown )
+				for( const Clip& clip : c.layers[ r ].clips )
+					row.push_back( SaveClip( clip ) );
+			else if( r < (int)c.decks[ d ].rows.size() )
+				for( const Clip& clip : c.decks[ d ].rows[ r ] )
+					row.push_back( SaveClip( clip ) );
+			rows.push_back( row );
+		}
+		k[ "rows" ] = rows;
+		decks.push_back( k );
+	}
+	root[ "decks" ] = decks;
+	if( withShownDeck )
+		root[ "deck" ] = c.deck;
 	return root.dump( 2 );
 }
 
@@ -452,6 +583,49 @@ static Enum ByName( const nlohmann::json& value, const char* ( *name )( Enum ), 
 		if( value.get< std::string >() == name( (Enum)i ) )
 			return (Enum)i;
 	return fallback;
+}
+
+static Clip LoadClip( const nlohmann::json& k )
+{
+	using nlohmann::json;
+	Clip clip;
+	if( k.is_object() )
+	{
+		clip.path      = k.value( "path", "" );
+		if( k.contains( "generator" ) && k[ "generator" ].is_object() && k[ "generator" ].contains( "id" ) )
+		{
+			clip.generatorId    = k[ "generator" ].value( "id", "" );
+			clip.generatorState = k[ "generator" ].dump();
+		}
+		if( k.contains( "effects" ) )
+			clip.effects = LoadChain( k[ "effects" ] );
+		clip.name      = k.value( "name", "" );
+		clip.speed     = k.value( "speed", 1.0f );
+		clip.direction = std::clamp( k.value( "direction", 1 ), -1, 1 );
+		clip.playMode  = k.value( "playMode", "" ) == "Play Once" ? PlayMode::Once // the name before Play Once & Clear
+		                                                         : ByName( k.value( "playMode", json() ), PlayModeName, PlayMode::Loop );
+		clip.opacity   = k.value( "opacity", 1.0f );
+		clip.fit       = ByName( k.value( "fit", json() ), FitModeName, FitMode::Fit );
+		if( k.contains( "position" ) && k[ "position" ].is_array() && k[ "position" ].size() == 2 )
+		{
+			clip.positionX = k[ "position" ][ 0 ].get< float >();
+			clip.positionY = k[ "position" ][ 1 ].get< float >();
+		}
+		clip.scale    = k.value( "scale", 1.0f );
+		clip.rotation = k.value( "rotation", 0.0f );
+		clip.volume   = std::clamp( k.value( "volume", 1.0f ), 0.0f, 1.0f );
+		clip.inPoint  = std::max( 0.0, k.value( "in", 0.0 ) );
+		clip.outPoint = k.value( "out", -1.0 );
+		if( k.contains( "cues" ) && k[ "cues" ].is_array() )
+			for( int i = 0; i < kCuePoints && i < (int)k[ "cues" ].size(); ++i )
+				clip.cues[ i ] = k[ "cues" ][ i ].is_number() ? k[ "cues" ][ i ].get< double >() : -1.0;
+		clip.syncBeats = std::max( 0.0f, k.value( "syncBeats", 0.0f ) );
+		if( k.contains( "animations" ) && k[ "animations" ].is_object() )
+			for( int p = 0; p < (int)ClipProperty::Count; ++p )
+				if( k[ "animations" ].contains( ClipPropertyName( (ClipProperty)p ) ) )
+					clip.animations[ p ] = LoadAnimation( k[ "animations" ][ ClipPropertyName( (ClipProperty)p ) ] );
+	}
+	return clip;
 }
 
 bool LoadComposition( const std::string& text, Composition& out, std::string& error )
@@ -503,55 +677,50 @@ bool LoadComposition( const std::string& text, Composition& out, std::string& er
 				layer.transitionDuration = std::max( 0.0f, t.value( "duration", 0.0f ) );
 				layer.transitionInBeats  = t.value( "beats", false );
 			}
-			if( l.contains( "clips" ) && l[ "clips" ].is_array() )
+			if( l.contains( "clips" ) && l[ "clips" ].is_array() ) // before decks: the clips were the layer's
 				for( const json& k : l[ "clips" ] )
-				{
-					Clip clip;
-					if( k.is_object() )
-					{
-						clip.path      = k.value( "path", "" );
-						if( k.contains( "generator" ) && k[ "generator" ].is_object() && k[ "generator" ].contains( "id" ) )
-						{
-							clip.generatorId    = k[ "generator" ].value( "id", "" );
-							clip.generatorState = k[ "generator" ].dump();
-						}
-						if( k.contains( "effects" ) )
-							clip.effects = LoadChain( k[ "effects" ] );
-						clip.name      = k.value( "name", "" );
-						clip.speed     = k.value( "speed", 1.0f );
-						clip.direction = std::clamp( k.value( "direction", 1 ), -1, 1 );
-						clip.playMode  = k.value( "playMode", "" ) == "Play Once" ? PlayMode::Once // the name before Play Once & Clear
-						                                                         : ByName( k.value( "playMode", json() ), PlayModeName, PlayMode::Loop );
-						clip.opacity   = k.value( "opacity", 1.0f );
-						clip.fit       = ByName( k.value( "fit", json() ), FitModeName, FitMode::Fit );
-						if( k.contains( "position" ) && k[ "position" ].is_array() && k[ "position" ].size() == 2 )
-						{
-							clip.positionX = k[ "position" ][ 0 ].get< float >();
-							clip.positionY = k[ "position" ][ 1 ].get< float >();
-						}
-						clip.scale    = k.value( "scale", 1.0f );
-						clip.rotation = k.value( "rotation", 0.0f );
-						clip.volume   = std::clamp( k.value( "volume", 1.0f ), 0.0f, 1.0f );
-						clip.inPoint  = std::max( 0.0, k.value( "in", 0.0 ) );
-						clip.outPoint = k.value( "out", -1.0 );
-						if( k.contains( "cues" ) && k[ "cues" ].is_array() )
-							for( int i = 0; i < kCuePoints && i < (int)k[ "cues" ].size(); ++i )
-								clip.cues[ i ] = k[ "cues" ][ i ].is_number() ? k[ "cues" ][ i ].get< double >() : -1.0;
-						clip.syncBeats = std::max( 0.0f, k.value( "syncBeats", 0.0f ) );
-						if( k.contains( "animations" ) && k[ "animations" ].is_object() )
-							for( int p = 0; p < (int)ClipProperty::Count; ++p )
-								if( k[ "animations" ].contains( ClipPropertyName( (ClipProperty)p ) ) )
-									clip.animations[ p ] = LoadAnimation( k[ "animations" ][ ClipPropertyName( (ClipProperty)p ) ] );
-					}
-					layer.clips.push_back( std::move( clip ) );
-				}
+					layer.clips.push_back( LoadClip( k ) );
 			c.layers.push_back( std::move( layer ) );
 		}
+	if( c.layers.empty() )
+		c.AddLayer();
+	if( root.contains( "decks" ) && root[ "decks" ].is_array() && !root[ "decks" ].empty() )
+	{
+		// Every deck is stored apart; the one shown then moves into the layers.
+		c.decks.clear();
+		for( const json& k : root[ "decks" ] )
+		{
+			Deck d;
+			d.name = k.value( "name", "Deck " + std::to_string( c.decks.size() + 1 ) );
+			if( k.contains( "columns" ) && k[ "columns" ].is_array() )
+				for( const json& name : k[ "columns" ] )
+					d.columns.push_back( name.is_string() ? name.get< std::string >() : "Column" );
+			if( d.columns.empty() )
+				for( int i = 0; i < 9; ++i )
+					d.columns.push_back( "Column " + std::to_string( i + 1 ) );
+			if( k.contains( "rows" ) && k[ "rows" ].is_array() )
+				for( const json& row : k[ "rows" ] )
+				{
+					std::vector< Clip > clips;
+					if( row.is_array() )
+						for( const json& clip : row )
+							clips.push_back( LoadClip( clip ) );
+					d.rows.push_back( std::move( clips ) );
+				}
+			c.decks.push_back( std::move( d ) );
+		}
+		int shown = std::clamp( root.value( "deck", 0 ), 0, (int)c.decks.size() - 1 );
+		c.deck    = shown;
+		Deck& d   = c.decks[ shown ];
+		c.columns = std::move( d.columns );
+		for( int l = 0; l < (int)c.layers.size(); ++l )
+			c.layers[ l ].clips = l < (int)d.rows.size() ? std::move( d.rows[ l ] ) : std::vector< Clip >{};
+		d.columns.clear();
+		d.rows.clear();
+	}
 	if( c.columns.empty() )
 		for( int i = 0; i < 9; ++i )
 			c.columns.push_back( "Column " + std::to_string( i + 1 ) );
-	if( c.layers.empty() )
-		c.AddLayer();
 	size_t widest = c.columns.size();
 	for( const Layer& layer : c.layers )
 		widest = std::max( widest, layer.clips.size() );

@@ -925,6 +925,81 @@ void DrawClipGrid( App& app )
 		std::string generatorId;
 	} pendingLoad;
 
+	// Decks, as in Resolume: a tab each (a dot when a clip of it plays while another deck is shown), + adds one.
+	// Double-click or right-click a tab to rename or remove it.
+	{
+		static std::string renameText;
+		static int renaming = -1;
+		ImGui::PushStyleVar( ImGuiStyleVar_FramePadding, ImVec2( Ui( 10 ), Ui( 3 ) ) );
+		for( int d = 0; d < comp.DeckCount(); ++d )
+		{
+			ImGui::PushID( d );
+			if( d > 0 )
+				ImGui::SameLine( 0, Ui( 3 ) );
+			bool shown   = d == comp.deck;
+			bool playing = false;
+			for( const Layer& layer : comp.layers )
+				playing |= layer.active >= 0 && layer.activeDeck == d;
+			if( shown )
+			{
+				ImGui::PushStyleColor( ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4( theme::Accent ) );
+				ImGui::PushStyleColor( ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4( theme::Accent ) );
+				ImGui::PushStyleColor( ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4( theme::OnAccent ) );
+			}
+			std::string label = comp.decks[ d ].name + "##deck";
+			if( ImGui::Button( label.c_str() ) )
+				app.ShowDeck( d );
+			if( shown )
+				ImGui::PopStyleColor( 3 );
+			if( playing && !shown )
+			{
+				ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+				ImGui::GetWindowDrawList()->AddCircleFilled( ImVec2( a.x + Ui( 5 ), ( a.y + b.y ) / 2 ), Ui( 2.5f ), theme::Accent );
+			}
+			bool open = ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left );
+			if( ImGui::IsItemHovered() && !app.learning )
+				ImGui::SetTooltip( "%s%s\nDouble-click or right-click: rename or remove", comp.decks[ d ].name.c_str(),
+				                   playing && !shown ? " (a clip of it is playing)" : "" );
+			if( ImGui::IsItemHovered() && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
+				open = true;
+			if( open )
+			{
+				renaming   = d;
+				renameText = comp.decks[ d ].name;
+				ImGui::OpenPopup( "##deckMenu" );
+			}
+			if( ImGui::BeginPopup( "##deckMenu" ) )
+			{
+				ImGui::TextDisabled( "Deck name" );
+				ImGui::SetNextItemWidth( Ui( 180 ) );
+				if( ImGui::IsWindowAppearing() )
+					ImGui::SetKeyboardFocusHere();
+				bool done = ImGui::InputText( "##name", &renameText, ImGuiInputTextFlags_EnterReturnsTrue );
+				if( ( done || ImGui::IsItemDeactivatedAfterEdit() ) && renaming == d && !renameText.empty() )
+					comp.decks[ d ].name = renameText;
+				if( done )
+					ImGui::CloseCurrentPopup();
+				ImGui::Separator();
+				if( ImGui::MenuItem( "Remove Deck", nullptr, false, comp.DeckCount() > 1 ) )
+				{
+					app.RemoveDeck( d );
+					ImGui::EndPopup();
+					ImGui::PopID();
+					break;
+				}
+				ImGui::EndPopup();
+			}
+			MapTarget( app, "/composition/decks/" + std::to_string( d + 1 ) + "/select" );
+			ImGui::PopID();
+		}
+		ImGui::SameLine( 0, Ui( 3 ) );
+		if( ImGui::Button( "+##addDeck" ) )
+			app.AddDeck();
+		if( ImGui::IsItemHovered() && !app.learning )
+			ImGui::SetTooltip( "New deck: another page of clips over the same layers.\nWhat plays keeps playing when you change deck." );
+		ImGui::PopStyleVar();
+	}
+
 	// Move mode: a banner with what to do, and the box being dragged to pick clips.
 	struct PickBox
 	{
@@ -1154,7 +1229,10 @@ void DrawClipGrid( App& app )
 			ImVec2 p0( xT, y ), p1( xT + wThumb, y + upH );
 			ImGui::SetCursorScreenPos( p0 );
 			if( ImGui::InvisibleButton( "##picture", ImVec2( wThumb, upH ) ) && playing )
+			{
+				app.ShowDeck( layer.activeDeck ); // its clip may be in another deck
 				app.Select( layer.activeRow, layer.active );
+			}
 			draw->AddRectFilled( p0, p1, IM_COL32( 12, 13, 16, 255 ), Ui( 4 ) );
 			GLuint picture = !playing ? 0 : playing->player ? playing->player->Thumbnail().Texture() : playing->generatorThumbnail ? playing->generatorThumbnail->Texture() : 0;
 			if( picture )
@@ -1700,9 +1778,7 @@ void DrawLayerPanel( App& app )
 	ImGui::SameLine();
 	if( ImGui::Button( "Delete Layer" ) && comp.layers.size() > 1 )
 	{
-		app.ClearLayer( l );
-		comp.layers.erase( comp.layers.begin() + l );
-		comp.Normalise();
+		app.DeleteLayer( l );
 		ImGui::End();
 		return;
 	}

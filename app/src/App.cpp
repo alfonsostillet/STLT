@@ -378,7 +378,7 @@ void App::MoveClip( int fromLayer, int fromColumn, int toLayer, int toColumn )
 	{
 		std::swap( a.clips[ fromColumn ], a.clips[ toColumn ] );
 		for( Layer& layer : composition.layers )
-			if( layer.activeRow == fromLayer && ( layer.active == fromColumn || layer.active == toColumn ) )
+			if( layer.activeDeck == composition.deck && layer.activeRow == fromLayer && ( layer.active == fromColumn || layer.active == toColumn ) )
 				layer.active = layer.active == fromColumn ? toColumn : fromColumn;
 	}
 	else
@@ -388,6 +388,65 @@ void App::MoveClip( int fromLayer, int fromColumn, int toLayer, int toColumn )
 		std::swap( a.clips[ fromColumn ], b.clips[ toColumn ] );
 	}
 	Select( toLayer, toColumn );
+}
+
+void App::ShowDeck( int deck )
+{
+	if( deck < 0 || deck >= composition.DeckCount() || deck == composition.deck )
+		return;
+	// Waiting launches, picks and the selection name cells of the deck being left.
+	queuedLaunches.clear();
+	movePicked.clear();
+	composition.ShowDeck( deck );
+	SetStatus( "Deck: " + composition.decks[ deck ].name );
+}
+
+void App::AddDeck()
+{
+	int number = composition.DeckCount() + 1;
+	auto taken = [ & ]( const std::string& name ) {
+		return std::any_of( composition.decks.begin(), composition.decks.end(), [ & ]( const Deck& d ) { return d.name == name; } );
+	};
+	while( taken( "Deck " + std::to_string( number ) ) )
+		++number;
+	composition.AddDeck( "Deck " + std::to_string( number ) );
+	ShowDeck( composition.DeckCount() - 1 );
+}
+
+void App::RemoveDeck( int deck )
+{
+	if( deck < 0 || deck >= composition.DeckCount() || composition.DeckCount() <= 1 )
+		return;
+	// What plays from it stops first.
+	for( int l = 0; l < (int)composition.layers.size(); ++l )
+	{
+		const Layer& layer = composition.layers[ l ];
+		if( layer.previous >= 0 && layer.previousDeck == deck )
+			FinishTransition( l );
+		if( layer.active >= 0 && layer.activeDeck == deck )
+			ClearLayer( l );
+	}
+	queuedLaunches.clear();
+	movePicked.clear();
+	std::string name = composition.decks[ deck ].name;
+	composition.RemoveDeck( deck );
+	SetStatus( "Removed " + name );
+}
+
+void App::DeleteLayer( int layer )
+{
+	if( layer < 0 || layer >= (int)composition.layers.size() || composition.layers.size() <= 1 )
+		return;
+	// The layer stops, and so does whatever plays its row's clips on other layers.
+	for( int l = 0; l < (int)composition.layers.size(); ++l )
+	{
+		FinishTransition( l );
+		if( l == layer || ( composition.layers[ l ].active >= 0 && composition.layers[ l ].activeRow == layer ) )
+			ClearLayer( l );
+	}
+	queuedLaunches.clear();
+	movePicked.clear();
+	composition.RemoveLayer( layer );
 }
 
 void App::SetMoveMode( bool on )
@@ -473,7 +532,7 @@ bool App::MovePicked( int rows, int columns )
 		}
 	};
 	for( Layer& layer : composition.layers )
-		if( layer.active >= 0 )
+		if( layer.active >= 0 && layer.activeDeck == composition.deck )
 			moved( layer.activeRow, layer.active );
 	moved( composition.selectedRow, composition.selectedColumn );
 	for( size_t i = 0; i < movePicked.size(); ++i )
@@ -517,7 +576,8 @@ void App::Launch( int row, int column, bool now, int onLayer )
 	int showing = composition.LayerShowing( row, column );
 	if( showing >= 0 && showing != layer )
 		StopCell( row, column );
-	bool same = l.active == column && l.activeRow == row;
+	int deck  = composition.deck;
+	bool same = l.Plays( deck, row, column );
 	if( l.active >= 0 && !same )
 	{
 		// Another clip plays: it hands over through the layer's transition, or stops.
@@ -529,20 +589,22 @@ void App::Launch( int row, int column, bool now, int onLayer )
 			// A transition; or a cut, where the outgoing clip stays until the new one's first frame is decoded.
 			l.previous           = l.active;
 			l.previousRow        = l.activeRow;
+			l.previousDeck       = l.activeDeck;
 			l.transitionProgress = 0;
 			l.cutPending         = l.TransitionSeconds( composition.bpm ) <= 0;
 		}
 		else
 			ClearLayer( layer );
 	}
-	else if( l.previous == column && l.previousRow == row )
+	else if( l.FadesOut( deck, row, column ) )
 	{
 		// Back to the clip that was fading out: it simply goes on.
 		l.previous = l.previousRow = -1;
 		l.transitionProgress       = 1;
 	}
-	l.active    = column;
-	l.activeRow = row;
+	l.active     = column;
+	l.activeRow  = row;
+	l.activeDeck = deck;
 	if( clip.generator )
 		return;
 	// The player's decoders start on the first frame right away; it shows as soon as it is ready (a frame or two),
@@ -616,7 +678,7 @@ void App::JumpToCue( int row, int column, int cue )
 		return;
 	Clip& clip = *found;
 	int layer  = composition.LayerShowing( row, column );
-	if( layer < 0 || composition.layers[ layer ].active != column || composition.layers[ layer ].activeRow != row )
+	if( layer < 0 || !composition.layers[ layer ].Plays( composition.deck, row, column ) )
 		Launch( row, column, true );
 	if( composition.LayerShowing( row, column ) < 0 )
 		return;
@@ -632,7 +694,8 @@ void App::LaunchNextClip( int layer, int step )
 	int columns = composition.ColumnCount();
 	// Along the row of the clip playing (or waiting to), from it; else along the layer's own row, from the clip
 	// selected there or from its edge.
-	int row = l.active >= 0 ? l.activeRow : layer, from = l.active;
+	bool here = l.active >= 0 && l.activeDeck == composition.deck; // its clip may be in a deck not shown
+	int row = here ? l.activeRow : layer, from = here ? l.active : -1;
 	for( const QueuedLaunch& q : queuedLaunches )
 		if( q.layer == layer )
 			row = q.row, from = q.column;
@@ -715,9 +778,9 @@ void App::StopCell( int row, int column )
 	for( int l = 0; l < (int)composition.layers.size(); ++l )
 	{
 		Layer& layer = composition.layers[ l ];
-		if( layer.previous == column && layer.previousRow == row )
+		if( layer.FadesOut( composition.deck, row, column ) )
 			FinishTransition( l );
-		if( layer.active == column && layer.activeRow == row )
+		if( layer.Plays( composition.deck, row, column ) )
 			ClearLayer( l );
 	}
 }
@@ -757,20 +820,18 @@ bool App::OpenComposition( const std::string& path )
 	RestoreEffects();
 	history.Reset( Snapshot() );
 	int failures = 0;
-	for( Layer& layer : composition.layers )
-		for( Clip& clip : layer.clips )
+	composition.ForEachClip( [ & ]( Clip& clip, int, int, int ) {
+		if( clip.path.empty() )
+			return;
+		clip.player = std::make_unique< ClipPlayer >();
+		if( clip.player->Open( clip.path ) )
 		{
-			if( clip.path.empty() )
-				continue;
-			clip.player = std::make_unique< ClipPlayer >();
-			if( clip.player->Open( clip.path ) )
-			{
-				compositor.MakeThumbnail( *clip.player );
-				clip.audio = AudioVoice::Open( clip.path, audio.SampleRate() );
-			}
-			else
-				failures++;
+			compositor.MakeThumbnail( *clip.player );
+			clip.audio = AudioVoice::Open( clip.path, audio.SampleRate() );
 		}
+		else
+			failures++;
+	} );
 	compositionPath = path;
 	int missing = 0;
 	auto countMissing = [ & ]( const EffectChain& chain ) {
@@ -779,14 +840,11 @@ bool App::OpenComposition( const std::string& path )
 	};
 	countMissing( composition.effects );
 	for( const Layer& layer : composition.layers )
-	{
 		countMissing( layer.effects );
-		for( const Clip& clip : layer.clips )
-		{
-			countMissing( clip.effects );
-			missing += clip.IsGenerator() && !clip.generator ? 1 : 0;
-		}
-	}
+	composition.ForEachClip( [ & ]( const Clip& clip, int, int, int ) {
+		countMissing( clip.effects );
+		missing += clip.IsGenerator() && !clip.generator ? 1 : 0;
+	} );
 	if( missing )
 		failures += missing;
 	SetStatus( failures ? "Opened " + path + " (" + std::to_string( failures ) + " clips missing or unsupported)" : "Opened " + path, failures > 0 );
@@ -795,7 +853,8 @@ bool App::OpenComposition( const std::string& path )
 
 History::State App::Snapshot() const
 {
-	return { SaveComposition( composition ), SaveAdvancedOutput( advancedOutput ) };
+	// Which deck is shown is not an undo step.
+	return { SaveComposition( composition, false ), SaveAdvancedOutput( advancedOutput ) };
 }
 
 namespace
@@ -844,61 +903,66 @@ void App::RestoreComposition( const std::string& text )
 	auto same = [ & ]( const Clip& a, const Clip& b ) {
 		return !b.Empty() && a.path == b.path && a.generatorId == b.generatorId && std::find( taken.begin(), taken.end(), &b ) == taken.end();
 	};
-	auto find = [ & ]( const Clip& want, int l, int c ) -> Clip* {
-		if( l < (int)composition.layers.size() && c < (int)composition.layers[ l ].clips.size() && same( want, composition.layers[ l ].clips[ c ] ) )
-			return &composition.layers[ l ].clips[ c ];
-		for( Layer& layer : composition.layers )
-			for( Clip& clip : layer.clips )
-				if( same( want, clip ) )
-					return &clip;
-		return nullptr;
+	auto find = [ & ]( const Clip& want, int d, int l, int c ) -> Clip* {
+		if( Clip* there = composition.ClipIn( d, l, c ); there && same( want, *there ) )
+			return there;
+		Clip* found = nullptr;
+		composition.ForEachClip( [ & ]( Clip& clip, int, int, int ) {
+			if( !found && same( want, clip ) )
+				found = &clip;
+		} );
+		return found;
 	};
-	// The clip each layer plays, to follow it if the restored state has it in another column.
+	// The deck shown stays shown (showing a deck is not an undo step).
+	fresh.ShowDeck( std::min( composition.deck, fresh.DeckCount() - 1 ) );
+	// The clip each layer plays, to follow it if the restored state has it in another cell.
+	struct Cell
+	{
+		int deck = -1, row = -1, column = -1;
+	};
 	std::vector< const Clip* > playing( composition.layers.size(), nullptr );
-	std::vector< std::pair< int, int > > follow( composition.layers.size(), { -1, -1 } ); // row, column
+	std::vector< Cell > follow( composition.layers.size() );
 	for( int l = 0; l < (int)composition.layers.size(); ++l )
 		playing[ l ] = composition.ActiveClip( l );
 	for( int l = 0; l < (int)fresh.layers.size(); ++l )
-	{
-		Layer& layer = fresh.layers[ l ];
-		ReuseEffects( layer.effects, l < (int)composition.layers.size() ? &composition.layers[ l ].effects : nullptr );
-		for( int c = 0; c < (int)layer.clips.size(); ++c )
+		ReuseEffects( fresh.layers[ l ].effects, l < (int)composition.layers.size() ? &composition.layers[ l ].effects : nullptr );
+	fresh.ForEachClip( [ & ]( Clip& clip, int d, int l, int c ) {
+		if( clip.Empty() )
+			return;
+		Clip* old = find( clip, d, l, c );
+		if( !old )
+			return;
+		taken.push_back( old );
+		for( int p = 0; p < (int)playing.size(); ++p )
+			if( old == playing[ p ] )
+				follow[ p ] = { d, l, c };
+		clip.player             = std::move( old->player );
+		clip.audio              = std::move( old->audio );
+		clip.generatorThumbnail = std::move( old->generatorThumbnail );
+		clip.time               = old->time;
+		clip.bounceSign         = old->bounceSign;
+		clip.finished           = old->finished;
+		if( old->generator )
 		{
-			Clip& clip = layer.clips[ c ];
-			if( clip.Empty() )
-				continue;
-			Clip* old = find( clip, l, c );
-			if( !old )
-				continue;
-			taken.push_back( old );
-			for( int p = 0; p < (int)playing.size(); ++p )
-				if( old == playing[ p ] )
-					follow[ p ] = { l, c };
-			clip.player             = std::move( old->player );
-			clip.audio              = std::move( old->audio );
-			clip.generatorThumbnail = std::move( old->generatorThumbnail );
-			clip.time               = old->time;
-			clip.bounceSign         = old->bounceSign;
-			clip.finished           = old->finished;
-			if( old->generator )
-			{
-				clip.generator = std::move( old->generator );
-				ClearAnimations( *clip.generator );
-				LoadEffectState( *clip.generator, clip.generatorState );
-			}
-			ReuseEffects( clip.effects, &old->effects );
+			clip.generator = std::move( old->generator );
+			ClearAnimations( *clip.generator );
+			LoadEffectState( *clip.generator, clip.generatorState );
 		}
-	}
+		ReuseEffects( clip.effects, &old->effects );
+	} );
 	ReuseEffects( fresh.effects, &composition.effects );
 
 	// What plays and what is selected stays, where it still exists.
 	for( int l = 0; l < (int)fresh.layers.size() && l < (int)composition.layers.size(); ++l )
 	{
 		Layer& layer = fresh.layers[ l ];
-		auto [ row, column ] = follow[ l ].first >= 0 ? follow[ l ] : std::pair{ composition.layers[ l ].activeRow, composition.layers[ l ].active };
-		Clip* clip      = fresh.ClipAt( row, column );
-		layer.active    = clip && !clip->Empty() ? column : -1;
-		layer.activeRow = clip && !clip->Empty() ? row : -1;
+		const Layer& was = composition.layers[ l ];
+		Cell cell        = follow[ l ].row >= 0 ? follow[ l ] : Cell{ was.activeDeck, was.activeRow, was.active };
+		Clip* clip       = fresh.ClipIn( cell.deck, cell.row, cell.column );
+		bool kept        = clip && !clip->Empty();
+		layer.active     = kept ? cell.column : -1;
+		layer.activeRow  = kept ? cell.row : -1;
+		layer.activeDeck = kept ? cell.deck : 0;
 		layer.solo      = composition.layers[ l ].solo;
 	}
 	fresh.beat           = composition.beat;
@@ -910,17 +974,17 @@ void App::RestoreComposition( const std::string& text )
 	composition          = std::move( fresh );
 
 	RestoreEffects(); // creates the effects and generators that were not there
-	for( Layer& layer : composition.layers )
-		for( Clip& clip : layer.clips )
-			if( !clip.path.empty() && !clip.player )
+	composition.ForEachClip( [ & ]( Clip& clip, int, int, int ) {
+		if( !clip.path.empty() && !clip.player )
+		{
+			clip.player = std::make_unique< ClipPlayer >();
+			if( clip.player->Open( clip.path ) )
 			{
-				clip.player = std::make_unique< ClipPlayer >();
-				if( clip.player->Open( clip.path ) )
-				{
-					compositor.MakeThumbnail( *clip.player );
-					clip.audio = AudioVoice::Open( clip.path, audio.SampleRate() );
-				}
+				compositor.MakeThumbnail( *clip.player );
+				clip.audio = AudioVoice::Open( clip.path, audio.SampleRate() );
 			}
+		}
+	} );
 }
 
 bool App::Undo()
@@ -1114,6 +1178,18 @@ bool App::ApplyControl( const std::string& address, bool hasValue, float value, 
 		if( press && columnOk )
 			LaunchColumn( t.column );
 		return columnOk;
+	case Kind::DeckSelect:
+		if( press && t.slot < composition.DeckCount() )
+			ShowDeck( t.slot );
+		return t.slot < composition.DeckCount();
+	case Kind::NextDeck:
+	case Kind::PrevDeck:
+		if( press )
+		{
+			int count = composition.DeckCount();
+			ShowDeck( ( composition.deck + ( t.kind == Kind::NextDeck ? 1 : -1 ) + count ) % count );
+		}
+		return true;
 	case Kind::LayerClear:
 		if( press && layerOk )
 			ClearLayer( t.layer );
@@ -1144,7 +1220,18 @@ bool App::ApplyControl( const std::string& address, bool hasValue, float value, 
 		return layerOk && columnOk;
 	case Kind::LayerCue:
 		if( press && layerOk && composition.layers[ t.layer ].active >= 0 )
-			JumpToCue( composition.layers[ t.layer ].activeRow, composition.layers[ t.layer ].active, t.slot );
+		{
+			const Layer& l = composition.layers[ t.layer ];
+			Clip* clip     = composition.ActiveClip( t.layer );
+			if( l.activeDeck == composition.deck )
+				JumpToCue( l.activeRow, l.active, t.slot );
+			else if( clip && clip->Loaded() && t.slot >= 0 && t.slot < kCuePoints && clip->cues[ t.slot ] >= 0 )
+			{
+				// Its clip is in a deck not shown: it jumps where it plays.
+				clip->JumpTo( clip->cues[ t.slot ] );
+				clip->player->Update( clip->CurrentFrame(), clip->PlayDirection() );
+			}
+		}
 		return layerOk;
 	case Kind::LayerTransition:
 		if( layerOk )
@@ -1253,22 +1340,19 @@ void App::RestoreEffects()
 {
 	registry->Restore( composition.effects );
 	for( Layer& layer : composition.layers )
-	{
 		registry->Restore( layer.effects );
-		for( Clip& clip : layer.clips )
+	composition.ForEachClip( [ & ]( Clip& clip, int, int, int ) {
+		registry->Restore( clip.effects );
+		if( clip.IsGenerator() && !clip.generator )
 		{
-			registry->Restore( clip.effects );
-			if( clip.IsGenerator() && !clip.generator )
+			clip.generator = registry->Create( clip.generatorId );
+			if( clip.generator )
 			{
-				clip.generator = registry->Create( clip.generatorId );
-				if( clip.generator )
-				{
-					LoadEffectState( *clip.generator, clip.generatorState );
-					compositor.MakeGeneratorThumbnail( clip, frame );
-				}
+				LoadEffectState( *clip.generator, clip.generatorState );
+				compositor.MakeGeneratorThumbnail( clip, frame );
 			}
 		}
-	}
+	} );
 }
 
 void App::AddEffect( EffectChain& chain, const std::string& id, int position )
@@ -1637,10 +1721,10 @@ void App::UpdatePreview( double dt )
 	if( previewPlayer && previewPlayer != wanted )
 	{
 		// Stop the clip previewed until now, unless it has since been launched (or removed: then it is gone).
-		for( int row = 0; row < (int)composition.layers.size(); ++row )
-			for( int column = 0; column < (int)composition.layers[ row ].clips.size(); ++column )
-				if( composition.layers[ row ].clips[ column ].player.get() == previewPlayer && composition.LayerShowing( row, column ) < 0 )
-					previewPlayer->Deactivate();
+		composition.ForEachClip( [ & ]( Clip& clip, int deck, int row, int column ) {
+			if( clip.player.get() == previewPlayer && composition.LayerShowingIn( deck, row, column ) < 0 )
+				previewPlayer->Deactivate();
+		} );
 		previewPlayer = nullptr;
 	}
 	if( !wanted )

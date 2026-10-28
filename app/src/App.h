@@ -67,6 +67,11 @@ public:
 	void LoadClip( int layer, int column, const std::string& path );
 	void RemoveClip( int layer, int column );
 	void MoveClip( int fromLayer, int fromColumn, int toLayer, int toColumn );
+	// Decks: pages of clips over the same layers. What plays keeps playing when another deck is shown.
+	void ShowDeck( int deck );
+	void AddDeck(); // a new empty deck, shown
+	void RemoveDeck( int deck );
+	void DeleteLayer( int layer );
 	// Move mode (the Move menu): clips are picked in the deck, then moved together. Playing clips keep playing.
 	bool moveMode = false;
 	std::vector< std::pair< int, int > > movePicked; // (row, column) of the picked clips

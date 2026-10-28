@@ -166,6 +166,7 @@ struct Layer
 	std::vector< Clip > clips; // one per column; empty paths are empty cells
 	int active        = -1;    // playing column, or -1
 	int activeRow     = -1;    // the row (layer index) that column is in: this layer's own, or another one
+	int activeDeck    = 0;     // and the deck: a clip plays on when another deck is shown
 	float master      = 1.0f; // video and sound together
 	float opacity     = 1.0f;
 	float volume      = 1.0f; // the sound of its clips
@@ -186,14 +187,35 @@ struct Layer
 	// (0..1).
 	int previous             = -1;
 	int previousRow          = -1;
+	int previousDeck         = 0;
 	bool cutPending          = false; // a cut: the outgoing clip stays until the new one has its first frame
 	float transitionProgress = 1;
 
+	// Whether this layer plays, or fades out, the clip at deck/row/column.
+	bool Plays( int deck, int row, int column ) const { return active == column && activeRow == row && activeDeck == deck && active >= 0; }
+	bool FadesOut( int deck, int row, int column ) const { return previous == column && previousRow == row && previousDeck == deck && previous >= 0; }
 	float ShownOpacity( double beat ) const;
 	// How much the crossfader lets through (1 outside the groups): each side fades out over the far half.
 	float CrossfadeGain( float crossfader ) const;
 	double TransitionSeconds( double bpm ) const;
 };
+
+// A deck, as in Resolume: a page of clips, with its own columns, over the same layers. The deck on show keeps its
+// clips in the layers and the composition's columns; the others keep theirs here, one row per layer.
+struct Deck
+{
+	std::string name;
+	std::vector< std::string > columns;
+	std::vector< std::vector< Clip > > rows; // empty for the deck on show
+};
+
+// A deck list with the first deck (a vector's initialiser list would copy, and clips do not copy).
+inline std::vector< Deck > FirstDeck()
+{
+	std::vector< Deck > decks( 1 );
+	decks[ 0 ].name = "Deck 1";
+	return decks;
+}
 
 struct Composition
 {
@@ -210,9 +232,11 @@ struct Composition
 	double beat      = 0.0; // beats since start (runtime): drives beat-synced effects and animations
 	LaunchQuantize quantize = LaunchQuantize::Now;
 	ClipTarget target       = ClipTarget::OwnLayer;
-	std::vector< std::string > columns;
-	std::vector< Layer > layers; // index 0 is the bottom layer
+	std::vector< std::string > columns; // of the deck on show
+	std::vector< Layer > layers;        // index 0 is the bottom layer
 	EffectChain effects;
+	std::vector< Deck > decks = FirstDeck();
+	int deck = 0; // the deck on show
 
 	int selectedLayer  = 0;  // the layer the Layer panel shows (and layer based launches go to)
 	int selectedRow    = 0;  // the selected clip: its row and column
@@ -222,19 +246,46 @@ struct Composition
 	static Composition MakeDefault();
 	int ColumnCount() const { return (int)columns.size(); }
 	void AddLayer();
+	// Removes a layer and its row of clips in every deck (the caller stops what plays from it first).
+	void RemoveLayer( int layer );
 	void AddColumn();
+	int DeckCount() const { return (int)decks.size(); }
+	// Adds an empty deck (as many columns as a new composition) at the end; does not show it.
+	void AddDeck( const std::string& name );
+	// Shows another deck in the grid; what plays keeps playing.
+	void ShowDeck( int index );
+	// Removes a deck that is not the only one (the caller stops what plays from it first).
+	void RemoveDeck( int index );
+	// The cell at deck/row/column, whichever deck is shown (null outside).
+	Clip* ClipIn( int deck, int row, int column );
+	// Calls f( clip, deck, row, column ) for every cell of every deck.
+	template< typename F >
+	void ForEachClip( F&& f )
+	{
+		for( int d = 0; d < (int)decks.size(); ++d )
+			for( int r = 0; r < (int)layers.size(); ++r )
+			{
+				std::vector< Clip >* row = d == deck ? &layers[ r ].clips : r < (int)decks[ d ].rows.size() ? &decks[ d ].rows[ r ] : nullptr;
+				if( row )
+					for( int c = 0; c < (int)row->size(); ++c )
+						f( ( *row )[ c ], d, r, c );
+			}
+	}
 	Clip* SelectedClip();
 	Clip* ClipAt( int row, int column );
 	// The clip a layer plays, and the one it fades out during a transition (null: none).
 	Clip* ActiveClip( int layer );
 	Clip* OutgoingClip( int layer );
-	// The layer playing the clip at row/column, or fading it out; -1 when it is not on show.
-	int LayerShowing( int row, int column ) const;
+	// The layer playing the clip at row/column (of the deck on show, or of `deck`), or fading it out; -1 when it is
+	// not on show.
+	int LayerShowing( int row, int column ) const { return LayerShowingIn( deck, row, column ); }
+	int LayerShowingIn( int deck, int row, int column ) const;
 	// Makes every layer as wide as the column list.
 	void Normalise();
 };
 
-// Saving and loading as JSON. Clips are stored by path; players are created by the caller.
-std::string SaveComposition( const Composition& composition );
+// Saving and loading as JSON. Clips are stored by path; players are created by the caller. Without
+// `withShownDeck` the text leaves out which deck is shown (for undo, where showing a deck is not a step).
+std::string SaveComposition( const Composition& composition, bool withShownDeck = true );
 bool LoadComposition( const std::string& json, Composition& composition, std::string& error );
 }

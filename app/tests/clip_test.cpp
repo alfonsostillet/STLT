@@ -305,6 +305,57 @@ static void TestEvenFrames()
 	}
 }
 
+// Decks: pages of clips over the same layers; a clip plays on while another deck is shown; saving keeps them all,
+// and an undo snapshot does not depend on the deck shown.
+static void TestDecks()
+{
+	Composition c = Composition::MakeDefault();
+	c.layers[ 0 ].clips[ 1 ].path = "a.mov";
+	c.AddDeck( "Second" );
+	CHECK( c.DeckCount() == 2 && c.deck == 0 );
+	// Playing deck 1's clip at row 0, column 1.
+	c.layers[ 0 ].active     = 1;
+	c.layers[ 0 ].activeRow  = 0;
+	c.layers[ 0 ].activeDeck = 0;
+	Clip* playing            = c.ActiveClip( 0 );
+	CHECK( playing && playing->path == "a.mov" );
+	std::string before = SaveComposition( c, false );
+	c.ShowDeck( 1 );
+	CHECK( c.deck == 1 && c.ColumnCount() == 9 && c.layers[ 0 ].clips[ 1 ].Empty() );
+	// Still playing, from where it was in memory; not shown in this deck's cells.
+	CHECK( c.ActiveClip( 0 ) == playing && c.LayerShowing( 0, 1 ) < 0 && c.LayerShowingIn( 0, 0, 1 ) == 0 );
+	CHECK( SaveComposition( c, false ) == before );
+	c.layers[ 1 ].clips[ 2 ].path = "b.mov";
+	c.AddLayer(); // a row in every deck
+	CHECK( c.decks[ 0 ].rows.size() == c.layers.size() && c.decks[ 0 ].rows.back().size() == 9 );
+	int count = 0;
+	c.ForEachClip( [ & ]( Clip& clip, int, int, int ) { count += clip.Empty() ? 0 : 1; } );
+	CHECK( count == 2 );
+
+	// Saving and loading: every deck, the one shown included.
+	std::string text = SaveComposition( c );
+	Composition loaded;
+	std::string error;
+	CHECK( LoadComposition( text, loaded, error ) );
+	CHECK( loaded.DeckCount() == 2 && loaded.deck == 1 && loaded.decks[ 1 ].name == "Second" );
+	CHECK( loaded.layers[ 1 ].clips[ 2 ].path == "b.mov" && loaded.ClipIn( 0, 0, 1 ) && loaded.ClipIn( 0, 0, 1 )->path == "a.mov" );
+	CHECK( loaded.layers.size() == 4 );
+
+	// Removing the deck a clip plays from stops it; the other deck's numbers move down.
+	c.layers[ 1 ].active     = 2;
+	c.layers[ 1 ].activeRow  = 1;
+	c.layers[ 1 ].activeDeck = 1;
+	c.RemoveDeck( 0 );
+	CHECK( c.DeckCount() == 1 && c.deck == 0 && c.layers[ 0 ].active < 0 );
+	CHECK( c.layers[ 1 ].activeDeck == 0 && c.ActiveClip( 1 ) && c.ActiveClip( 1 )->path == "b.mov" );
+
+	// A composition from before decks: its clips become deck 1.
+	const char* old = R"({"format":"stlt-vj-composition","columns":["A","B"],"layers":[{"name":"L","clips":[null,{"path":"x.mov"}]}]})";
+	Composition legacy;
+	CHECK( LoadComposition( old, legacy, error ) );
+	CHECK( legacy.DeckCount() == 1 && legacy.ColumnCount() == 2 && legacy.layers[ 0 ].clips[ 1 ].path == "x.mov" );
+}
+
 int main()
 {
 	TestRange();
@@ -312,6 +363,7 @@ int main()
 	TestAnimationsAndTransitions();
 	TestSaving();
 	TestLayersAndRows();
+	TestDecks();
 	TestFrameClock();
 	TestEvenFrames();
 	if( failures )

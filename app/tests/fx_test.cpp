@@ -164,7 +164,7 @@ static void TestCompositionRoundTrip()
 	CHECK( again.find( "Not Here" ) != std::string::npos );
 	CHECK( again.find( "0.7" ) != std::string::npos );
 	nlohmann::json json = nlohmann::json::parse( again );
-	CHECK( json[ "layers" ][ 2 ][ "clips" ][ 3 ][ "generator" ][ "params" ][ "Count" ].get< float >() == 12 );
+	CHECK( json[ "decks" ][ 0 ][ "rows" ][ 2 ][ 3 ][ "generator" ][ "params" ][ "Count" ].get< float >() == 12 );
 }
 
 int main()

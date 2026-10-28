@@ -63,6 +63,9 @@ struct ControlTarget
 		SelectedPrevClip,
 		NextColumn,
 		PrevColumn,
+		DeckSelect, // slot: the deck
+		NextDeck,
+		PrevDeck,
 		Crossfader,
 		CompositionBypass,
 		AudioVolume,
@@ -78,7 +81,7 @@ struct ControlTarget
 	Kind kind  = Kind::None;
 	int layer  = -1; // 0-based
 	int column = -1; // 0-based
-	int slot   = -1; // effect position in its chain, or cue point, 0-based
+	int slot   = -1; // effect position in its chain, cue point or deck, 0-based
 	std::string param;
 	// Effect scope: the composition (layer < 0), a layer (column < 0) or a clip.
 

@@ -130,6 +130,10 @@ static void TestLayerHeaderAddresses()
 	CHECK( ParseControlAddress( "/composition/selectedlayer/connectnextclip", t ) && t.kind == Kind::SelectedNextClip && t.IsButton() );
 	CHECK( ParseControlAddress( "/composition/selectedlayer/connectprevclip", t ) && t.kind == Kind::SelectedPrevClip );
 	CHECK( ParseControlAddress( "/composition/connectnextcolumn", t ) && t.kind == Kind::NextColumn );
+	CHECK( ParseControlAddress( "/composition/decks/2/select", t ) && t.kind == Kind::DeckSelect && t.slot == 1 && t.IsButton() );
+	CHECK( ParseControlAddress( "/composition/selectnextdeck", t ) && t.kind == Kind::NextDeck );
+	CHECK( ParseControlAddress( "/composition/selectprevdeck", t ) && t.kind == Kind::PrevDeck );
+	CHECK( !ParseControlAddress( "/composition/decks/0/select", t ) );
 	CHECK( ParseControlAddress( "/composition/connectprevcolumn", t ) && t.kind == Kind::PrevColumn );
 	CHECK( ParseControlAddress( "/composition/crossfader/phase", t ) && t.kind == Kind::Crossfader );
 	CHECK( ParseControlAddress( "/composition/bypassed", t ) && t.kind == Kind::CompositionBypass && t.IsSwitch() );
