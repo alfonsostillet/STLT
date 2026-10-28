@@ -414,11 +414,15 @@ void App::Launch( int row, int column, bool now, int onLayer )
 	{
 		// Another clip plays: it hands over through the layer's transition, or stops.
 		FinishTransition( layer );
-		if( l.TransitionSeconds( composition.bpm ) > 0 )
+		Clip* outgoing = composition.ActiveClip( layer );
+		bool showing   = outgoing && ( outgoing->generator || ( outgoing->Loaded() && outgoing->player->HasFrame() ) );
+		if( l.TransitionSeconds( composition.bpm ) > 0 || showing )
 		{
+			// A transition; or a cut, where the outgoing clip stays until the new one's first frame is decoded.
 			l.previous           = l.active;
 			l.previousRow        = l.activeRow;
 			l.transitionProgress = 0;
+			l.cutPending         = l.TransitionSeconds( composition.bpm ) <= 0;
 		}
 		else
 			ClearLayer( layer );
@@ -433,10 +437,11 @@ void App::Launch( int row, int column, bool now, int onLayer )
 	l.activeRow = row;
 	if( clip.generator )
 		return;
+	// The player's decoders start on the first frame right away; it shows as soon as it is ready (a frame or two),
+	// without holding up the main thread.
 	clip.player->Activate();
 	clip.Restart();
-	// Decode the first frame now so the trigger shows on this very frame.
-	clip.player->ShowNow( clip.CurrentFrame() );
+	clip.player->Update( clip.CurrentFrame(), clip.PlayDirection() );
 }
 
 void App::LaunchColumn( int column, bool now )
@@ -508,7 +513,7 @@ void App::JumpToCue( int row, int column, int cue )
 	if( composition.LayerShowing( row, column ) < 0 )
 		return;
 	clip.JumpTo( clip.cues[ cue ] );
-	clip.player->ShowNow( clip.CurrentFrame() );
+	clip.player->Update( clip.CurrentFrame(), clip.PlayDirection() ); // the decoders start on it now
 }
 
 void App::LaunchNextClip( int layer, int step )
@@ -571,6 +576,7 @@ void App::FinishTransition( int layer )
 		outgoing->player->Deactivate();
 	l.previous = l.previousRow = -1;
 	l.transitionProgress       = 1;
+	l.cutPending               = false;
 }
 
 void App::ClearLayer( int layer )
@@ -1427,14 +1433,25 @@ void App::UpdatePlayback( double dt )
 		Layer& layer = composition.layers[ index ];
 		if( layer.active < 0 )
 			continue;
-		auto play = [ & ]( Clip& clip ) {
+		double step = composition.paused ? 0.0 : dt * composition.speed * layer.speed;
+		auto play   = [ & ]( Clip& clip ) {
 			if( !clip.Loaded() )
 				return; // generators run on composition time
-			if( !composition.paused )
-				clip.Advance( dt * composition.speed * layer.speed, composition.bpm );
-			clip.player->Update( clip.CurrentFrame(), composition.paused ? 0 : clip.PlayDirection() );
+			clip.Advance( step, composition.bpm );
+			clip.player->Update( clip.FrameFor( step, composition.bpm ), composition.paused ? 0 : clip.PlayDirection() );
 		};
-		if( layer.previous >= 0 )
+		if( layer.cutPending )
+		{
+			// A cut: the outgoing clip stays on until the new one has its first frame (decoded off the main thread).
+			Clip* incoming = composition.ActiveClip( index );
+			Clip* outgoing = composition.OutgoingClip( index );
+			bool ready     = !incoming || incoming->generator || !incoming->Loaded() || incoming->player->HasFrame();
+			if( ready || !outgoing )
+				FinishTransition( index );
+			else
+				play( *outgoing );
+		}
+		else if( layer.previous >= 0 )
 		{
 			// A transition: the outgoing clip plays on until it is over (time in seconds, or in beats).
 			double seconds = layer.TransitionSeconds( composition.bpm );
@@ -1453,6 +1470,17 @@ void App::UpdatePlayback( double dt )
 		if( clip.finished && clip.playMode == PlayMode::OnceClear )
 			ClearLayer( index ); // played once: the layer empties
 	}
+}
+
+double App::FrameStep( double measured )
+{
+	if( !frameClock )
+	{
+		GLFWmonitor* monitor    = glfwGetPrimaryMonitor();
+		const GLFWvidmode* mode = monitor ? glfwGetVideoMode( monitor ) : nullptr;
+		frameClock              = std::make_unique< FrameClock >( mode && mode->refreshRate > 0 ? 1.0 / mode->refreshRate : 1.0 / 60 );
+	}
+	return frameClock->Step( measured );
 }
 
 void App::UpdatePreview( double dt )
@@ -1478,18 +1506,19 @@ void App::UpdatePreview( double dt )
 		selected->Restart();
 		previewPlayer = wanted;
 	}
-	if( !composition.paused )
-		selected->Advance( dt * composition.speed, composition.bpm );
-	wanted->Update( selected->CurrentFrame(), composition.paused ? 0 : selected->PlayDirection() );
+	double step = composition.paused ? 0.0 : dt * composition.speed;
+	selected->Advance( step, composition.bpm );
+	wanted->Update( selected->FrameFor( step, composition.bpm ), composition.paused ? 0 : selected->PlayDirection() );
 }
 
 void App::Frame()
 {
 	workspaces.ApplyPending();
 	double now = glfwGetTime();
-	double dt  = std::min( now - lastTime, 0.1 );
-	lastTime   = now;
-	frameTimes.push_back( (float)( dt * 1000.0 ) );
+	double measured = std::min( now - lastTime, 0.1 );
+	double dt       = FrameStep( measured );
+	lastTime        = now;
+	frameTimes.push_back( (float)( measured * 1000.0 ) );
 	if( frameTimes.size() > 240 )
 		frameTimes.pop_front();
 
@@ -1526,11 +1555,18 @@ void App::Frame()
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
 	DrawUi();
-	// An edit has ended when nothing is held or being typed into: record it (and, every few frames, catch
-	// keyboard edits such as nudges).
-	bool editing = ImGui::IsAnyItemActive() || ImGui::IsMouseDown( ImGuiMouseButton_Left ) || ImGui::IsMouseDown( ImGuiMouseButton_Right );
-	if( !editing && ( wasEditing || frameCount % 20 == 0 ) )
+	// An edit has ended when nothing is held or being typed into: record it. Keyboard edits (nudges, shortcuts)
+	// end when their key comes up; anything else (a drop from the desktop, a file dialog) is caught every couple of
+	// seconds. Most frames serialise nothing.
+	bool editing     = ImGui::IsAnyItemActive() || ImGui::IsMouseDown( ImGuiMouseButton_Left ) || ImGui::IsMouseDown( ImGuiMouseButton_Right );
+	bool keyReleased = false;
+	for( int k = ImGuiKey_NamedKey_BEGIN; k < ImGuiKey_GamepadStart && !keyReleased; ++k )
+		keyReleased = ImGui::IsKeyReleased( (ImGuiKey)k );
+	if( !editing && ( wasEditing || keyReleased || now - lastRecord > 2.0 ) )
+	{
 		history.Record( Snapshot() );
+		lastRecord = now;
+	}
 	wasEditing = editing;
 	ImGui::Render();
 

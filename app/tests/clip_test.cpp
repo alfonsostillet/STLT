@@ -4,7 +4,9 @@
 #include <cstdio>
 #include <memory>
 #include <string>
+#include <vector>
 #include "Composition.h"
+#include "render/FrameClock.h"
 
 using namespace stltvj;
 
@@ -225,6 +227,84 @@ static void TestLayersAndRows()
 	CHECK( LoadComposition( old, loaded, error ) && loaded.layers[ 0 ].clips[ 3 ].playMode == PlayMode::Once );
 }
 
+// Deterministic noise in [-1, 1].
+static double Noise( unsigned& seed )
+{
+	seed = seed * 1664525u + 1013904223u;
+	return ( seed >> 8 ) / double( 1u << 24 ) * 2 - 1;
+}
+
+static void TestFrameClock()
+{
+	// A 59.94 Hz display whose vsync times reach the program with +-1.5 ms of jitter, missing one vsync now and
+	// then; the clock starts out believing 60 Hz.
+	const double period = 1.0 / 59.94;
+	FrameClock clock( 1.0 / 60 );
+	unsigned seed = 7;
+	double shown = 0, real = 0, previous = 0;
+	int uneven = 0, frames = 3000;
+	for( int n = 1; n <= frames; ++n )
+	{
+		real += period * ( n % 97 == 0 ? 2 : 1 );
+		double stamp = real + 0.0015 * Noise( seed );
+		double step  = clock.Step( stamp - previous );
+		previous     = stamp;
+		shown += step;
+		// Once learnt, steps are whole periods (apart from the rare payback of what the clock drifted).
+		double periods = step / clock.Period();
+		if( n > 300 && std::fabs( periods - std::round( periods ) ) > 1e-3 )
+			uneven++;
+	}
+	CHECK( clock.Locked() );
+	CHECK( std::fabs( clock.Period() - period ) < period * 0.002 );
+	CHECK( std::fabs( shown - real ) < period ); // never drifts
+	CHECK( uneven < frames / 100 );
+
+	// A clock that is not a display's: nothing to lock to, the measurements go through.
+	FrameClock free( 1.0 / 60 );
+	CHECK( free.Step( 0.0021 ) == 0.0021 && !free.Locked() );
+}
+
+static void TestEvenFrames()
+{
+	// A 24 fps clip on a 48 Hz display with jittery vsync times: every frame shows for exactly two refreshes.
+	Clip clip;
+	CHECK( OpenClip( clip ) );
+	const double period = 1.0 / 48;
+	FrameClock clock( period );
+	unsigned seed = 11;
+	double real = 0, previous = 0;
+	std::vector< int64_t > frames;
+	clip.Restart();
+	for( int n = 1; n <= 200; ++n )
+	{
+		real += period;
+		double stamp = real + 0.002 * Noise( seed );
+		double step  = clock.Step( stamp - previous );
+		previous     = stamp;
+		clip.Advance( step, 120 );
+		frames.push_back( clip.FrameFor( step, 120 ) );
+	}
+	int run = 0, wrong = 0, runs = 0;
+	for( size_t i = 1; i < frames.size(); ++i )
+	{
+		run++;
+		if( frames[ i ] != frames[ i - 1 ] )
+		{
+			if( runs++ > 0 && run != 2 ) // the first run starts mid-way
+				wrong++;
+			run = 0;
+		}
+	}
+	CHECK( runs > 50 && wrong == 0 );
+	if( wrong )
+	{
+		for( int64_t f : frames )
+			std::fprintf( stderr, "%lld ", (long long)f );
+		std::fprintf( stderr, "\n" );
+	}
+}
+
 int main()
 {
 	TestRange();
@@ -232,6 +312,8 @@ int main()
 	TestAnimationsAndTransitions();
 	TestSaving();
 	TestLayersAndRows();
+	TestFrameClock();
+	TestEvenFrames();
 	if( failures )
 	{
 		std::fprintf( stderr, "%d check(s) failed\n", failures );

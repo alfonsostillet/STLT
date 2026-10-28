@@ -55,7 +55,12 @@ bool ClipPlayer::Activate()
 		return false;
 
 	glPixelStorei( GL_UNPACK_ALIGNMENT, 1 );
-	std::vector< uint8_t > zeros( layout.planes[ 0 ].bytes );
+	// Compressed textures are created from zeros: one buffer for every player, grown when needed, so a launch
+	// allocates nothing.
+	static std::vector< uint8_t > zeros;
+	for( unsigned i = 0; i < layout.planeCount; ++i )
+		if( zeros.size() < layout.planes[ i ].bytes )
+			zeros.assign( layout.planes[ i ].bytes, 0 );
 	for( unsigned i = 0; i < layout.planeCount; ++i )
 	{
 		const Plane& plane = layout.planes[ i ];
@@ -99,7 +104,9 @@ bool ClipPlayer::Activate()
 	shownFrame = -1;
 	lastWanted = -1;
 	stopping   = false;
-	thread     = std::thread( [ this ] { DecodeLoop(); } );
+	int decoders = source->IsHap() ? 2 : 1; // other formats decode one frame at a time
+	for( int i = 0; i < decoders; ++i )
+		threads.emplace_back( [ this ] { DecodeLoop(); } );
 	return true;
 }
 
@@ -112,7 +119,9 @@ void ClipPlayer::Deactivate()
 		stopping = true;
 	}
 	wake.notify_all();
-	thread.join();
+	for( std::thread& t : threads )
+		t.join();
+	threads.clear();
 
 	for( Slot& slot : slots )
 	{
@@ -282,7 +291,7 @@ void ClipPlayer::Update( int64_t frame, int direction )
 		lateCount++;
 	}
 	lastWanted = frame;
-	wake.notify_one();
+	wake.notify_all();
 }
 
 bool ClipPlayer::ShowNow( int64_t frame )

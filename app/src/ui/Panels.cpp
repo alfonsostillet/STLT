@@ -2081,6 +2081,13 @@ void DrawPerformancePanel( App& app )
 	average = times.empty() ? 0 : average / times.size();
 	ImGui::Text( "%.1f fps   %.2f ms average   %.2f ms worst", average > 0 ? 1000 / average : 0, average, worst );
 	ImGui::PlotLines( "##frames", times.data(), (int)times.size(), 0, nullptr, 0, std::max( 40.0f, worst ), ImVec2( -FLT_MIN, Ui( 50 ) ) );
+	if( app.FramePeriod() > 0 )
+	{
+		// Whether clips move in even steps with the display (see App::FrameStep).
+		ImVec4 colour = ImGui::ColorConvertU32ToFloat4( app.ClockLocked() ? theme::Accent : theme::Warning );
+		ImGui::TextColored( colour, "Display %.2f Hz: %s", 1.0 / app.FramePeriod(),
+		                    app.ClockLocked() ? "frames locked to its refresh (even motion)" : "no steady vsync, frames follow the clock" );
+	}
 	ImGui::TextDisabled( "GPU: %s", Caps().renderer );
 	ImGui::TextDisabled( "OpenGL %s   DXT %s   BPTC %s   decode threads %u", Caps().version, Caps().s3tc ? "yes" : "NO", Caps().bptc ? "yes" : "no",
 	                     ThreadPool::Shared().WorkerCount() + 1 );

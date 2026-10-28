@@ -132,6 +132,22 @@ int64_t Clip::CurrentFrame() const
 	return (int64_t)player->Source().FrameAt( time );
 }
 
+int64_t Clip::FrameFor( double seconds, double bpm ) const
+{
+	if( !Loaded() )
+		return 0;
+	double t = time + 0.5 * seconds * Rate( bpm ) * PlayDirection();
+	double start = RangeStart(), end = RangeEnd();
+	if( playMode == PlayMode::Loop && end > start )
+	{
+		// Past the out point (a playhead that rounding left a hair short of it, too) is the start again.
+		t = start + std::fmod( t - start, end - start );
+		if( t < start )
+			t += end - start;
+	}
+	return (int64_t)player->Source().FrameAt( std::clamp( t, start, std::max( start, end - 1e-6 ) ) );
+}
+
 float Clip::Value( ClipProperty property ) const
 {
 	switch( property )

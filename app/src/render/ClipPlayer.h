@@ -21,7 +21,8 @@ namespace stltvj
 //   GL thread      : unmaps that buffer and lets glCompressedTexSubImage2D / glTexSubImage2D copy it to the
 //                    textures by DMA, then orphans and remaps the buffer for the next frame
 // HAP reaches the GPU as DXT/BC blocks and YUV as planes: neither is expanded to RGBA on the CPU.
-// A few slots let the decoder run ahead of the playhead in the play direction.
+// A few slots let the decoders run ahead of the playhead in the play direction. HAP gets two decoder threads
+// working on different frames, so one slow read (a cold disk, a busy drive) does not stall the next frame.
 class ClipPlayer
 {
 public:
@@ -50,7 +51,7 @@ public:
 	// GL thread. Allocates the textures and pixel buffers and starts the decoder; Deactivate frees them again.
 	bool Activate();
 	void Deactivate();
-	bool Active() const { return thread.joinable(); }
+	bool Active() const { return !threads.empty(); }
 
 	// GL thread, once per rendered frame: shows `frame` as soon as it is decoded and decodes ahead
 	// in `direction` (+1 forward, -1 backward, 0 paused).
@@ -84,7 +85,7 @@ private:
 		SlotState state = SlotState::Free;
 		int64_t frame   = -1;
 	};
-	static constexpr int kSlots = 4;
+	static constexpr int kSlots = 6;
 
 	void DecodeLoop();
 	bool PickWork( int& slot, int64_t& frame ) const;
@@ -107,7 +108,7 @@ private:
 
 	mutable std::mutex mutex;
 	std::condition_variable wake;
-	std::thread thread;
+	std::vector< std::thread > threads;
 	bool stopping      = false;
 	int64_t wanted     = 0;
 	int wantedDirection = 0;

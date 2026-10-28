@@ -150,6 +150,9 @@ struct Clip
 	// Puts the playhead at `seconds` (kept within the range), playing on from there.
 	void JumpTo( double seconds );
 	int64_t CurrentFrame() const;
+	// The frame to show for a display frame lasting `seconds` of composition time: the one at its middle, so a
+	// playhead landing on a frame boundary (exactly, or within rounding) never flickers between two frames.
+	int64_t FrameFor( double seconds, double bpm ) const;
 	int PlayDirection() const;
 	// A property as shown now: its value, or where its beat animation is.
 	float Shown( ClipProperty property, double beat, float compWidth, float compHeight ) const;
@@ -183,6 +186,7 @@ struct Layer
 	// (0..1).
 	int previous             = -1;
 	int previousRow          = -1;
+	bool cutPending          = false; // a cut: the outgoing clip stays until the new one has its first frame
 	float transitionProgress = 1;
 
 	float ShownOpacity( double beat ) const;

@@ -11,6 +11,7 @@
 #include "fx/EffectRegistry.h"
 #include "render/Compositor.h"
 #include "render/Fbo.h"
+#include "render/FrameClock.h"
 #include "output/AdvancedOutput.h"
 #include "output/OutputRenderer.h"
 #include "ui/Workspaces.h"
@@ -158,6 +159,15 @@ public:
 private:
 	void Frame();
 	void UpdatePlayback( double dt );
+	// How far the composition moves this frame, given what the system clock measured (render/FrameClock.h).
+	double FrameStep( double measured );
+	std::unique_ptr< FrameClock > frameClock;
+
+public:
+	double FramePeriod() const { return frameClock ? frameClock->Period() : 0; }
+	bool ClockLocked() const { return frameClock && frameClock->Locked(); }
+
+private:
 	void DrawUi();
 	void Capture();
 	ClipPlayer* PlayerAt( int layer, int column );
@@ -192,7 +202,8 @@ private:
 	// Takes a composition back to an earlier state, keeping the players, generators and effects that are still
 	// there (playback goes on) and opening the rest.
 	void RestoreComposition( const std::string& text );
-	bool wasEditing = false;
+	bool wasEditing   = false;
+	double lastRecord = 0;
 
 	LaunchOptions options;
 	double lastTime  = 0;
