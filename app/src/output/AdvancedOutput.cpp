@@ -786,6 +786,8 @@ std::string SaveAdvancedOutput( const AdvancedOutputSetup& setup )
 		j[ "brightness" ]  = s.brightness;
 		j[ "contrast" ]    = s.contrast;
 		j[ "rgb" ]         = { s.red, s.green, s.blue };
+		j[ "share" ]       = s.share;
+		j[ "ndi" ]         = s.ndi;
 		json slices        = json::array();
 		for( const Slice& sl : s.slices )
 		{
@@ -865,6 +867,8 @@ bool LoadAdvancedOutput( const std::string& text, AdvancedOutputSetup& out, std:
 			s.opacity    = j.value( "opacity", 1.0f );
 			s.brightness = j.value( "brightness", 0.0f );
 			s.contrast   = j.value( "contrast", 0.0f );
+			s.share      = j.value( "share", false );
+			s.ndi        = j.value( "ndi", false );
 			if( j.contains( "rgb" ) && j[ "rgb" ].is_array() && j[ "rgb" ].size() == 3 )
 			{
 				s.red   = j[ "rgb" ][ 0 ].get< float >();

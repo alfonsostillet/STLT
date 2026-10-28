@@ -1162,6 +1162,25 @@ void DrawScreenProps( App& app, Screen& screen )
 	ImGui::Checkbox( "##enabled", &screen.enabled );
 	Row( "Test Pattern" );
 	ImGui::Checkbox( "##test", &screen.testPattern );
+	if( const char* local = LocalSharingName() )
+	{
+		Row( local );
+		ImGui::Checkbox( "##share", &screen.share );
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "Send this screen to other programs on this computer as \"STLT-VJ %s\"", screen.name.c_str() );
+	}
+	Row( "NDI" );
+	ImGui::Checkbox( "##ndi", &screen.ndi );
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "Send this screen over the network as the NDI source \"STLT-VJ %s\"", screen.name.c_str() );
+	std::string sharing = app.outputs.SharingStatus( (size_t)editor.screen );
+	if( !sharing.empty() )
+	{
+		Row( "" );
+		ImGui::PushTextWrapPos( 0 );
+		ImGui::TextDisabled( "%s", sharing.c_str() );
+		ImGui::PopTextWrapPos();
+	}
 	Row( "Opacity" );
 	SliderPercent( "##opacity", &screen.opacity, 0, 1 );
 	Row( "Brightness" );

@@ -179,7 +179,7 @@ bool OutputRenderer::Init( std::string& error )
 void OutputRenderer::Shutdown()
 {
 	CloseWindows();
-	screens.clear();
+	screens.clear(); // senders too, while the context is alive
 	maskCoverage.Release();
 	maskBlur.Release();
 	if( vbo )
@@ -378,8 +378,60 @@ void OutputRenderer::Render( const AdvancedOutputSetup& setup, GLuint compositio
 		glBindTexture( GL_TEXTURE_2D, state.target.Texture() );
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 		ResetGlState();
+		Share( screen, state );
 	}
 	glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+}
+
+void OutputRenderer::Share( const Screen& screen, ScreenState& state )
+{
+	std::string name = "STLT-VJ " + screen.name;
+	bool local = screen.enabled && screen.share && LocalSharingName();
+	if( !local || state.localName != name )
+		state.local.reset();
+	if( local )
+	{
+		if( !state.local )
+		{
+			state.local     = CreateLocalSender( name );
+			state.localName = name;
+		}
+		if( state.local )
+			state.local->Send( state.finished.Texture(), screen.width, screen.height );
+		ResetGlState();
+	}
+
+	bool ndi = screen.enabled && screen.ndi;
+	if( !ndi || state.ndiName != name )
+	{
+		state.ndi.reset();
+		state.ndiError.clear();
+		state.ndiName.clear();
+	}
+	if( ndi )
+	{
+		if( !state.ndi && state.ndiName.empty() )
+		{
+			state.ndi     = CreateNdiSender( name, state.ndiError );
+			state.ndiName = name; // tried: a missing runtime is not looked for again every frame
+		}
+		if( state.ndi )
+			state.ndi->Send( state.finished.Texture(), screen.width, screen.height );
+	}
+}
+
+std::string OutputRenderer::SharingStatus( size_t index ) const
+{
+	if( index >= screens.size() )
+		return "";
+	const ScreenState& state = *screens[ index ];
+	std::string status;
+	if( state.local )
+		status = state.local->Status();
+	std::string ndi = state.ndi ? state.ndi->Status() : state.ndiError;
+	if( !ndi.empty() )
+		status += ( status.empty() ? "" : "\n" ) + ndi;
+	return status;
 }
 
 void OutputRenderer::Match( size_t count )

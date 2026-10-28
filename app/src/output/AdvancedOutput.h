@@ -140,6 +140,8 @@ struct Screen
 	float brightness = 0, contrast = 0; // -1..1
 	float red = 0, green = 0, blue = 0; // -1..1
 	bool testPattern = false;           // draws each slice as a numbered grid, for lining up projectors
+	bool share       = false;           // also to other programs on this computer: Spout (Windows) or Syphon (macOS)
+	bool ndi         = false;           // also over the network as an NDI source
 	std::vector< Slice > slices;
 };
 

@@ -195,6 +195,8 @@ add_library(stltvj-core STATIC
     src/output/AdvancedOutput.h
     src/output/OutputRenderer.cpp
     src/output/OutputRenderer.h
+    src/output/NdiSender.cpp
+    src/output/Sharing.h
 )
 target_include_directories(stltvj-core PUBLIC src third_party/khronos "${THIRD_PARTY}/nlohmann")
 target_compile_definitions(stltvj-core PUBLIC GLFW_INCLUDE_NONE)
@@ -209,6 +211,50 @@ elseif(APPLE)
 else()
     find_package(OpenGL REQUIRED)
     target_link_libraries(stltvj-core PUBLIC OpenGL::GL ${CMAKE_DL_LIBS})
+endif()
+
+# Screens shared with other programs on the same computer: Spout on Windows, Syphon on macOS, both BSD-licensed
+# and built from their sources here. (NDI needs nothing at build time: its runtime is loaded when used.)
+if(WIN32)
+    FetchContent_Declare(spout2
+        GIT_REPOSITORY https://github.com/leadedge/Spout2.git
+        GIT_TAG 2.007.017
+        GIT_SHALLOW TRUE
+        SOURCE_SUBDIR no-cmake) # only the SpoutGL sources, built below with this project's runtime settings
+    FetchContent_MakeAvailable(spout2)
+    set(SPOUT_GL "${spout2_SOURCE_DIR}/SPOUTSDK/SpoutGL")
+    add_library(spout STATIC
+        ${SPOUT_GL}/Spout.cpp ${SPOUT_GL}/SpoutCopy.cpp ${SPOUT_GL}/SpoutDirectX.cpp ${SPOUT_GL}/SpoutFrameCount.cpp
+        ${SPOUT_GL}/SpoutGL.cpp ${SPOUT_GL}/SpoutGLextensions.cpp ${SPOUT_GL}/SpoutSender.cpp ${SPOUT_GL}/SpoutReceiver.cpp
+        ${SPOUT_GL}/SpoutSenderNames.cpp ${SPOUT_GL}/SpoutSharedMemory.cpp ${SPOUT_GL}/SpoutUtils.cpp)
+    target_include_directories(spout PUBLIC "${SPOUT_GL}")
+    target_compile_options(spout PRIVATE /W0)
+    target_link_libraries(spout PUBLIC opengl32 d3d9 d3d11 dxgi version winmm comctl32 shlwapi advapi32 user32 gdi32 shell32 ole32)
+    target_sources(stltvj-core PRIVATE src/output/SpoutSharing.cpp)
+    target_link_libraries(stltvj-core PUBLIC spout)
+elseif(APPLE)
+    enable_language(OBJC OBJCXX)
+    FetchContent_Declare(syphon
+        GIT_REPOSITORY https://github.com/Syphon/Syphon-Framework.git
+        GIT_TAG 5
+        GIT_SHALLOW TRUE
+        SOURCE_SUBDIR no-cmake) # an Xcode project: its OpenGL sources are built below
+    FetchContent_MakeAvailable(syphon)
+    file(GLOB SYPHON_SOURCES "${syphon_SOURCE_DIR}/*.m" "${syphon_SOURCE_DIR}/*.c")
+    list(FILTER SYPHON_SOURCES EXCLUDE REGEX "Metal")
+    add_library(syphon STATIC ${SYPHON_SOURCES})
+    # Its headers import <Syphon/...>, as from the framework.
+    file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/syphon-include")
+    file(CREATE_LINK "${syphon_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/syphon-include/Syphon" SYMBOLIC)
+    target_include_directories(syphon PUBLIC "${CMAKE_BINARY_DIR}/syphon-include" "${syphon_SOURCE_DIR}")
+    target_compile_definitions(syphon PUBLIC SYPHON_CORE_SHARE)
+    target_compile_options(syphon PRIVATE -fobjc-arc -include "${syphon_SOURCE_DIR}/Syphon_Prefix.pch" -w)
+    target_link_libraries(syphon PUBLIC "-framework Cocoa" "-framework IOSurface" "-framework OpenGL")
+    target_sources(stltvj-core PRIVATE src/output/SyphonSharing.mm)
+    set_source_files_properties(src/output/SyphonSharing.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
+    target_link_libraries(stltvj-core PUBLIC syphon)
+else()
+    target_sources(stltvj-core PRIVATE src/output/NoLocalSharing.cpp)
 endif()
 
 add_executable(stlt-vj WIN32 MACOSX_BUNDLE

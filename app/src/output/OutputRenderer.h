@@ -4,6 +4,7 @@
 #include <vector>
 #include "gl/Program.h"
 #include "output/AdvancedOutput.h"
+#include "output/Sharing.h"
 #include "render/Fbo.h"
 #include "render/OutputWindow.h"
 
@@ -39,6 +40,8 @@ public:
 	bool AnyWindowOpen() const;
 	// Screen state for the panels: "Display DELL 1920x1080", "Window", "not connected", "Virtual".
 	std::string DeviceStatus( size_t index ) const;
+	// Spout/Syphon and NDI state of a screen for the panels ("" when off).
+	std::string SharingStatus( size_t index ) const;
 
 private:
 	struct ScreenState
@@ -50,7 +53,10 @@ private:
 		std::string display;
 		bool missingDisplay = false;
 		int width = 0, height = 0;
+		std::unique_ptr< TextureSender > local, ndi; // Spout or Syphon; NDI
+		std::string localName, ndiName, ndiError;
 	};
+	void Share( const Screen& screen, ScreenState& state );
 	void DrawSlice( const Slice& slice, int index, const Screen& screen, int compWidth, int compHeight );
 	void ApplyMask( const Slice& mask, const Screen& screen, Fbo& target, GLuint composition );
 
