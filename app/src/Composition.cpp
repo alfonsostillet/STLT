@@ -8,13 +8,13 @@ namespace stltvj
 {
 const char* BlendModeName( BlendMode mode )
 {
-	static const char* names[] = { "Alpha", "Add", "Screen", "Multiply", "Lighten", "Darken", "Difference", "Subtract" };
+	static const char* names[] = { "Alpha", "Add", "Screen", "Multiply", "Lighten", "Darken", "Difference", "Subtract", "Luma Key", "Luma Key Inverted" };
 	return names[ std::clamp( (int)mode, 0, (int)BlendMode::Count - 1 ) ];
 }
 
 const char* PlayModeName( PlayMode mode )
 {
-	static const char* names[] = { "Loop", "Bounce", "Play Once" };
+	static const char* names[] = { "Loop", "Bounce", "Play Once & Hold", "Play Once & Clear" };
 	return names[ std::clamp( (int)mode, 0, (int)PlayMode::Count - 1 ) ];
 }
 
@@ -28,6 +28,12 @@ const char* TransitionModeName( TransitionMode mode )
 {
 	static const char* names[] = { "Fade", "Fade Through Black", "Wipe Left", "Wipe Right", "Wipe Up", "Wipe Down" };
 	return names[ std::clamp( (int)mode, 0, (int)TransitionMode::Count - 1 ) ];
+}
+
+const char* ClipTargetName( ClipTarget target )
+{
+	static const char* names[] = { "Own Layer", "Selected Layer" };
+	return names[ std::clamp( (int)target, 0, (int)ClipTarget::Count - 1 ) ];
 }
 
 const char* LaunchQuantizeName( LaunchQuantize quantize )
@@ -108,6 +114,7 @@ void Clip::Advance( double seconds, double bpm )
 		time = std::clamp( time, start, end );
 		break;
 	case PlayMode::Once:
+	case PlayMode::OnceClear:
 		if( time < start || time >= end )
 		{
 			time     = std::clamp( time, start, end );
@@ -166,6 +173,16 @@ float Layer::ShownOpacity( double beat ) const
 	return opacityAnimation.mode == AnimMode::Off ? opacity : opacityAnimation.Evaluate( beat );
 }
 
+float Layer::CrossfadeGain( float x ) const
+{
+	x = std::clamp( x, 0.0f, 1.0f );
+	if( crossfader == 1 )
+		return std::min( 1.0f, 2 * ( 1 - x ) );
+	if( crossfader == 2 )
+		return std::min( 1.0f, 2 * x );
+	return 1.0f;
+}
+
 double Layer::TransitionSeconds( double bpm ) const
 {
 	if( transitionDuration <= 0 )
@@ -200,23 +217,61 @@ void Composition::AddColumn()
 
 void Composition::Normalise()
 {
-	for( Layer& layer : layers )
+	for( int l = 0; l < (int)layers.size(); ++l )
 	{
+		Layer& layer = layers[ l ];
 		layer.clips.resize( columns.size() );
-		if( layer.active >= (int)columns.size() )
-			layer.active = -1;
+		if( layer.active >= 0 && layer.activeRow < 0 )
+			layer.activeRow = l;
+		if( layer.active >= (int)columns.size() || layer.activeRow >= (int)layers.size() )
+			layer.active = layer.activeRow = -1;
+		if( layer.previous >= (int)columns.size() || layer.previousRow >= (int)layers.size() || layer.previous < 0 )
+			layer.previous = layer.previousRow = -1;
 	}
 	selectedLayer = std::clamp( selectedLayer, 0, std::max( 0, (int)layers.size() - 1 ) );
+	selectedRow   = std::clamp( selectedRow, 0, std::max( 0, (int)layers.size() - 1 ) );
 	if( selectedColumn >= (int)columns.size() )
 		selectedColumn = -1;
 }
 
 Clip* Composition::SelectedClip()
 {
-	if( selectedLayer < 0 || selectedLayer >= (int)layers.size() || selectedColumn < 0 || selectedColumn >= ColumnCount() )
+	if( selectedRow < 0 || selectedRow >= (int)layers.size() || selectedColumn < 0 || selectedColumn >= ColumnCount() )
 		return nullptr;
-	Clip& clip = layers[ selectedLayer ].clips[ selectedColumn ];
+	Clip& clip = layers[ selectedRow ].clips[ selectedColumn ];
 	return clip.Empty() ? nullptr : &clip;
+}
+
+Clip* Composition::ClipAt( int row, int column )
+{
+	if( row < 0 || row >= (int)layers.size() || column < 0 || column >= (int)layers[ row ].clips.size() )
+		return nullptr;
+	return &layers[ row ].clips[ column ];
+}
+
+Clip* Composition::ActiveClip( int layer )
+{
+	if( layer < 0 || layer >= (int)layers.size() || layers[ layer ].active < 0 )
+		return nullptr;
+	return ClipAt( layers[ layer ].activeRow, layers[ layer ].active );
+}
+
+Clip* Composition::OutgoingClip( int layer )
+{
+	if( layer < 0 || layer >= (int)layers.size() || layers[ layer ].previous < 0 )
+		return nullptr;
+	return ClipAt( layers[ layer ].previousRow, layers[ layer ].previous );
+}
+
+int Composition::LayerShowing( int row, int column ) const
+{
+	for( int l = 0; l < (int)layers.size(); ++l )
+	{
+		const Layer& layer = layers[ l ];
+		if( ( layer.active == column && layer.activeRow == row ) || ( layer.previous == column && layer.previousRow == row ) )
+			return l;
+	}
+	return -1;
 }
 
 static nlohmann::json SaveSlot( const EffectSlot& slot )
@@ -295,6 +350,8 @@ std::string SaveComposition( const Composition& c )
 	root[ "speed" ]   = c.speed;
 	root[ "bpm" ]     = c.bpm;
 	root[ "launchQuantize" ] = LaunchQuantizeName( c.quantize );
+	root[ "crossfader" ] = c.crossfader;
+	root[ "clipTarget" ] = ClipTargetName( c.target );
 	root[ "columns" ] = c.columns;
 	root[ "effects" ] = SaveChain( c.effects );
 	json layers       = json::array();
@@ -302,8 +359,11 @@ std::string SaveComposition( const Composition& c )
 	{
 		json l;
 		l[ "name" ]    = layer.name;
+		l[ "master" ]  = layer.master;
 		l[ "opacity" ] = layer.opacity;
 		l[ "volume" ]  = layer.volume;
+		l[ "speed" ]   = layer.speed;
+		l[ "crossfader" ] = layer.crossfader == 1 ? "A" : layer.crossfader == 2 ? "B" : "";
 		l[ "blend" ]   = BlendModeName( layer.blend );
 		l[ "bypass" ]  = layer.bypass;
 		l[ "effects" ] = SaveChain( layer.effects );
@@ -396,6 +456,8 @@ bool LoadComposition( const std::string& text, Composition& out, std::string& er
 	c.speed   = root.value( "speed", c.speed );
 	c.bpm     = root.value( "bpm", c.bpm );
 	c.quantize = ByName( root.value( "launchQuantize", json() ), LaunchQuantizeName, LaunchQuantize::Now );
+	c.crossfader = std::clamp( root.value( "crossfader", 0.5f ), 0.0f, 1.0f );
+	c.target     = ByName( root.value( "clipTarget", json() ), ClipTargetName, ClipTarget::OwnLayer );
 	if( root.contains( "effects" ) )
 		c.effects = LoadChain( root[ "effects" ] );
 	if( root.contains( "columns" ) && root[ "columns" ].is_array() )
@@ -406,8 +468,12 @@ bool LoadComposition( const std::string& text, Composition& out, std::string& er
 		{
 			Layer layer;
 			layer.name    = l.value( "name", "Layer " + std::to_string( c.layers.size() + 1 ) );
+			layer.master  = std::clamp( l.value( "master", 1.0f ), 0.0f, 1.0f );
 			layer.opacity = l.value( "opacity", 1.0f );
 			layer.volume  = std::clamp( l.value( "volume", 1.0f ), 0.0f, 1.0f );
+			layer.speed   = std::clamp( l.value( "speed", 1.0f ), 0.0f, 4.0f );
+			std::string group = l.value( "crossfader", "" );
+			layer.crossfader  = group == "A" ? 1 : group == "B" ? 2 : 0;
 			layer.blend   = ByName( l.value( "blend", json() ), BlendModeName, BlendMode::Alpha );
 			layer.bypass  = l.value( "bypass", false );
 			if( l.contains( "effects" ) )
@@ -438,7 +504,8 @@ bool LoadComposition( const std::string& text, Composition& out, std::string& er
 						clip.name      = k.value( "name", "" );
 						clip.speed     = k.value( "speed", 1.0f );
 						clip.direction = std::clamp( k.value( "direction", 1 ), -1, 1 );
-						clip.playMode  = ByName( k.value( "playMode", json() ), PlayModeName, PlayMode::Loop );
+						clip.playMode  = k.value( "playMode", "" ) == "Play Once" ? PlayMode::Once // the name before Play Once & Clear
+						                                                         : ByName( k.value( "playMode", json() ), PlayModeName, PlayMode::Loop );
 						clip.opacity   = k.value( "opacity", 1.0f );
 						clip.fit       = ByName( k.value( "fit", json() ), FitModeName, FitMode::Fit );
 						if( k.contains( "position" ) && k[ "position" ].is_array() && k[ "position" ].size() == 2 )

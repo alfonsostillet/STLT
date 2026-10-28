@@ -9,12 +9,13 @@ namespace stltvj
 bool ControlTarget::IsButton() const
 {
 	return kind == Kind::ClipConnect || kind == Kind::ColumnConnect || kind == Kind::LayerClear || kind == Kind::TempoTap || kind == Kind::Resync
-	       || kind == Kind::Stop || kind == Kind::ClipCue || kind == Kind::LayerCue;
+	       || kind == Kind::Stop || kind == Kind::ClipCue || kind == Kind::LayerCue || kind == Kind::LayerNextClip || kind == Kind::LayerPrevClip
+	       || kind == Kind::SelectedNextClip || kind == Kind::SelectedPrevClip || kind == Kind::NextColumn || kind == Kind::PrevColumn;
 }
 
 bool ControlTarget::IsSwitch() const
 {
-	return kind == Kind::LayerBypass || kind == Kind::LayerSolo || kind == Kind::Pause;
+	return kind == Kind::LayerBypass || kind == Kind::LayerSolo || kind == Kind::Pause || kind == Kind::CompositionBypass;
 }
 
 namespace
@@ -103,12 +104,22 @@ bool ParseControlAddress( const std::string& address, ControlTarget& t )
 			t.kind = Kind::Pause;
 		else if( p[ 1 ] == "stop" )
 			t.kind = Kind::Stop;
+		else if( p[ 1 ] == "bypassed" )
+			t.kind = Kind::CompositionBypass;
+		else if( p[ 1 ] == "connectnextcolumn" )
+			t.kind = Kind::NextColumn;
+		else if( p[ 1 ] == "connectprevcolumn" )
+			t.kind = Kind::PrevColumn;
 		return t.kind != Kind::None;
 	}
 	if( n == 3 && p[ 1 ] == "video" && p[ 2 ] == "opacity" )
 		return t.kind = Kind::Master, true;
 	if( n == 3 && p[ 1 ] == "audio" && p[ 2 ] == "volume" )
 		return t.kind = Kind::AudioVolume, true;
+	if( n == 3 && p[ 1 ] == "crossfader" && p[ 2 ] == "phase" )
+		return t.kind = Kind::Crossfader, true;
+	if( n == 3 && p[ 1 ] == "selectedlayer" && ( p[ 2 ] == "connectnextclip" || p[ 2 ] == "connectprevclip" ) )
+		return t.kind = p[ 2 ] == "connectnextclip" ? Kind::SelectedNextClip : Kind::SelectedPrevClip, true;
 	if( n == 3 && p[ 1 ] == "tempocontroller" )
 	{
 		if( p[ 2 ] == "tempo" )
@@ -136,6 +147,14 @@ bool ParseControlAddress( const std::string& address, ControlTarget& t )
 			t.kind = Kind::LayerBypass;
 		else if( n == 4 && p[ 3 ] == "solo" )
 			t.kind = Kind::LayerSolo;
+		else if( n == 4 && p[ 3 ] == "master" )
+			t.kind = Kind::LayerMaster;
+		else if( n == 4 && p[ 3 ] == "speed" )
+			t.kind = Kind::LayerSpeed;
+		else if( n == 4 && p[ 3 ] == "connectnextclip" )
+			t.kind = Kind::LayerNextClip;
+		else if( n == 4 && p[ 3 ] == "connectprevclip" )
+			t.kind = Kind::LayerPrevClip;
 		else if( n == 5 && p[ 3 ] == "video" && p[ 4 ] == "opacity" )
 			t.kind = Kind::LayerOpacity;
 		else if( n == 5 && p[ 3 ] == "audio" && p[ 4 ] == "volume" )

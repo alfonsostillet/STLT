@@ -119,6 +119,23 @@ static void TestCueAddresses()
 	CHECK( !t.IsButton() && !t.IsSwitch() );
 }
 
+static void TestLayerHeaderAddresses()
+{
+	using Kind = ControlTarget::Kind;
+	ControlTarget t;
+	CHECK( ParseControlAddress( "/composition/layers/2/master", t ) && t.kind == Kind::LayerMaster && t.layer == 1 );
+	CHECK( ParseControlAddress( "/composition/layers/2/speed", t ) && t.kind == Kind::LayerSpeed );
+	CHECK( ParseControlAddress( "/composition/layers/4/connectnextclip", t ) && t.kind == Kind::LayerNextClip && t.layer == 3 && t.IsButton() );
+	CHECK( ParseControlAddress( "/composition/layers/4/connectprevclip", t ) && t.kind == Kind::LayerPrevClip );
+	CHECK( ParseControlAddress( "/composition/selectedlayer/connectnextclip", t ) && t.kind == Kind::SelectedNextClip && t.IsButton() );
+	CHECK( ParseControlAddress( "/composition/selectedlayer/connectprevclip", t ) && t.kind == Kind::SelectedPrevClip );
+	CHECK( ParseControlAddress( "/composition/connectnextcolumn", t ) && t.kind == Kind::NextColumn );
+	CHECK( ParseControlAddress( "/composition/connectprevcolumn", t ) && t.kind == Kind::PrevColumn );
+	CHECK( ParseControlAddress( "/composition/crossfader/phase", t ) && t.kind == Kind::Crossfader );
+	CHECK( ParseControlAddress( "/composition/bypassed", t ) && t.kind == Kind::CompositionBypass && t.IsSwitch() );
+	CHECK( !ParseControlAddress( "/composition/selectedlayer/clear", t ) );
+}
+
 static void TestSettings()
 {
 	ControlSettings s;
@@ -146,6 +163,7 @@ int main()
 	TestOsc();
 	TestMidi();
 	TestCueAddresses();
+	TestLayerHeaderAddresses();
 	TestSettings();
 	if( failures )
 	{

@@ -20,6 +20,8 @@ enum class BlendMode
 	Darken,
 	Difference,
 	Subtract,
+	LumaKey,         // the layer shows where it is bright
+	LumaKeyInverted, // the layer shows where it is dark
 	Count
 };
 const char* BlendModeName( BlendMode mode );
@@ -28,7 +30,8 @@ enum class PlayMode
 {
 	Loop,
 	Bounce,
-	Once,
+	Once,      // and holds the last frame
+	OnceClear, // and clears the layer
 	Count
 };
 const char* PlayModeName( PlayMode mode );
@@ -45,6 +48,16 @@ enum class TransitionMode
 	Count
 };
 const char* TransitionModeName( TransitionMode mode );
+
+// Where a launched clip plays: on the layer of its own row, or on the selected layer whatever its row
+// (Resolume's "layer based" deck).
+enum class ClipTarget
+{
+	OwnLayer,
+	SelectedLayer,
+	Count
+};
+const char* ClipTargetName( ClipTarget target );
 
 // When a launched clip starts: at once, or on the next beat or bar (4 beats).
 enum class LaunchQuantize
@@ -149,8 +162,12 @@ struct Layer
 	std::string name;
 	std::vector< Clip > clips; // one per column; empty paths are empty cells
 	int active        = -1;    // playing column, or -1
+	int activeRow     = -1;    // the row (layer index) that column is in: this layer's own, or another one
+	float master      = 1.0f; // video and sound together
 	float opacity     = 1.0f;
 	float volume      = 1.0f; // the sound of its clips
+	float speed       = 1.0f; // times the clips' own speed
+	int crossfader    = 0;    // crossfader group: 0 none, 1 A, 2 B
 	BlendMode blend   = BlendMode::Alpha;
 	bool bypass       = false;
 	bool solo         = false;
@@ -162,11 +179,15 @@ struct Layer
 	float transitionDuration  = 0;
 	bool transitionInBeats    = false;
 
-	// Runtime: the clip fading out during a transition (-1: none) and how far the transition is (0..1).
+	// Runtime: the clip fading out during a transition (column and row; -1: none) and how far the transition is
+	// (0..1).
 	int previous             = -1;
+	int previousRow          = -1;
 	float transitionProgress = 1;
 
 	float ShownOpacity( double beat ) const;
+	// How much the crossfader lets through (1 outside the groups): each side fades out over the far half.
+	float CrossfadeGain( float crossfader ) const;
 	double TransitionSeconds( double bpm ) const;
 };
 
@@ -180,13 +201,17 @@ struct Composition
 	float speed      = 1.0f;
 	double bpm       = 120.0;
 	bool paused      = false;
+	bool bypass      = false; // the whole output black
+	float crossfader = 0.5f;  // 0: group A only, 1: group B only
 	double beat      = 0.0; // beats since start (runtime): drives beat-synced effects and animations
 	LaunchQuantize quantize = LaunchQuantize::Now;
+	ClipTarget target       = ClipTarget::OwnLayer;
 	std::vector< std::string > columns;
 	std::vector< Layer > layers; // index 0 is the bottom layer
 	EffectChain effects;
 
-	int selectedLayer  = 0;
+	int selectedLayer  = 0;  // the layer the Layer panel shows (and layer based launches go to)
+	int selectedRow    = 0;  // the selected clip: its row and column
 	int selectedColumn = -1;
 	int activeColumn   = -1;
 
@@ -195,6 +220,12 @@ struct Composition
 	void AddLayer();
 	void AddColumn();
 	Clip* SelectedClip();
+	Clip* ClipAt( int row, int column );
+	// The clip a layer plays, and the one it fades out during a transition (null: none).
+	Clip* ActiveClip( int layer );
+	Clip* OutgoingClip( int layer );
+	// The layer playing the clip at row/column, or fading it out; -1 when it is not on show.
+	int LayerShowing( int row, int column ) const;
 	// Makes every layer as wide as the column list.
 	void Normalise();
 };

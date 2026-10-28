@@ -318,8 +318,7 @@ void App::LoadClip( int layer, int column, const std::string& path )
 		composition.AddLayer();
 	while( composition.ColumnCount() <= column )
 		composition.AddColumn();
-	if( composition.layers[ layer ].active == column )
-		ClearLayer( layer );
+	StopCell( layer, column );
 
 	Clip clip;
 	clip.path   = path;
@@ -349,10 +348,7 @@ void App::RemoveClip( int layer, int column )
 {
 	if( !PlayerAt( layer, column ) && ( layer < 0 || layer >= (int)composition.layers.size() ) )
 		return;
-	if( composition.layers[ layer ].active == column )
-		ClearLayer( layer );
-	if( composition.layers[ layer ].previous == column )
-		FinishTransition( layer );
+	StopCell( layer, column );
 	composition.layers[ layer ].clips[ column ] = Clip{};
 }
 
@@ -362,37 +358,38 @@ void App::MoveClip( int fromLayer, int fromColumn, int toLayer, int toColumn )
 	if( fromLayer < 0 || fromLayer >= layers || toLayer < 0 || toLayer >= layers || fromColumn < 0 || fromColumn >= columns || toColumn < 0
 	    || toColumn >= columns || ( fromLayer == toLayer && fromColumn == toColumn ) )
 		return;
-	FinishTransition( fromLayer );
-	FinishTransition( toLayer );
+	// Playing clips follow their cells within a row; one that changes row stops.
+	for( int l = 0; l < layers; ++l )
+		FinishTransition( l );
 	Layer& a = composition.layers[ fromLayer ];
 	Layer& b = composition.layers[ toLayer ];
 	if( fromLayer == toLayer )
 	{
 		std::swap( a.clips[ fromColumn ], a.clips[ toColumn ] );
-		if( a.active == fromColumn )
-			a.active = toColumn;
-		else if( a.active == toColumn )
-			a.active = fromColumn;
+		for( Layer& layer : composition.layers )
+			if( layer.activeRow == fromLayer && ( layer.active == fromColumn || layer.active == toColumn ) )
+				layer.active = layer.active == fromColumn ? toColumn : fromColumn;
 	}
 	else
 	{
-		// A playing clip that changes layer stops: the target layer decides what plays.
-		if( a.active == fromColumn )
-			ClearLayer( fromLayer );
-		if( b.active == toColumn )
-			ClearLayer( toLayer );
+		StopCell( fromLayer, fromColumn );
+		StopCell( toLayer, toColumn );
 		std::swap( a.clips[ fromColumn ], b.clips[ toColumn ] );
 	}
 	Select( toLayer, toColumn );
 }
 
-void App::Launch( int layer, int column, bool now )
+void App::Launch( int row, int column, bool now, int onLayer )
 {
-	if( layer < 0 || layer >= (int)composition.layers.size() || column < 0 || column >= composition.ColumnCount() )
+	if( row < 0 || row >= (int)composition.layers.size() || column < 0 || column >= composition.ColumnCount() )
+		return;
+	// The layer it plays on: its own row's, or the selected one ("layer based" deck).
+	int layer = onLayer >= 0 ? onLayer : composition.target == ClipTarget::SelectedLayer ? composition.selectedLayer : row;
+	if( layer < 0 || layer >= (int)composition.layers.size() )
 		return;
 	Layer& l   = composition.layers[ layer ];
-	Clip& clip = l.clips[ column ];
-	Select( layer, column );
+	Clip& clip = composition.layers[ row ].clips[ column ];
+	Select( row, column );
 	if( !now && composition.quantize != LaunchQuantize::Now && clip.Playable() )
 	{
 		// On the next beat or bar; a later launch on the same layer replaces it.
@@ -400,7 +397,7 @@ void App::Launch( int layer, int column, bool now )
 		double at    = ( std::floor( composition.beat / beats ) + 1 ) * beats;
 		queuedLaunches.erase( std::remove_if( queuedLaunches.begin(), queuedLaunches.end(), [ & ]( const QueuedLaunch& q ) { return q.layer == layer; } ),
 		                      queuedLaunches.end() );
-		queuedLaunches.push_back( { layer, column, at } );
+		queuedLaunches.push_back( { layer, row, column, at } );
 		return;
 	}
 	if( !clip.Playable() )
@@ -408,25 +405,32 @@ void App::Launch( int layer, int column, bool now )
 		ClearLayer( layer );
 		return;
 	}
-	if( l.active >= 0 && l.active != column )
+	// A clip plays on one layer at a time: elsewhere it stops.
+	int showing = composition.LayerShowing( row, column );
+	if( showing >= 0 && showing != layer )
+		StopCell( row, column );
+	bool same = l.active == column && l.activeRow == row;
+	if( l.active >= 0 && !same )
 	{
 		// Another clip plays: it hands over through the layer's transition, or stops.
 		FinishTransition( layer );
 		if( l.TransitionSeconds( composition.bpm ) > 0 )
 		{
 			l.previous           = l.active;
+			l.previousRow        = l.activeRow;
 			l.transitionProgress = 0;
 		}
 		else
 			ClearLayer( layer );
 	}
-	else if( l.previous == column )
+	else if( l.previous == column && l.previousRow == row )
 	{
 		// Back to the clip that was fading out: it simply goes on.
-		l.previous           = -1;
-		l.transitionProgress = 1;
+		l.previous = l.previousRow = -1;
+		l.transitionProgress       = 1;
 	}
-	l.active = column;
+	l.active    = column;
+	l.activeRow = row;
 	if( clip.generator )
 		return;
 	clip.player->Activate();
@@ -441,24 +445,25 @@ void App::LaunchColumn( int column, bool now )
 	{
 		double beats = composition.quantize == LaunchQuantize::Bar ? 4.0 : 1.0;
 		queuedLaunches.clear(); // the column decides every layer
-		queuedLaunches.push_back( { -1, column, ( std::floor( composition.beat / beats ) + 1 ) * beats } );
+		queuedLaunches.push_back( { -1, -1, column, ( std::floor( composition.beat / beats ) + 1 ) * beats } );
 		return;
 	}
+	// A column plays each row on its own layer.
 	for( int layer = 0; layer < (int)composition.layers.size(); ++layer )
 	{
 		Layer& l = composition.layers[ layer ];
 		if( column < (int)l.clips.size() && l.clips[ column ].Playable() )
-			Launch( layer, column, true );
+			Launch( layer, column, true, layer );
 		else
 			ClearLayer( layer );
 	}
 	composition.activeColumn = column;
 }
 
-bool App::IsQueued( int layer, int column ) const
+bool App::IsQueued( int row, int column ) const
 {
 	for( const QueuedLaunch& q : queuedLaunches )
-		if( q.column == column && ( q.layer == layer || q.layer < 0 ) )
+		if( q.column == column && ( q.row == row || q.layer < 0 ) )
 			return true;
 	return false;
 }
@@ -481,7 +486,7 @@ void App::RunQueuedLaunches( bool all )
 		if( q.layer < 0 )
 			LaunchColumn( q.column, true );
 		else
-			Launch( q.layer, q.column, true );
+			Launch( q.row, q.column, true, q.layer );
 	}
 }
 
@@ -491,31 +496,81 @@ void App::ResyncBeat()
 	RunQueuedLaunches( true ); // what waited for a beat goes on the new first beat
 }
 
-void App::JumpToCue( int layer, int column, int cue )
+void App::JumpToCue( int row, int column, int cue )
 {
-	if( layer < 0 || layer >= (int)composition.layers.size() || column < 0 || column >= composition.ColumnCount() || cue < 0 || cue >= kCuePoints )
+	Clip* found = composition.ClipAt( row, column );
+	if( !found || cue < 0 || cue >= kCuePoints || found->cues[ cue ] < 0 || !found->Loaded() )
 		return;
-	Layer& l   = composition.layers[ layer ];
-	Clip& clip = l.clips[ column ];
-	if( clip.cues[ cue ] < 0 || !clip.Loaded() )
-		return;
-	if( l.active != column )
-		Launch( layer, column, true );
-	if( l.active != column )
+	Clip& clip = *found;
+	int layer  = composition.LayerShowing( row, column );
+	if( layer < 0 || composition.layers[ layer ].active != column || composition.layers[ layer ].activeRow != row )
+		Launch( row, column, true );
+	if( composition.LayerShowing( row, column ) < 0 )
 		return;
 	clip.JumpTo( clip.cues[ cue ] );
 	clip.player->ShowNow( clip.CurrentFrame() );
+}
+
+void App::LaunchNextClip( int layer, int step )
+{
+	if( layer < 0 || layer >= (int)composition.layers.size() || composition.ColumnCount() == 0 )
+		return;
+	Layer& l    = composition.layers[ layer ];
+	int columns = composition.ColumnCount();
+	// Along the row of the clip playing (or waiting to), from it; else along the layer's own row, from the clip
+	// selected there or from its edge.
+	int row = l.active >= 0 ? l.activeRow : layer, from = l.active;
+	for( const QueuedLaunch& q : queuedLaunches )
+		if( q.layer == layer )
+			row = q.row, from = q.column;
+	if( from < 0 )
+		from = composition.selectedRow == row && composition.selectedColumn >= 0 ? composition.selectedColumn : step > 0 ? -1 : columns;
+	for( int i = 1; i <= columns; ++i )
+	{
+		int c = ( ( from + step * i ) % columns + columns ) % columns;
+		if( composition.layers[ row ].clips[ c ].Playable() )
+		{
+			Launch( row, c, false, layer );
+			return;
+		}
+	}
+}
+
+void App::LaunchNextColumn( int step )
+{
+	int columns = composition.ColumnCount();
+	if( columns == 0 )
+		return;
+	int from = composition.activeColumn >= 0 ? composition.activeColumn : step > 0 ? -1 : columns;
+	LaunchColumn( ( ( from + step ) % columns + columns ) % columns );
+}
+
+void App::SetAllDirections( int direction )
+{
+	if( direction == 0 )
+	{
+		composition.paused = true;
+		return;
+	}
+	composition.paused = false;
+	for( int l = 0; l < (int)composition.layers.size(); ++l )
+		if( Clip* clip = composition.ActiveClip( l ) )
+		{
+			clip->direction = direction;
+			clip->finished  = false;
+		}
 }
 
 void App::FinishTransition( int layer )
 {
 	if( layer < 0 || layer >= (int)composition.layers.size() )
 		return;
-	Layer& l = composition.layers[ layer ];
-	if( l.previous >= 0 && l.previous != l.active && l.previous < (int)l.clips.size() && l.clips[ l.previous ].player )
-		l.clips[ l.previous ].player->Deactivate();
-	l.previous           = -1;
-	l.transitionProgress = 1;
+	Layer& l       = composition.layers[ layer ];
+	Clip* outgoing = composition.OutgoingClip( layer );
+	if( outgoing && outgoing != composition.ActiveClip( layer ) && outgoing->player )
+		outgoing->player->Deactivate();
+	l.previous = l.previousRow = -1;
+	l.transitionProgress       = 1;
 }
 
 void App::ClearLayer( int layer )
@@ -524,17 +579,33 @@ void App::ClearLayer( int layer )
 		return;
 	FinishTransition( layer );
 	Layer& l = composition.layers[ layer ];
-	if( l.active >= 0 && l.active < (int)l.clips.size() && l.clips[ l.active ].player )
-		l.clips[ l.active ].player->Deactivate();
-	l.active = -1;
+	if( Clip* clip = composition.ActiveClip( layer ); clip && clip->player )
+		clip->player->Deactivate();
+	l.active = l.activeRow = -1;
 	queuedLaunches.erase( std::remove_if( queuedLaunches.begin(), queuedLaunches.end(), [ & ]( const QueuedLaunch& q ) { return q.layer == layer; } ),
 	                      queuedLaunches.end() );
 }
 
-void App::Select( int layer, int column )
+void App::Select( int row, int column )
 {
-	composition.selectedLayer  = layer;
+	composition.selectedRow    = row;
 	composition.selectedColumn = column;
+	// With clips playing on their own row's layer, picking a clip picks its layer too; layer based, the layer
+	// stays the one the clips go to.
+	if( composition.target == ClipTarget::OwnLayer )
+		composition.selectedLayer = row;
+}
+
+void App::StopCell( int row, int column )
+{
+	for( int l = 0; l < (int)composition.layers.size(); ++l )
+	{
+		Layer& layer = composition.layers[ l ];
+		if( layer.previous == column && layer.previousRow == row )
+			FinishTransition( l );
+		if( layer.active == column && layer.activeRow == row )
+			ClearLayer( l );
+	}
 }
 
 void App::NewComposition()
@@ -666,14 +737,10 @@ void App::RestoreComposition( const std::string& text )
 		return nullptr;
 	};
 	// The clip each layer plays, to follow it if the restored state has it in another column.
-	std::vector< const Clip* > playing( fresh.layers.size(), nullptr );
-	std::vector< int > follow( fresh.layers.size(), -1 );
-	for( int l = 0; l < (int)fresh.layers.size() && l < (int)composition.layers.size(); ++l )
-	{
-		const Layer& layer = composition.layers[ l ];
-		if( layer.active >= 0 && layer.active < (int)layer.clips.size() )
-			playing[ l ] = &layer.clips[ layer.active ];
-	}
+	std::vector< const Clip* > playing( composition.layers.size(), nullptr );
+	std::vector< std::pair< int, int > > follow( composition.layers.size(), { -1, -1 } ); // row, column
+	for( int l = 0; l < (int)composition.layers.size(); ++l )
+		playing[ l ] = composition.ActiveClip( l );
 	for( int l = 0; l < (int)fresh.layers.size(); ++l )
 	{
 		Layer& layer = fresh.layers[ l ];
@@ -687,8 +754,9 @@ void App::RestoreComposition( const std::string& text )
 			if( !old )
 				continue;
 			taken.push_back( old );
-			if( old == playing[ l ] )
-				follow[ l ] = c;
+			for( int p = 0; p < (int)playing.size(); ++p )
+				if( old == playing[ p ] )
+					follow[ p ] = { l, c };
 			clip.player             = std::move( old->player );
 			clip.audio              = std::move( old->audio );
 			clip.generatorThumbnail = std::move( old->generatorThumbnail );
@@ -709,14 +777,17 @@ void App::RestoreComposition( const std::string& text )
 	// What plays and what is selected stays, where it still exists.
 	for( int l = 0; l < (int)fresh.layers.size() && l < (int)composition.layers.size(); ++l )
 	{
-		Layer& layer  = fresh.layers[ l ];
-		int active    = follow[ l ] >= 0 ? follow[ l ] : composition.layers[ l ].active;
-		layer.active  = active >= 0 && active < (int)layer.clips.size() && !layer.clips[ active ].Empty() ? active : -1;
-		layer.solo    = composition.layers[ l ].solo;
+		Layer& layer = fresh.layers[ l ];
+		auto [ row, column ] = follow[ l ].first >= 0 ? follow[ l ] : std::pair{ composition.layers[ l ].activeRow, composition.layers[ l ].active };
+		Clip* clip      = fresh.ClipAt( row, column );
+		layer.active    = clip && !clip->Empty() ? column : -1;
+		layer.activeRow = clip && !clip->Empty() ? row : -1;
+		layer.solo      = composition.layers[ l ].solo;
 	}
 	fresh.beat           = composition.beat;
 	fresh.paused         = composition.paused;
 	fresh.selectedLayer  = std::clamp( composition.selectedLayer, 0, std::max( (int)fresh.layers.size() - 1, 0 ) );
+	fresh.selectedRow    = std::clamp( composition.selectedRow, 0, std::max( (int)fresh.layers.size() - 1, 0 ) );
 	fresh.selectedColumn = composition.selectedColumn < fresh.ColumnCount() ? composition.selectedColumn : -1;
 	fresh.activeColumn   = composition.activeColumn < fresh.ColumnCount() ? composition.activeColumn : -1;
 	composition          = std::move( fresh );
@@ -949,7 +1020,7 @@ bool App::ApplyControl( const std::string& address, bool hasValue, float value, 
 		return layerOk && columnOk;
 	case Kind::LayerCue:
 		if( press && layerOk && composition.layers[ t.layer ].active >= 0 )
-			JumpToCue( t.layer, composition.layers[ t.layer ].active, t.slot );
+			JumpToCue( composition.layers[ t.layer ].activeRow, composition.layers[ t.layer ].active, t.slot );
 		return layerOk;
 	case Kind::LayerTransition:
 		if( layerOk )
@@ -958,6 +1029,31 @@ bool App::ApplyControl( const std::string& address, bool hasValue, float value, 
 			layer.transitionDuration = unit * ( layer.transitionInBeats ? 16.0f : 10.0f );
 		}
 		return layerOk;
+	case Kind::LayerMaster:
+		if( layerOk )
+			composition.layers[ t.layer ].master = unit;
+		return layerOk;
+	case Kind::LayerSpeed:
+		if( layerOk )
+			composition.layers[ t.layer ].speed = unit * 4;
+		return layerOk;
+	case Kind::LayerNextClip:
+	case Kind::LayerPrevClip:
+		if( press && layerOk )
+			LaunchNextClip( t.layer, t.kind == Kind::LayerNextClip ? 1 : -1 );
+		return layerOk;
+	case Kind::SelectedNextClip:
+	case Kind::SelectedPrevClip:
+		if( press )
+			LaunchNextClip( composition.selectedLayer, t.kind == Kind::SelectedNextClip ? 1 : -1 );
+		return true;
+	case Kind::NextColumn:
+	case Kind::PrevColumn:
+		if( press )
+			LaunchNextColumn( t.kind == Kind::NextColumn ? 1 : -1 );
+		return true;
+	case Kind::Crossfader: composition.crossfader = unit; return true;
+	case Kind::CompositionBypass: flip( composition.bypass ); return true;
 	case Kind::AudioVolume: composition.audioVolume = unit; return true;
 	case Kind::Master: composition.master = unit; return true;
 	case Kind::Speed: composition.speed = unit * 4; return true;
@@ -1086,8 +1182,7 @@ void App::LoadGenerator( int layer, int column, const std::string& id )
 		composition.AddLayer();
 	while( composition.ColumnCount() <= column )
 		composition.AddColumn();
-	if( composition.layers[ layer ].active == column )
-		ClearLayer( layer );
+	StopCell( layer, column );
 	Clip clip;
 	clip.name        = generator->Name();
 	clip.generatorId = id;
@@ -1302,20 +1397,22 @@ void App::UpdateAudio()
 	// composition are silent.
 	bool anySolo = std::any_of( composition.layers.begin(), composition.layers.end(), []( const Layer& l ) { return l.solo; } );
 	std::vector< std::shared_ptr< AudioVoice > > voices;
-	for( Layer& layer : composition.layers )
+	for( int index = 0; index < (int)composition.layers.size(); ++index )
 	{
-		if( layer.active < 0 || layer.active >= (int)layer.clips.size() )
+		Layer& layer = composition.layers[ index ];
+		if( !composition.ActiveClip( index ) )
 			continue;
-		bool audible = !composition.paused && !layer.bypass && ( !anySolo || layer.solo );
+		bool audible = !composition.paused && !composition.bypass && !layer.bypass && ( !anySolo || layer.solo );
 		// During a transition the outgoing clip's sound fades out as the new one fades in.
-		bool fading  = layer.previous >= 0 && layer.previous < (int)layer.clips.size() && layer.transitionProgress < 1;
+		bool fading  = composition.OutgoingClip( index ) && layer.transitionProgress < 1;
 		for( int which = 0; which < ( fading ? 2 : 1 ); ++which )
 		{
-			Clip& clip = layer.clips[ which == 0 ? layer.active : layer.previous ];
+			Clip& clip = *( which == 0 ? composition.ActiveClip( index ) : composition.OutgoingClip( index ) );
 			if( !clip.audio || !clip.Loaded() )
 				continue;
 			float fade  = !fading ? 1.0f : which == 0 ? layer.transitionProgress : 1.0f - layer.transitionProgress;
-			double rate = clip.PlayDirection() * std::fabs( clip.Rate( composition.bpm ) ) * composition.speed;
+			fade *= layer.master * layer.CrossfadeGain( composition.crossfader );
+			double rate = clip.PlayDirection() * std::fabs( clip.Rate( composition.bpm ) ) * composition.speed * layer.speed;
 			clip.audio->Follow( clip.time, rate, audible ? clip.volume * layer.volume * fade : 0.0f );
 			voices.push_back( clip.audio );
 		}
@@ -1334,7 +1431,7 @@ void App::UpdatePlayback( double dt )
 			if( !clip.Loaded() )
 				return; // generators run on composition time
 			if( !composition.paused )
-				clip.Advance( dt * composition.speed, composition.bpm );
+				clip.Advance( dt * composition.speed * layer.speed, composition.bpm );
 			clip.player->Update( clip.CurrentFrame(), composition.paused ? 0 : clip.PlayDirection() );
 		};
 		if( layer.previous >= 0 )
@@ -1343,28 +1440,32 @@ void App::UpdatePlayback( double dt )
 			double seconds = layer.TransitionSeconds( composition.bpm );
 			if( !composition.paused )
 				layer.transitionProgress += seconds > 0 ? (float)( dt * ( layer.transitionInBeats ? composition.speed : 1.0 ) / seconds ) : 1.0f;
-			if( layer.transitionProgress >= 1 || layer.previous >= (int)layer.clips.size() )
+			if( layer.transitionProgress >= 1 || !composition.OutgoingClip( index ) )
 				FinishTransition( index );
 			else
-				play( layer.clips[ layer.previous ] );
+				play( *composition.OutgoingClip( index ) );
 		}
-		play( layer.clips[ layer.active ] );
+		Clip* playing = composition.ActiveClip( index );
+		if( !playing )
+			continue;
+		Clip& clip = *playing;
+		play( clip );
+		if( clip.finished && clip.playMode == PlayMode::OnceClear )
+			ClearLayer( index ); // played once: the layer empties
 	}
 }
 
 void App::UpdatePreview( double dt )
 {
-	int l          = composition.selectedLayer;
-	int c          = composition.selectedColumn;
 	Clip* selected = composition.SelectedClip();
-	bool live      = selected && ( composition.layers[ l ].active == c || composition.layers[ l ].previous == c );
+	bool live      = selected && composition.LayerShowing( composition.selectedRow, composition.selectedColumn ) >= 0;
 	ClipPlayer* wanted = selected && !live && selected->Loaded() && selected->Playable() ? selected->player.get() : nullptr;
 	if( previewPlayer && previewPlayer != wanted )
 	{
 		// Stop the clip previewed until now, unless it has since been launched (or removed: then it is gone).
-		for( Layer& layer : composition.layers )
-			for( int column = 0; column < (int)layer.clips.size(); ++column )
-				if( layer.clips[ column ].player.get() == previewPlayer && layer.active != column && layer.previous != column )
+		for( int row = 0; row < (int)composition.layers.size(); ++row )
+			for( int column = 0; column < (int)composition.layers[ row ].clips.size(); ++column )
+				if( composition.layers[ row ].clips[ column ].player.get() == previewPlayer && composition.LayerShowing( row, column ) < 0 )
 					previewPlayer->Deactivate();
 		previewPlayer = nullptr;
 	}

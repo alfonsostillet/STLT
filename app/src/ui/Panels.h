@@ -26,6 +26,8 @@ enum class Icon
 	Stop,
 	Reverse,
 	Close,
+	Previous, // |<
+	Next,     // >|
 };
 bool IconButton( const char* id, Icon icon, bool active = false, float size = 0 );
 }

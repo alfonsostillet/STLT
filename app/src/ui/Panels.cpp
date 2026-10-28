@@ -150,25 +150,15 @@ void DrawIcon( ImDrawList* draw, Icon icon, ImVec2 min, ImVec2 max, ImU32 colour
 		draw->AddLine( ImVec2( c.x - r * 0.7f, c.y - r * 0.7f ), ImVec2( c.x + r * 0.7f, c.y + r * 0.7f ), colour, Ui( 1.6f ) );
 		draw->AddLine( ImVec2( c.x - r * 0.7f, c.y + r * 0.7f ), ImVec2( c.x + r * 0.7f, c.y - r * 0.7f ), colour, Ui( 1.6f ) );
 		break;
+	case Icon::Previous:
+		draw->AddRectFilled( ImVec2( c.x - r * 0.9f, c.y - r ), ImVec2( c.x - r * 0.55f, c.y + r ), colour );
+		draw->AddTriangleFilled( ImVec2( c.x + r * 0.8f, c.y - r ), ImVec2( c.x + r * 0.8f, c.y + r ), ImVec2( c.x - r * 0.45f, c.y ), colour );
+		break;
+	case Icon::Next:
+		draw->AddRectFilled( ImVec2( c.x + r * 0.55f, c.y - r ), ImVec2( c.x + r * 0.9f, c.y + r ), colour );
+		draw->AddTriangleFilled( ImVec2( c.x - r * 0.8f, c.y - r ), ImVec2( c.x - r * 0.8f, c.y + r ), ImVec2( c.x + r * 0.45f, c.y ), colour );
+		break;
 	}
-}
-
-// A small square toggle button with a letter on it (layer B / S switches).
-bool LetterButton( const char* id, const char* letter, bool on, ImU32 onColour )
-{
-	float size = ImGui::GetFrameHeight();
-	ImGui::PushID( id );
-	ImVec2 pos   = ImGui::GetCursorScreenPos();
-	bool clicked = ImGui::InvisibleButton( "##b", ImVec2( size, size ) );
-	ImDrawList* draw = ImGui::GetWindowDrawList();
-	ImU32 bg = on ? onColour : ImGui::IsItemHovered() ? theme::RaisedHover : theme::Raised;
-	draw->AddRectFilled( pos, ImVec2( pos.x + size, pos.y + size ), bg, ImGui::GetStyle().FrameRounding );
-	ImGui::PushFont( Fonts().bold );
-	ImVec2 textSize = ImGui::CalcTextSize( letter );
-	draw->AddText( ImVec2( pos.x + ( size - textSize.x ) / 2, pos.y + ( size - textSize.y ) / 2 ), on ? theme::OnAccent : theme::TextDim, letter );
-	ImGui::PopFont();
-	ImGui::PopID();
-	return clicked;
 }
 
 // Directory listings are cached and refreshed every couple of seconds.
@@ -570,10 +560,29 @@ void DrawToolbar( App& app )
 	if( ImGui::IsItemHovered() )
 		ImGui::SetTooltip( "Clear every layer" );
 	MapTarget( app, "/composition/stop" );
-	// Space alone pauses (with a modifier it is free for the user's shortcuts).
+	// Space alone pauses (with a modifier it is free for the user's shortcuts). The arrows: left and right launch the
+	// previous and next clip on the selected layer, up and down select the layer above or below. Not while typing,
+	// mapping or in the Advanced Output editor (its arrows move points), nor when the user mapped the key.
 	const ImGuiIO& io = ImGui::GetIO();
-	if( !io.WantTextInput && !io.KeyCtrl && !io.KeyShift && !io.KeyAlt && ImGui::IsKeyPressed( ImGuiKey_Space, false ) )
+	bool plainKeys    = !io.WantTextInput && !io.KeyCtrl && !io.KeyShift && !io.KeyAlt && !app.learning;
+	if( plainKeys && ImGui::IsKeyPressed( ImGuiKey_Space, false ) )
 		comp.paused = !comp.paused;
+	auto builtIn = [ & ]( ImGuiKey key ) {
+		if( !plainKeys || app.panels.advancedOutput || !ImGui::IsKeyPressed( key, false ) )
+			return false;
+		for( const KeyMapping& m : app.control.keys )
+			if( m.chord == KeyChord{ ImGui::GetKeyName( key ) } )
+				return false;
+		return true;
+	};
+	if( builtIn( ImGuiKey_RightArrow ) )
+		app.LaunchNextClip( comp.selectedLayer, 1 );
+	if( builtIn( ImGuiKey_LeftArrow ) )
+		app.LaunchNextClip( comp.selectedLayer, -1 );
+	if( builtIn( ImGuiKey_UpArrow ) )
+		comp.selectedLayer = std::min( comp.selectedLayer + 1, (int)comp.layers.size() - 1 );
+	if( builtIn( ImGuiKey_DownArrow ) )
+		comp.selectedLayer = std::max( comp.selectedLayer - 1, 0 );
 
 	// Tempo: the BPM in figures that do not jump about, halve, double, tap, resync, and the beats of the bar.
 	ToolbarDivider();
@@ -640,6 +649,13 @@ void DrawToolbar( App& app )
 	EnumCombo( "##quantize", &comp.quantize, LaunchQuantizeName );
 	if( ImGui::IsItemHovered() )
 		ImGui::SetTooltip( "When a launched clip or column starts: now, on the next beat, or on the next bar (4 beats)" );
+	// Where a launched clip plays: the layer of its row, or the selected layer whatever its row (layer based).
+	ImGui::SameLine( 0, Ui( 10 ) );
+	ToolbarCaption( "Clips to" );
+	ImGui::SetNextItemWidth( Ui( 128 ) );
+	EnumCombo( "##target", &comp.target, ClipTargetName );
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "Own Layer: a clip plays on the layer of its row.\nSelected Layer: select a layer (click its header), then any clip, from any row, plays there." );
 
 	// Speed.
 	ToolbarDivider();
@@ -712,6 +728,141 @@ void DrawToolbar( App& app )
 	ImGui::SetCursorPosY( ImGui::GetCursorPosY() + Ui( 4 ) );
 }
 
+// ---- The deck's headers, laid out as in Resolume: the composition on top, a header per layer, the crossfader
+// at the bottom.
+
+const Icon kCloseIcon = Icon::Close;
+
+// A flat button of any size with a label or an icon, lit (in `onColour`) when `on`.
+static bool BoxButton( const char* id, ImVec2 pos, ImVec2 size, const char* label, bool on, ImU32 onColour, const char* tip = nullptr,
+                       const Icon* icon = nullptr )
+{
+	ImGui::SetCursorScreenPos( pos );
+	bool clicked     = ImGui::InvisibleButton( id, size );
+	bool hovered     = ImGui::IsItemHovered();
+	ImDrawList* draw = ImGui::GetWindowDrawList();
+	ImVec2 max( pos.x + size.x, pos.y + size.y );
+	draw->AddRectFilled( pos, max, on ? onColour : hovered ? theme::RaisedHover : theme::Raised, Ui( 4 ) );
+	ImU32 fg = on ? theme::OnAccent : hovered ? theme::Text : theme::TextDim;
+	if( icon )
+		DrawIcon( draw, *icon, pos, max, fg );
+	else
+	{
+		ImGui::PushFont( Fonts().bold );
+		ImVec2 t = ImGui::CalcTextSize( label );
+		draw->PushClipRect( pos, max, true );
+		draw->AddText( ImVec2( pos.x + std::max( Ui( 3 ), ( size.x - t.x ) / 2 ), pos.y + ( size.y - t.y ) / 2 ), fg, label );
+		draw->PopClipRect();
+		ImGui::PopFont();
+	}
+	if( tip && ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
+		ImGui::SetTooltip( "%s", tip );
+	return clicked;
+}
+
+static bool IconBox( const char* id, ImVec2 pos, ImVec2 size, Icon icon, bool on, const char* tip = nullptr )
+{
+	return BoxButton( id, pos, size, "", on, theme::Accent, tip, &icon );
+}
+
+// A vertical fader: its letter on top, filled from the bottom up to the value. Drag it; right-click or
+// double-click: 100 %.
+static bool VerticalFader( const char* id, ImVec2 pos, ImVec2 size, float* value, const char* letter, ImU32 colour, const char* name, bool learning )
+{
+	float letterH = std::min( size.y * 0.3f, ImGui::GetFrameHeight() );
+	ImGui::SetCursorScreenPos( pos );
+	ImGui::InvisibleButton( id, size );
+	bool hovered = ImGui::IsItemHovered(), changed = false;
+	ImVec2 trackMin( pos.x, pos.y + letterH + Ui( 2 ) ), trackMax( pos.x + size.x, pos.y + size.y );
+	float trackH = std::max( 1.0f, trackMax.y - trackMin.y );
+	if( ImGui::IsItemActive() )
+	{
+		float v = std::clamp( ( trackMax.y - ImGui::GetIO().MousePos.y ) / trackH, 0.0f, 1.0f );
+		changed = v != *value;
+		*value  = v;
+	}
+	changed |= ResetValue( value, 1.0f );
+	ImDrawList* draw = ImGui::GetWindowDrawList();
+	draw->AddRectFilled( pos, ImVec2( pos.x + size.x, pos.y + letterH ), colour, Ui( 3 ) );
+	ImGui::PushFont( Fonts().bold );
+	ImVec2 t = ImGui::CalcTextSize( letter );
+	draw->AddText( ImVec2( pos.x + ( size.x - t.x ) / 2, pos.y + ( letterH - t.y ) / 2 ), theme::Text, letter );
+	ImGui::PopFont();
+	draw->AddRectFilled( trackMin, trackMax, hovered ? IM_COL32( 34, 38, 45, 255 ) : IM_COL32( 26, 29, 35, 255 ), Ui( 3 ) );
+	float top = trackMax.y - trackH * std::clamp( *value, 0.0f, 1.0f );
+	if( top < trackMax.y - 0.5f )
+		draw->AddRectFilled( ImVec2( trackMin.x, top ), trackMax, ( colour & 0x00FFFFFF ) | 0x99000000, Ui( 3 ) );
+	draw->AddLine( ImVec2( trackMin.x, top ), ImVec2( trackMax.x, top ), theme::Text, Ui( 1.5f ) );
+	if( hovered && !learning )
+		ImGui::SetTooltip( "%s %.0f %%\nRight-click: 100 %%", name, *value * 100 );
+	return changed;
+}
+
+// Switches a clip between its own speed and BPM sync (the nearest power of two of beats at this tempo).
+static void SetBpmSync( Clip& clip, bool on, double bpm )
+{
+	if( !on )
+	{
+		clip.syncBeats = 0;
+		return;
+	}
+	if( clip.syncBeats > 0 )
+		return;
+	double beats   = ( clip.RangeEnd() - clip.RangeStart() ) * bpm / 60.0;
+	clip.syncBeats = (float)std::clamp( std::exp2( std::round( std::log2( std::max( beats, 0.25 ) ) ) ), 0.25, 256.0 );
+}
+
+// Where the clip is: a bar to see and drag the playhead.
+static void PositionBar( const char* id, ImVec2 pos, ImVec2 size, Clip* clip )
+{
+	ImGui::SetCursorScreenPos( pos );
+	ImGui::InvisibleButton( id, size );
+	ImDrawList* draw = ImGui::GetWindowDrawList();
+	ImVec2 max( pos.x + size.x, pos.y + size.y );
+	draw->AddRectFilled( pos, max, IM_COL32( 26, 29, 35, 255 ), Ui( 3 ) );
+	double duration = clip && clip->Loaded() ? clip->Duration() : 0;
+	if( duration <= 0 )
+		return;
+	if( ImGui::IsItemActive() )
+		clip->JumpTo( std::clamp( ( ImGui::GetIO().MousePos.x - pos.x ) / size.x, 0.0f, 1.0f ) * duration );
+	float x0 = pos.x + size.x * (float)( clip->RangeStart() / duration ), x1 = pos.x + size.x * (float)( clip->RangeEnd() / duration );
+	float x  = pos.x + size.x * (float)( std::clamp( clip->time, 0.0, duration ) / duration );
+	draw->AddRectFilled( ImVec2( x0, pos.y ), ImVec2( std::max( x0, x ), max.y ), theme::AccentFill, Ui( 3 ) );
+	draw->AddRectFilled( ImVec2( x - Ui( 2 ), pos.y ), ImVec2( x + Ui( 2 ), max.y ), theme::Accent );
+	if( x1 < max.x - 1 )
+		draw->AddRectFilled( ImVec2( x1, pos.y ), max, IM_COL32( 0, 0, 0, 110 ), Ui( 3 ) );
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "%s / %s", FormatTime( clip->time ).c_str(), FormatTime( duration ).c_str() );
+}
+
+// The crossfader: layers in group A on the left, group B on the right; in the middle both show in full.
+static void Crossfader( App& app, ImVec2 pos, ImVec2 size )
+{
+	Composition& comp = app.composition;
+	float box         = size.y;
+	if( BoxButton( "##xfA", pos, ImVec2( box * 1.3f, box ), "A", comp.crossfader <= 0, IM_COL32( 214, 120, 160, 255 ), "Crossfader all the way to A" ) )
+		comp.crossfader = 0;
+	ImVec2 bar( pos.x + box * 1.3f + Ui( 4 ), pos.y );
+	float barW = size.x - 2 * ( box * 1.3f + Ui( 4 ) );
+	ImGui::SetCursorScreenPos( bar );
+	ImGui::InvisibleButton( "##crossfader", ImVec2( barW, box ) );
+	if( ImGui::IsItemActive() )
+		comp.crossfader = std::clamp( ( ImGui::GetIO().MousePos.x - bar.x ) / barW, 0.0f, 1.0f );
+	ResetValue( &comp.crossfader, 0.5f );
+	bool hovered     = ImGui::IsItemHovered();
+	ImDrawList* draw = ImGui::GetWindowDrawList();
+	draw->AddRectFilled( bar, ImVec2( bar.x + barW, bar.y + box ), hovered ? IM_COL32( 34, 38, 45, 255 ) : IM_COL32( 26, 29, 35, 255 ), Ui( 3 ) );
+	draw->AddLine( ImVec2( bar.x + barW / 2, bar.y + Ui( 3 ) ), ImVec2( bar.x + barW / 2, bar.y + box - Ui( 3 ) ), theme::Line );
+	float x = bar.x + barW * comp.crossfader, handle = Ui( 9 );
+	draw->AddRectFilled( ImVec2( x - handle, bar.y ), ImVec2( x + handle, bar.y + box ), theme::AccentDim, Ui( 3 ) );
+	draw->AddLine( ImVec2( x, bar.y + Ui( 2 ) ), ImVec2( x, bar.y + box - Ui( 2 ) ), theme::Accent, Ui( 2 ) );
+	if( hovered && !app.learning )
+		ImGui::SetTooltip( "Crossfader: layers in group A (A under their faders) on the left, group B on the right\nRight-click: middle" );
+	MapTarget( app, "/composition/crossfader/phase" );
+	if( BoxButton( "##xfB", ImVec2( bar.x + barW + Ui( 4 ), pos.y ), ImVec2( box * 1.3f, box ), "B", comp.crossfader >= 1, IM_COL32( 214, 120, 160, 255 ), "Crossfader all the way to B" ) )
+		comp.crossfader = 1;
+}
+
 void DrawClipGrid( App& app )
 {
 	Composition& comp = app.composition;
@@ -720,14 +871,20 @@ void DrawClipGrid( App& app )
 		ImGui::End();
 		return;
 	}
-	const float cellW   = Ui( 112 );
-	const float thumbH  = std::floor( cellW * 9 / 16 );
-	const float labelH  = ImGui::GetTextLineHeight() + Ui( 8 );
-	const float cellH   = thumbH + labelH;
-	const float leftW   = Ui( 204 );
-	const float gap     = Ui( 6 );
-	const float round   = Ui( 6 );
-	const float headerH = ImGui::GetFrameHeight() + Ui( 6 );
+	const float cellW  = Ui( 124 );
+	const float thumbH = std::floor( cellW * 9 / 16 );
+	const float labelH = ImGui::GetTextLineHeight() + Ui( 8 );
+	const float cellH  = thumbH + labelH;
+	const float gap    = Ui( 6 );
+	const float round  = Ui( 6 );
+	// The headers' columns, left to right: X; B, S and the blend mode; the faders M, A, V (and the crossfader
+	// group under them); the clip's picture and name; speed, loop, timing, direction and position; previous/next.
+	const float colGap = Ui( 4 ), wX = Ui( 40 ), wBS = Ui( 96 ), wFaders = Ui( 66 ), wThumb = Ui( 88 ), wTransport = Ui( 112 ), wArrows = Ui( 46 );
+	const float headerW = wX + wBS + wFaders + wThumb + wTransport + wArrows + colGap * 5;
+	const float leftW   = headerW + Ui( 10 );
+	const float nameH   = Ui( 21 );
+	const float rowH    = Ui( 19 ); // compact controls
+	const float headerH = nameH + Ui( 3 ) + rowH + Ui( 8 );
 	ImDrawList* draw    = ImGui::GetWindowDrawList();
 	bool dropPending    = !app.droppedPaths.empty();
 	ImVec2 dropPoint( app.dropX, app.dropY );
@@ -742,26 +899,76 @@ void DrawClipGrid( App& app )
 	ImGui::BeginChild( "##grid", ImVec2( 0, 0 ), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar );
 	draw         = ImGui::GetWindowDrawList();
 	ImVec2 origin = ImGui::GetCursorScreenPos();
-	// The layer cards stay at the left of the view while the deck scrolls sideways: headers and cells are cut off
-	// where the cards end.
+	// The headers stay at the left of the view while the deck scrolls sideways: column headers and cells are cut
+	// off where the headers end.
 	const float stickyX = origin.x + ImGui::GetScrollX();
 	const ImVec2 viewMin = ImGui::GetWindowPos();
 	const ImVec2 viewMax( viewMin.x + ImGui::GetWindowWidth(), viewMin.y + ImGui::GetWindowHeight() );
 	const float cellsLeft = stickyX + leftW;
+	const float xX = stickyX, xBS = xX + wX + colGap, xF = xBS + wBS + colGap, xT = xF + wFaders + colGap, xTr = xT + wThumb + colGap,
+	            xAr = xTr + wTransport + colGap;
+	const bool learning = app.learning;
+	auto tip            = [ & ]( const char* text ) { return learning ? nullptr : text; };
+	ImGui::PushStyleVar( ImGuiStyleVar_FramePadding, ImVec2( ImGui::GetStyle().FramePadding.x, Ui( 2 ) ) );
 
-	// Column headers.
-	ImGui::SetCursorScreenPos( ImVec2( stickyX, origin.y ) );
-	ImGui::AlignTextToFramePadding();
-	ImGui::PushFont( Fonts().bold );
-	ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( theme::TextDim ), "%s", comp.name.c_str() );
-	ImGui::PopFont();
+	// The composition: its name, then clear, black, master, speed, the transport of every clip and the
+	// previous/next column.
+	{
+		float y0 = origin.y, y1 = origin.y + nameH + Ui( 3 );
+		ImGui::SetCursorScreenPos( ImVec2( xX, y0 ) );
+		if( ImGui::InvisibleButton( "##compName", ImVec2( headerW, nameH ) ) )
+			ImGui::SetWindowFocus( panel::Composition );
+		draw->AddRectFilled( ImVec2( xX, y0 ), ImVec2( xX + headerW, y0 + nameH ), ImGui::IsItemHovered() ? theme::RaisedHover : theme::Raised, Ui( 4 ) );
+		ImGui::PushFont( Fonts().bold );
+		draw->AddText( ImVec2( xX + Ui( 8 ), y0 + ( nameH - ImGui::GetTextLineHeight() ) / 2 ), theme::Text, comp.name.c_str() );
+		ImGui::PopFont();
+		if( BoxButton( "##compClear", ImVec2( xX, y1 ), ImVec2( wX, rowH ), "", false, theme::Accent, tip( "Clear every layer" ), &kCloseIcon ) )
+			for( int l = 0; l < (int)comp.layers.size(); ++l )
+				app.ClearLayer( l );
+		MapTarget( app, "/composition/stop" );
+		float bW = ( wBS - colGap ) / 2;
+		if( BoxButton( "##compBypass", ImVec2( xBS, y1 ), ImVec2( bW, rowH ), "B", comp.bypass, IM_COL32( 230, 170, 70, 255 ), tip( "Black: the whole output off" ) ) )
+			comp.bypass = !comp.bypass;
+		MapTarget( app, "/composition/bypassed" );
+		ImGui::SetCursorScreenPos( ImVec2( xBS + bW + colGap, y1 ) );
+		ImGui::SetNextItemWidth( xT - colGap - ( xBS + bW + colGap ) );
+		PercentSlider( "##compMaster", &comp.master, 1.0f, "M %.0f %%" );
+		MapTarget( app, "/composition/master" );
+		if( ImGui::IsItemHovered() && !learning )
+			ImGui::SetTooltip( "Master of the whole composition (right-click: 100 %%)" );
+		ImGui::SetCursorScreenPos( ImVec2( xT, y1 ) );
+		ImGui::SetNextItemWidth( wThumb );
+		FilledSlider( "##compSpeed", &comp.speed, 0.0f, 4.0f, "S %.2fx" );
+		ResetValue( &comp.speed, 1.0f );
+		MapTarget( app, "/composition/speed" );
+		if( ImGui::IsItemHovered() && !learning )
+			ImGui::SetTooltip( "Speed of the whole composition (right-click: 1x)" );
+		float third = ( wTransport - 2 * Ui( 2 ) ) / 3;
+		if( IconBox( "##compReverse", ImVec2( xTr, y1 ), ImVec2( third, rowH ), Icon::Reverse, false, tip( "Every playing clip backwards" ) ) )
+			app.SetAllDirections( -1 );
+		if( IconBox( "##compPause", ImVec2( xTr + third + Ui( 2 ), y1 ), ImVec2( third, rowH ), Icon::Pause, comp.paused, tip( "Pause everything (Space)" ) ) )
+			comp.paused = !comp.paused;
+		MapTarget( app, "/composition/pause" );
+		if( IconBox( "##compPlay", ImVec2( xTr + 2 * ( third + Ui( 2 ) ), y1 ), ImVec2( third, rowH ), Icon::Play, !comp.paused, tip( "Every playing clip forwards" ) ) )
+			app.SetAllDirections( 1 );
+		float half = ( wArrows - Ui( 2 ) ) / 2;
+		if( IconBox( "##prevColumn", ImVec2( xAr, y1 ), ImVec2( half, rowH ), Icon::Previous, false, tip( "Previous column" ) ) )
+			app.LaunchNextColumn( -1 );
+		MapTarget( app, "/composition/connectprevcolumn" );
+		if( IconBox( "##nextColumn", ImVec2( xAr + half + Ui( 2 ), y1 ), ImVec2( half, rowH ), Icon::Next, false, tip( "Next column" ) ) )
+			app.LaunchNextColumn( 1 );
+		MapTarget( app, "/composition/connectnextcolumn" );
+	}
+
+	// Column headers, beside the composition's controls.
+	const float columnsY = origin.y + nameH + Ui( 3 );
 	ImGui::PushClipRect( ImVec2( cellsLeft, viewMin.y ), viewMax, true );
 	for( int c = 0; c < comp.ColumnCount(); ++c )
 	{
-		ImVec2 pos( origin.x + leftW + c * ( cellW + gap ), origin.y );
+		ImVec2 pos( origin.x + leftW + c * ( cellW + gap ), columnsY );
 		ImGui::SetCursorScreenPos( pos );
 		ImGui::PushID( c );
-		float h      = headerH - Ui( 6 );
+		float h      = rowH;
 		bool clicked = ImGui::InvisibleButton( "##column", ImVec2( cellW, h ) );
 		bool hovered = ImGui::IsItemHovered();
 		bool active  = comp.activeColumn == c;
@@ -789,9 +996,9 @@ void DrawClipGrid( App& app )
 		ImGui::PopID();
 	}
 	{
-		ImVec2 pos( origin.x + leftW + comp.ColumnCount() * ( cellW + gap ), origin.y );
+		ImVec2 pos( origin.x + leftW + comp.ColumnCount() * ( cellW + gap ), columnsY );
 		ImGui::SetCursorScreenPos( pos );
-		if( ImGui::Button( "+##addColumn", ImVec2( headerH - Ui( 6 ), headerH - Ui( 6 ) ) ) )
+		if( ImGui::Button( "+##addColumn", ImVec2( rowH, rowH ) ) )
 			comp.AddColumn();
 		if( ImGui::IsItemHovered() )
 			ImGui::SetTooltip( "New column" );
@@ -806,62 +1013,34 @@ void DrawClipGrid( App& app )
 		Layer& layer = comp.layers[ l ];
 		float y      = origin.y + headerH + row * ( cellH + gap );
 		ImGui::PushID( l );
-
-		// Layer strip.
-		// A card per layer: the selected one raised, a bar of accent while it plays.
-		ImVec2 stripMin( stickyX, y ), stripMax( stickyX + leftW - gap * 2, y + cellH );
-		bool selectedLayer = comp.selectedLayer == l;
-		draw->AddRectFilled( stripMin, stripMax, selectedLayer ? theme::Raised : IM_COL32( 24, 27, 32, 255 ), round );
-		if( selectedLayer )
-			draw->AddRect( stripMin, stripMax, IM_COL32( 255, 255, 255, 22 ), round );
-		if( layer.active >= 0 )
-			draw->AddRectFilled( ImVec2( stripMin.x + Ui( 3 ), stripMin.y + Ui( 8 ) ), ImVec2( stripMin.x + Ui( 6 ), stripMax.y - Ui( 8 ) ), theme::Accent, Ui( 2 ) );
-		// Three rows of compact controls: clear, bypass, solo and the name; blend mode and volume; opacity.
-		ImGui::PushStyleVar( ImGuiStyleVar_FramePadding, ImVec2( ImGui::GetStyle().FramePadding.x, Ui( 2 ) ) );
-		const float rowH   = ImGui::GetFrameHeight();
-		const float innerW = stripMax.x - stripMin.x - Ui( 20 );
-		const float row0   = y + Ui( 6 );
-		const float row2   = y + cellH - rowH - Ui( 6 );
-		const float row1   = ( row0 + rowH + row2 ) / 2 - rowH / 2;
-		ImGui::SetCursorScreenPos( ImVec2( stickyX + Ui( 12 ), row0 ) );
 		std::string layerAddress = "/composition/layers/" + std::to_string( l + 1 );
-		if( IconButton( "##clear", Icon::Close ) )
-			app.ClearLayer( l );
-		MapTarget( app, layerAddress + "/clear" );
-		if( ImGui::IsItemHovered() )
-			ImGui::SetTooltip( "Clear layer" );
-		ImGui::SameLine();
-		if( LetterButton( "bypass", "B", layer.bypass, IM_COL32( 230, 170, 70, 255 ) ) )
-			layer.bypass = !layer.bypass;
-		MapTarget( app, layerAddress + "/bypassed" );
-		if( ImGui::IsItemHovered() )
-			ImGui::SetTooltip( "Bypass" );
-		ImGui::SameLine();
-		if( LetterButton( "solo", "S", layer.solo, theme::Solo ) )
-			layer.solo = !layer.solo;
-		MapTarget( app, layerAddress + "/solo" );
-		if( ImGui::IsItemHovered() )
-			ImGui::SetTooltip( "Solo" );
-		ImGui::SameLine();
-		ImGui::AlignTextToFramePadding();
-		ImGui::PushFont( Fonts().bold );
-		ImGui::PushStyleColor( ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4( selectedLayer ? theme::Text : theme::TextDim ) );
-		if( ImGui::Selectable( layer.name.c_str(), false, 0, ImVec2( std::max( 1.0f, stripMax.x - ImGui::GetCursorScreenPos().x - Ui( 8 ) ), 0 ) ) )
-		{
-			// The Layer panel comes forward with the layer's settings and effects.
+		bool selectedLayer       = comp.selectedLayer == l;
+		Clip* playing            = comp.ActiveClip( l );
+		const float upH          = cellH - nameH - Ui( 3 ); // the part above the name row
+		const float yName        = y + upH + Ui( 3 );
+		auto selectLayer         = [ & ]() {
 			comp.selectedLayer = l;
 			ImGui::SetWindowFocus( panel::Layer );
-		}
-		ImGui::PopStyleColor();
-		ImGui::PopFont();
-		if( AcceptEffectDrop( app, layer.effects ) )
-			comp.selectedLayer = l;
-		if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) )
-			ImGui::SetTooltip( "Click: the layer's settings and effects%s", layer.effects.empty() ? "" : ( "\n" + std::to_string( layer.effects.size() ) + ( layer.effects.size() == 1 ? " effect" : " effects" ) + " on this layer" ).c_str() );
+		};
+		// The whole header, under its controls: a click on a free part of it selects the layer.
+		ImGui::SetCursorScreenPos( ImVec2( xX, y ) );
+		ImGui::SetNextItemAllowOverlap();
+		if( ImGui::InvisibleButton( "##header", ImVec2( headerW, cellH ) ) )
+			selectLayer();
 
-		ImGui::SetCursorScreenPos( ImVec2( stickyX + Ui( 12 ), row1 ) );
-		float blendW = std::floor( innerW * 0.52f );
-		ImGui::SetNextItemWidth( blendW );
+		// Clear; black (bypass) and solo with the blend mode under them; the layer's name.
+		if( BoxButton( "##clear", ImVec2( xX, y ), ImVec2( wX, upH ), "", false, theme::Accent, tip( "Clear the layer" ), &kCloseIcon ) )
+			app.ClearLayer( l );
+		MapTarget( app, layerAddress + "/clear" );
+		float bsW = ( wBS - colGap ) / 2, bsH = upH - rowH - Ui( 3 );
+		if( BoxButton( "##bypass", ImVec2( xBS, y ), ImVec2( bsW, bsH ), "B", layer.bypass, IM_COL32( 230, 170, 70, 255 ), tip( "Black: the layer off" ) ) )
+			layer.bypass = !layer.bypass;
+		MapTarget( app, layerAddress + "/bypassed" );
+		if( BoxButton( "##solo", ImVec2( xBS + bsW + colGap, y ), ImVec2( bsW, bsH ), "S", layer.solo, theme::Solo, tip( "Solo: only this layer" ) ) )
+			layer.solo = !layer.solo;
+		MapTarget( app, layerAddress + "/solo" );
+		ImGui::SetCursorScreenPos( ImVec2( xBS, y + upH - rowH ) );
+		ImGui::SetNextItemWidth( wBS );
 		if( ImGui::BeginCombo( "##blend", BlendModeName( layer.blend ), ImGuiComboFlags_HeightLarge ) )
 		{
 			for( int b = 0; b < (int)BlendMode::Count; ++b )
@@ -869,21 +1048,127 @@ void DrawClipGrid( App& app )
 					layer.blend = (BlendMode)b;
 			ImGui::EndCombo();
 		}
-		if( ImGui::IsItemHovered() )
+		if( ImGui::IsItemHovered() && !learning )
 			ImGui::SetTooltip( "Blend mode: how this layer mixes with the layers below it" );
-		ImGui::SameLine( 0, Ui( 6 ) );
-		ImGui::SetNextItemWidth( innerW - blendW - Ui( 6 ) );
-		PercentSlider( "##volume", &layer.volume, 1.0f, "Vol %.0f %%" );
-		MapTarget( app, layerAddress + "/audio/volume" );
-		if( ImGui::IsItemHovered() && !app.learning )
-			ImGui::SetTooltip( "Volume of this layer's clips (right-click: 100 %%)" );
+		ImGui::SetCursorScreenPos( ImVec2( xX, yName ) );
+		if( ImGui::InvisibleButton( "##name", ImVec2( wX + colGap + wBS, nameH ) ) )
+			selectLayer();
+		bool nameHovered = ImGui::IsItemHovered();
+		if( AcceptEffectDrop( app, layer.effects ) )
+			comp.selectedLayer = l;
+		if( nameHovered && !learning && ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) )
+			ImGui::SetTooltip( "Click: select the layer (its settings and effects in the Layer panel)%s",
+			                   comp.target == ClipTarget::SelectedLayer ? "\nClips launched from any row play on the selected layer" : "" );
+		draw->AddRectFilled( ImVec2( xX, yName ), ImVec2( xBS + wBS, yName + nameH ), selectedLayer ? theme::Accent : nameHovered ? theme::RaisedHover : theme::Raised, Ui( 4 ) );
+		ImGui::PushFont( Fonts().bold );
+		draw->AddText( ImVec2( xX + Ui( 6 ), yName + ( nameH - ImGui::GetTextLineHeight() ) / 2 ), selectedLayer ? theme::OnAccent : theme::Text, layer.name.c_str() );
+		ImGui::PopFont();
 
-		ImGui::SetCursorScreenPos( ImVec2( stickyX + Ui( 12 ), row2 ) );
-		ImGui::SetNextItemWidth( innerW );
+		// Faders: master (video and sound), audio, video; the crossfader group under them.
+		float fw = ( wFaders - 2 * Ui( 2 ) ) / 3;
+		VerticalFader( "##master", ImVec2( xF, y ), ImVec2( fw, upH ), &layer.master, "M", IM_COL32( 96, 102, 114, 255 ), "Master (video and sound)", learning );
+		MapTarget( app, layerAddress + "/master" );
+		VerticalFader( "##audio", ImVec2( xF + fw + Ui( 2 ), y ), ImVec2( fw, upH ), &layer.volume, "A", IM_COL32( 168, 74, 116, 255 ), "Audio", learning );
+		MapTarget( app, layerAddress + "/audio/volume" );
 		float shownOpacity = layer.ShownOpacity( comp.beat ); // moving with the beat: shown, not edited
-		PercentSlider( "##opacity", layer.opacityAnimation.mode == AnimMode::Off ? &layer.opacity : &shownOpacity, 1.0f, "Opacity %.0f %%" );
+		VerticalFader( "##video", ImVec2( xF + 2 * ( fw + Ui( 2 ) ), y ), ImVec2( fw, upH ), layer.opacityAnimation.mode == AnimMode::Off ? &layer.opacity : &shownOpacity, "V",
+		               IM_COL32( 44, 138, 112, 255 ), "Video", learning );
 		MapTarget( app, layerAddress + "/video/opacity" );
-		ImGui::PopStyleVar();
+		float groupW = ( wFaders - colGap ) / 2;
+		if( BoxButton( "##groupA", ImVec2( xF, yName ), ImVec2( groupW, nameH ), "A", layer.crossfader == 1, IM_COL32( 214, 120, 160, 255 ), tip( "Crossfader group A" ) ) )
+			layer.crossfader = layer.crossfader == 1 ? 0 : 1;
+		if( BoxButton( "##groupB", ImVec2( xF + groupW + colGap, yName ), ImVec2( groupW, nameH ), "B", layer.crossfader == 2, IM_COL32( 214, 120, 160, 255 ), tip( "Crossfader group B" ) ) )
+			layer.crossfader = layer.crossfader == 2 ? 0 : 2;
+
+		// The playing clip's picture (click: select it) and name.
+		{
+			ImVec2 p0( xT, y ), p1( xT + wThumb, y + upH );
+			ImGui::SetCursorScreenPos( p0 );
+			if( ImGui::InvisibleButton( "##picture", ImVec2( wThumb, upH ) ) && playing )
+				app.Select( layer.activeRow, layer.active );
+			draw->AddRectFilled( p0, p1, IM_COL32( 12, 13, 16, 255 ), Ui( 4 ) );
+			GLuint picture = !playing ? 0 : playing->player ? playing->player->Thumbnail().Texture() : playing->generatorThumbnail ? playing->generatorThumbnail->Texture() : 0;
+			if( picture )
+			{
+				ImVec2 offset;
+				ImVec2 size = FitSize( ImVec2( wThumb, upH ), 16.0f / 9.0f, &offset );
+				draw->AddImageRounded( TextureId( picture ), ImVec2( p0.x + offset.x, p0.y + offset.y ), ImVec2( p0.x + offset.x + size.x, p0.y + offset.y + size.y ), ImVec2( 0, 1 ),
+				                       ImVec2( 1, 0 ), IM_COL32_WHITE, Ui( 3 ) );
+			}
+			draw->AddRectFilled( ImVec2( xT, yName ), ImVec2( xT + wThumb, yName + nameH ), selectedLayer && playing ? theme::Accent : theme::Raised, Ui( 4 ) );
+			if( playing )
+			{
+				draw->PushClipRect( ImVec2( xT, yName ), ImVec2( xT + wThumb - Ui( 4 ), yName + nameH ), true );
+				draw->AddText( ImVec2( xT + Ui( 6 ), yName + ( nameH - ImGui::GetTextLineHeight() ) / 2 ), selectedLayer ? theme::OnAccent : theme::Text, playing->name.c_str() );
+				draw->PopClipRect();
+			}
+		}
+
+		// The layer's speed; the playing clip's loop mode, timing, direction and position.
+		{
+			float rowGap = Ui( 3 );
+			BoxButton( "##speedLabel", ImVec2( xTr, y ), ImVec2( rowH, rowH ), "S", false, theme::Accent, tip( "Layer speed" ) );
+			ImGui::SetCursorScreenPos( ImVec2( xTr + rowH + Ui( 2 ), y ) );
+			ImGui::SetNextItemWidth( wTransport - rowH - Ui( 2 ) );
+			FilledSlider( "##speed", &layer.speed, 0.0f, 4.0f, "%.2fx" );
+			ResetValue( &layer.speed, 1.0f );
+			MapTarget( app, layerAddress + "/speed" );
+			if( ImGui::IsItemHovered() && !learning )
+				ImGui::SetTooltip( "Layer speed: times the clip's own (right-click: 1x)" );
+
+			ImGui::BeginDisabled( !playing || !playing->Loaded() );
+			float half = ( wTransport - Ui( 2 ) ) / 2, y2 = y + rowH + rowGap;
+			static const char* loopShort[] = { "Loop", "Bounce", "Hold", "Clear" };
+			ImGui::SetCursorScreenPos( ImVec2( xTr, y2 ) );
+			ImGui::SetNextItemWidth( half );
+			if( ImGui::BeginCombo( "##loop", playing ? loopShort[ (int)playing->playMode ] : "Loop", ImGuiComboFlags_NoArrowButton ) )
+			{
+				for( int m = 0; m < (int)PlayMode::Count; ++m )
+					if( ImGui::Selectable( PlayModeName( (PlayMode)m ), playing && (int)playing->playMode == m ) && playing )
+						playing->playMode = (PlayMode)m;
+				ImGui::EndCombo();
+			}
+			if( ImGui::IsItemHovered() && !learning )
+				ImGui::SetTooltip( "Loop, Bounce, Play Once & Hold, Play Once & Clear" );
+			ImGui::SetCursorScreenPos( ImVec2( xTr + half + Ui( 2 ), y2 ) );
+			ImGui::SetNextItemWidth( half );
+			bool sync = playing && playing->syncBeats > 0;
+			if( ImGui::BeginCombo( "##timing", sync ? "BPM" : "Time", ImGuiComboFlags_NoArrowButton ) )
+			{
+				if( ImGui::Selectable( "Timeline", !sync ) && playing )
+					SetBpmSync( *playing, false, comp.bpm );
+				if( ImGui::Selectable( "BPM Sync", sync ) && playing )
+					SetBpmSync( *playing, true, comp.bpm );
+				ImGui::EndCombo();
+			}
+			if( ImGui::IsItemHovered() && !learning )
+				ImGui::SetTooltip( "Timeline: the clip at its speed. BPM Sync: it lasts a number of beats (set them in the Clip panel)." );
+			float y3 = y2 + rowH + rowGap, third = ( wTransport - 2 * Ui( 2 ) ) / 3, h3 = upH - ( y3 - y );
+			int direction = playing ? playing->direction : 1;
+			if( IconBox( "##reverse", ImVec2( xTr, y3 ), ImVec2( third, h3 ), Icon::Reverse, playing && direction < 0 ) && playing )
+				playing->direction = -1;
+			if( IconBox( "##pause", ImVec2( xTr + third + Ui( 2 ), y3 ), ImVec2( third, h3 ), Icon::Pause, playing && direction == 0 ) && playing )
+				playing->direction = 0;
+			if( IconBox( "##forward", ImVec2( xTr + 2 * ( third + Ui( 2 ) ), y3 ), ImVec2( third, h3 ), Icon::Play, playing && direction > 0 ) && playing )
+			{
+				playing->direction = 1;
+				playing->finished  = false;
+			}
+			ImGui::EndDisabled();
+			PositionBar( "##position", ImVec2( xTr, yName ), ImVec2( wTransport, nameH ), playing );
+		}
+
+		// Previous and next clip on this layer.
+		float arrowW = ( wArrows - Ui( 2 ) ) / 2;
+		if( IconBox( "##prevClip", ImVec2( xAr, yName ), ImVec2( arrowW, nameH ), Icon::Previous, false, tip( "Previous clip on this layer" ) ) )
+			app.LaunchNextClip( l, -1 );
+		MapTarget( app, layerAddress + "/connectprevclip" );
+		if( IconBox( "##nextClip", ImVec2( xAr + arrowW + Ui( 2 ), yName ), ImVec2( arrowW, nameH ), Icon::Next, false, tip( "Next clip on this layer" ) ) )
+			app.LaunchNextClip( l, 1 );
+		MapTarget( app, layerAddress + "/connectnextclip" );
+
+		if( selectedLayer )
+			draw->AddRect( ImVec2( xX - Ui( 2 ), y - Ui( 2 ) ), ImVec2( xX + headerW + Ui( 2 ), y + cellH + Ui( 2 ) ), theme::AccentDim, round, 0, Ui( 1.5f ) );
 
 		// Cells.
 		ImGui::PushClipRect( ImVec2( cellsLeft, viewMin.y ), viewMax, true );
@@ -897,8 +1182,9 @@ void DrawClipGrid( App& app )
 			bool clicked = ImGui::InvisibleButton( "##cell", ImVec2( cellW, cellH ) );
 			bool hovered = ImGui::IsItemHovered();
 			ImVec2 cellMin = ImGui::GetItemRectMin(), cellMax = ImGui::GetItemRectMax();
-			bool playing = layer.active == c;
-			bool selected = comp.selectedLayer == l && comp.selectedColumn == c;
+			int showingOn = comp.LayerShowing( l, c ); // the layer playing it: its own, or another one (layer based)
+			bool playing  = showingOn >= 0;
+			bool selected = comp.selectedRow == l && comp.selectedColumn == c;
 			// The picture launches the clip; the name strip below only selects it (Clip panel and Preview Monitor).
 			bool overName = ImGui::GetIO().MousePos.y >= min.y + thumbH;
 			draw->AddRectFilled( min, max, hovered ? theme::RaisedHover : theme::CellEmpty, round );
@@ -947,6 +1233,15 @@ void DrawClipGrid( App& app )
 					float progress = clip.Duration() > 0 ? (float)( clip.time / clip.Duration() ) : 0;
 					draw->AddRectFilled( ImVec2( min.x, thumbMax.y - Ui( 3 ) ), ImVec2( max.x, thumbMax.y ), IM_COL32( 0, 0, 0, 140 ) );
 					draw->AddRectFilled( ImVec2( min.x, thumbMax.y - Ui( 3 ) ), ImVec2( min.x + cellW * progress, thumbMax.y ), theme::Accent );
+				}
+				if( playing && showingOn != l )
+				{
+					// Launched onto another layer (layer based): which one.
+					const std::string& onLayer = comp.layers[ showingOn ].name;
+					ImVec2 t                   = ImGui::CalcTextSize( onLayer.c_str() );
+					ImVec2 b0( min.x + Ui( 4 ), min.y + Ui( 4 ) );
+					draw->AddRectFilled( b0, ImVec2( b0.x + t.x * 0.8f + Ui( 10 ), b0.y + t.y * 0.8f + Ui( 4 ) ), theme::Accent, Ui( 4 ) );
+					draw->AddText( Fonts().bold, ImGui::GetFontSize() * 0.8f, ImVec2( b0.x + Ui( 5 ), b0.y + Ui( 2 ) ), theme::OnAccent, onLayer.c_str() );
 				}
 				if( hovered && !clip.Playable() && clip.player )
 					ImGui::SetTooltip( "%s\n%s", clip.path.c_str(), clip.player->Error().c_str() );
@@ -1038,8 +1333,11 @@ void DrawClipGrid( App& app )
 		ImGui::PopID();
 	}
 
+	// The crossfader, under the layers.
 	float bottom = origin.y + headerH + layerCount * ( cellH + gap );
-	ImGui::SetCursorScreenPos( ImVec2( stickyX, bottom + Ui( 2 ) ) );
+	Crossfader( app, ImVec2( stickyX, bottom ), ImVec2( headerW, nameH ) );
+	ImGui::PopStyleVar();
+	ImGui::SetCursorScreenPos( ImVec2( stickyX, bottom + nameH + gap ) );
 	if( ImGui::Button( "+ Layer" ) )
 		comp.AddLayer();
 	ImGui::SameLine();
@@ -1201,6 +1499,9 @@ void DrawLayerPanel( App& app )
 		ParamLabel( "Name" );
 		ImGui::InputText( "##name", &layer.name );
 		std::string layerAddress = "/composition/layers/" + std::to_string( l + 1 );
+		ParamLabel( "Master" );
+		PercentSlider( "##master", &layer.master );
+		MapTarget( app, layerAddress + "/master" );
 		AnimatedLabel( "Opacity", layer.opacityAnimation, 0, 1 );
 		float shownOpacity = layer.ShownOpacity( comp.beat );
 		PercentSlider( "##opacity", layer.opacityAnimation.mode == AnimMode::Off ? &layer.opacity : &shownOpacity );
@@ -1208,8 +1509,15 @@ void DrawLayerPanel( App& app )
 		ParamLabel( "Volume" );
 		PercentSlider( "##volume", &layer.volume );
 		MapTarget( app, layerAddress + "/audio/volume" );
+		ParamLabel( "Speed" );
+		FilledSlider( "##speed", &layer.speed, 0.0f, 4.0f, "%.2fx" );
+		ResetValue( &layer.speed, 1.0f );
+		MapTarget( app, layerAddress + "/speed" );
 		ParamLabel( "Blend Mode" );
 		EnumCombo( "##blend", &layer.blend, BlendModeName );
+		ParamLabel( "Crossfader" );
+		const char* groups[] = { "None", "A", "B" };
+		ImGui::Combo( "##group", &layer.crossfader, groups, 3 );
 		ParamLabel( "Bypass" );
 		ImGui::Checkbox( "##bypass", &layer.bypass );
 		MapTarget( app, layerAddress + "/bypassed" );
@@ -1388,7 +1696,7 @@ void DrawClipPanel( App& app )
 	}
 
 	Composition& comp      = app.composition;
-	std::string clipAddress = "/composition/layers/" + std::to_string( comp.selectedLayer + 1 ) + "/clips/" + std::to_string( comp.selectedColumn + 1 );
+	std::string clipAddress = "/composition/layers/" + std::to_string( comp.selectedRow + 1 ) + "/clips/" + std::to_string( comp.selectedColumn + 1 );
 	if( clip->Loaded() && !clip->player->Source().IsStill() && ImGui::CollapsingHeader( "Transport", ImGuiTreeNodeFlags_DefaultOpen ) )
 	{
 		double duration = clip->Duration();
@@ -1417,13 +1725,9 @@ void DrawClipPanel( App& app )
 		if( ImGui::BeginCombo( "##timing", sync ? "BPM Sync" : "Timeline" ) )
 		{
 			if( ImGui::Selectable( "Timeline", !sync ) )
-				clip->syncBeats = 0;
-			if( ImGui::Selectable( "BPM Sync", sync ) && !sync )
-			{
-				// The nearest power of two of beats at the current tempo.
-				double beats    = ( clip->RangeEnd() - clip->RangeStart() ) * comp.bpm / 60.0;
-				clip->syncBeats = std::clamp( std::exp2( std::round( std::log2( std::max( beats, 0.25 ) ) ) ), 0.25, 256.0 );
-			}
+				SetBpmSync( *clip, false, comp.bpm );
+			if( ImGui::Selectable( "BPM Sync", sync ) )
+				SetBpmSync( *clip, true, comp.bpm );
 			ImGui::EndCombo();
 		}
 		if( ImGui::IsItemHovered() )
@@ -1488,7 +1792,7 @@ void DrawClipPanel( App& app )
 			if( ImGui::Button( label, ImVec2( width, 0 ) ) )
 			{
 				if( set )
-					app.JumpToCue( comp.selectedLayer, comp.selectedColumn, i );
+					app.JumpToCue( comp.selectedRow, comp.selectedColumn, i );
 				else
 					clip->cues[ i ] = clip->time;
 			}
@@ -1804,10 +2108,11 @@ void DrawPerformancePanel( App& app )
 		ImGui::TableHeadersRow();
 		for( int l = (int)app.composition.layers.size() - 1; l >= 0; --l )
 		{
-			Layer& layer = app.composition.layers[ l ];
-			if( layer.active < 0 || !layer.clips[ layer.active ].Loaded() )
+			Layer& layer  = app.composition.layers[ l ];
+			Clip* playing = app.composition.ActiveClip( l );
+			if( !playing || !playing->Loaded() )
 				continue;
-			Clip& clip              = layer.clips[ layer.active ];
+			Clip& clip              = *playing;
 			ClipPlayer::Stats stats = clip.player->GetStats();
 			ImGui::TableNextRow();
 			ImGui::TableNextColumn();

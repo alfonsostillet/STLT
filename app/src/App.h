@@ -66,14 +66,22 @@ public:
 	void LoadClip( int layer, int column, const std::string& path );
 	void RemoveClip( int layer, int column );
 	void MoveClip( int fromLayer, int fromColumn, int toLayer, int toColumn );
-	// With the composition's launch quantize set, a launch waits for the next beat or bar unless `now`.
-	void Launch( int layer, int column, bool now = false );
+	// Launches the clip at row/column: on `onLayer`, else where the composition's clip target says (its own row's
+	// layer, or the selected layer). With launch quantize set it waits for the next beat or bar unless `now`.
+	void Launch( int row, int column, bool now = false, int onLayer = -1 );
 	void LaunchColumn( int column, bool now = false );
-	bool IsQueued( int layer, int column ) const; // waiting for its beat (column -1: any column launch)
+	bool IsQueued( int row, int column ) const; // waiting for its beat (row -1: a column launch)
 	// Plays the clip from cue point `cue` (0..7), launching it if it is not playing; nothing if the cue is not set.
-	void JumpToCue( int layer, int column, int cue );
+	void JumpToCue( int row, int column, int cue );
+	// Launches the next (step 1) or previous (-1) clip of a layer after the one playing, wrapping around.
+	void LaunchNextClip( int layer, int step );
+	// Launches the next or previous column after the one launched last.
+	void LaunchNextColumn( int step );
+	// The composition's transport: every playing clip backwards or forwards, or the whole composition paused.
+	void SetAllDirections( int direction );
 	void ClearLayer( int layer );
-	void Select( int layer, int column );
+	// Selects the clip at row/column (and, with clips on their own rows' layers, its layer).
+	void Select( int row, int column );
 	void NewComposition();
 	bool SaveCompositionTo( const std::string& path );
 	bool OpenComposition( const std::string& path );
@@ -166,10 +174,13 @@ private:
 	void UpdateQuickOutput();
 	// Ends a layer's transition: the outgoing clip stops.
 	void FinishTransition( int layer );
+	// Stops the clip at row/column wherever it plays or fades out.
+	void StopCell( int row, int column );
 	struct QueuedLaunch
 	{
-		int layer, column; // layer -1: the whole column
-		double beat;       // when it goes
+		int layer;       // the layer it goes to (-1: the whole column)
+		int row, column; // the clip
+		double beat;     // when it goes
 	};
 	std::vector< QueuedLaunch > queuedLaunches;
 	void RunQueuedLaunches( bool all );

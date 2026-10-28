@@ -99,6 +99,14 @@ void main()
 	vec3 base = texture( uBase, vUv ).rgb;
 	vec4 layer = texture( uLayer, vUv ) * uOpacity;
 	vec3 colour = layer.a > 0.0 ? layer.rgb / layer.a : vec3( 0.0 );
+	if( uMode >= 8 )
+	{
+		// Luma key: the layer's brightness (or darkness) is how much of it shows.
+		float luma = dot( colour, vec3( 0.2126, 0.7152, 0.0722 ) );
+		float key  = uMode == 8 ? luma : 1.0 - luma;
+		fragColor  = vec4( clamp( mix( base, colour, layer.a * key ), 0.0, 1.0 ), 1.0 );
+		return;
+	}
 	fragColor = vec4( clamp( mix( base, Blend( base, colour ), layer.a ), 0.0, 1.0 ), 1.0 );
 }
 )";
@@ -416,13 +424,16 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame )
 	float identity[ 9 ];
 	Identity( identity );
 	auto ready = []( const Clip& clip ) { return clip.generator || ( clip.Loaded() && clip.player->HasFrame() ); };
-	for( Layer& layer : composition.layers )
+	for( int index = 0; index < (int)composition.layers.size(); ++index )
 	{
-		float opacity = layer.ShownOpacity( frame.beat );
-		if( layer.bypass || ( anySolo && !layer.solo ) || layer.active < 0 || opacity <= 0 )
+		Layer& layer  = composition.layers[ index ];
+		float opacity = layer.ShownOpacity( frame.beat ) * layer.master * layer.CrossfadeGain( composition.crossfader );
+		Clip* playing = composition.ActiveClip( index );
+		if( layer.bypass || ( anySolo && !layer.solo ) || !playing || opacity <= 0 )
 			continue;
-		Clip& clip     = layer.clips[ layer.active ];
-		Clip* outgoing = layer.previous >= 0 && layer.previous < (int)layer.clips.size() && layer.transitionProgress < 1 ? &layer.clips[ layer.previous ] : nullptr;
+		// The clip may sit in another row (a layer based launch).
+		Clip& clip     = *playing;
+		Clip* outgoing = layer.transitionProgress < 1 ? composition.OutgoingClip( index ) : nullptr;
 		if( outgoing && !ready( *outgoing ) )
 			outgoing = nullptr;
 		if( !ready( clip ) && !outgoing )
@@ -483,7 +494,7 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame )
 	copyProgram.Use();
 	glUniformMatrix3fv( copyProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
 	SetTexRect( copyProgram, 0, 1, 1, 0 );
-	glUniform1f( copyProgram.Uniform( "uOpacity" ), std::clamp( composition.master, 0.0f, 1.0f ) );
+	glUniform1f( copyProgram.Uniform( "uOpacity" ), composition.bypass ? 0.0f : std::clamp( composition.master, 0.0f, 1.0f ) );
 	glBindTexture( GL_TEXTURE_2D, result->Texture() );
 	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
 	ResetGlState();

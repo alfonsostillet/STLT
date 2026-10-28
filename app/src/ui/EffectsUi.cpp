@@ -638,7 +638,7 @@ void DrawEffectsPanel( App& app )
 			Composition& comp = app.composition;
 			if( e.source )
 			{
-				int layer  = std::clamp( comp.selectedLayer, 0, std::max( 0, (int)comp.layers.size() - 1 ) );
+				int layer  = std::clamp( comp.selectedRow, 0, std::max( 0, (int)comp.layers.size() - 1 ) );
 				int column = comp.selectedColumn >= 0 ? comp.selectedColumn : 0;
 				app.LoadGenerator( layer, column, e.id );
 			}

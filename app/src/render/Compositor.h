@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 #include "Composition.h"
 #include "fx/Effect.h"
 #include "gl/Program.h"

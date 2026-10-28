@@ -178,12 +178,60 @@ static void TestSaving()
 	CHECK( loaded.layers[ 0 ].transitionDuration == 0 );
 }
 
+static void TestLayersAndRows()
+{
+	Composition c = Composition::MakeDefault();
+	// A clip of row 0 playing on layer 2 (a layer based launch).
+	c.layers[ 0 ].clips[ 3 ].path = "a.mov";
+	c.layers[ 2 ].active    = 3;
+	c.layers[ 2 ].activeRow = 0;
+	CHECK( c.ActiveClip( 2 ) == &c.layers[ 0 ].clips[ 3 ] );
+	CHECK( c.ActiveClip( 0 ) == nullptr && c.OutgoingClip( 2 ) == nullptr );
+	CHECK( c.LayerShowing( 0, 3 ) == 2 && c.LayerShowing( 2, 3 ) == -1 );
+	c.layers[ 1 ].previous    = 4;
+	c.layers[ 1 ].previousRow = 1;
+	CHECK( c.OutgoingClip( 1 ) == &c.layers[ 1 ].clips[ 4 ] && c.LayerShowing( 1, 4 ) == 1 );
+	// A row that no longer exists stops it.
+	c.layers[ 2 ].activeRow = 7;
+	c.Normalise();
+	CHECK( c.layers[ 2 ].active == -1 && c.ActiveClip( 2 ) == nullptr );
+
+	// The crossfader: each group fades over the far half; both in full in the middle.
+	Layer layer;
+	CHECK( layer.CrossfadeGain( 0 ) == 1 && layer.CrossfadeGain( 1 ) == 1 );
+	layer.crossfader = 1;
+	CHECK( layer.CrossfadeGain( 0 ) == 1 && layer.CrossfadeGain( 0.5f ) == 1 && Near( layer.CrossfadeGain( 0.75f ), 0.5 ) && layer.CrossfadeGain( 1 ) == 0 );
+	layer.crossfader = 2;
+	CHECK( layer.CrossfadeGain( 0 ) == 0 && Near( layer.CrossfadeGain( 0.25f ), 0.5 ) && layer.CrossfadeGain( 0.5f ) == 1 );
+
+	// Saved and loaded.
+	c.layers[ 1 ].master     = 0.5f;
+	c.layers[ 1 ].speed      = 2;
+	c.layers[ 1 ].crossfader = 2;
+	c.crossfader             = 0.25f;
+	c.target                 = ClipTarget::SelectedLayer;
+	c.layers[ 0 ].clips[ 3 ].playMode = PlayMode::OnceClear;
+	Composition loaded;
+	std::string error;
+	CHECK( LoadComposition( SaveComposition( c ), loaded, error ) );
+	CHECK( loaded.layers[ 1 ].master == 0.5f && loaded.layers[ 1 ].speed == 2 && loaded.layers[ 1 ].crossfader == 2 );
+	CHECK( loaded.crossfader == 0.25f && loaded.target == ClipTarget::SelectedLayer );
+	CHECK( loaded.layers[ 0 ].clips[ 3 ].playMode == PlayMode::OnceClear );
+	// Older compositions said "Play Once".
+	std::string old = SaveComposition( c );
+	size_t at       = old.find( "Play Once & Clear" );
+	CHECK( at != std::string::npos );
+	old.replace( at, std::string( "Play Once & Clear" ).size(), "Play Once" );
+	CHECK( LoadComposition( old, loaded, error ) && loaded.layers[ 0 ].clips[ 3 ].playMode == PlayMode::Once );
+}
+
 int main()
 {
 	TestRange();
 	TestCuesAndSync();
 	TestAnimationsAndTransitions();
 	TestSaving();
+	TestLayersAndRows();
 	if( failures )
 	{
 		std::fprintf( stderr, "%d check(s) failed\n", failures );

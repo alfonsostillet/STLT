@@ -18,6 +18,13 @@ namespace stltvj
 //   /composition/layers/L/clips/C/cue/N              jump to cue point N (1..8), launching the clip if needed
 //   /composition/layers/L/cue/N                      jump to cue point N of the clip playing on the layer
 //   /composition/layers/L/transition/duration        0..1 over 0..10 seconds (or 0..16 beats)
+//   /composition/layers/L/master                     0..1, video and sound together
+//   /composition/layers/L/speed                      0..1 over 0..4
+//   /composition/layers/L/connectnextclip            the next clip of the layer (and connectprevclip)
+//   /composition/selectedlayer/connectnextclip       the same on the selected layer (and connectprevclip)
+//   /composition/connectnextcolumn                   the next column (and connectprevcolumn)
+//   /composition/crossfader/phase                    0 (group A) .. 1 (group B)
+//   /composition/bypassed                            the whole output black, on or off
 //   /composition/audio/volume                        master volume, 0..1
 //   /composition/master (or /composition/video/opacity)  0..1
 //   /composition/speed                               0..1 over 0..4
@@ -48,6 +55,16 @@ struct ControlTarget
 		ClipCue,
 		LayerCue,
 		LayerTransition,
+		LayerMaster,
+		LayerSpeed,
+		LayerNextClip,
+		LayerPrevClip,
+		SelectedNextClip,
+		SelectedPrevClip,
+		NextColumn,
+		PrevColumn,
+		Crossfader,
+		CompositionBypass,
 		AudioVolume,
 		Master,
 		Speed,
