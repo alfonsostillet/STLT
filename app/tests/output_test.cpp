@@ -299,6 +299,76 @@ static void TestMasks()
 	CHECK( Near( m.contour[ 1 ].in, e.contour[ 1 ].in ) );
 }
 
+static void TestResolumeWarpImport()
+{
+	// Warpers, a soft edge and a mask, in the shapes Resolume's files use (the importer accepts the variants).
+	std::string grid3;
+	for( int r = 0; r < 3; ++r )
+		for( int c = 0; c < 3; ++c )
+		{
+			float x = c / 2.0f, y = r / 2.0f;
+			if( r == 1 && c == 1 )
+				y -= 0.1f; // the middle point raised a tenth
+			grid3 += "<v x=\"" + std::to_string( x ) + "\" y=\"" + std::to_string( y ) + "\"/>";
+		}
+	std::string flat3;
+	for( int r = 0; r < 3; ++r )
+		for( int c = 0; c < 3; ++c )
+			flat3 += "<v x=\"" + std::to_string( c / 2.0f ) + "\" y=\"" + std::to_string( r / 2.0f ) + "\"/>";
+	// Bezier, in pixels: 2 x 2 anchors with handles, 4 x 4 points, the top right corner pulled out.
+	std::string bezier;
+	for( int r = 0; r < 4; ++r )
+		for( int c = 0; c < 4; ++c )
+		{
+			float x = c * 100.0f, y = r * 100.0f;
+			if( r == 0 && c == 3 )
+				x += 50;
+			bezier += "<v x=\"" + std::to_string( x ) + "\" y=\"" + std::to_string( y ) + "\"/>";
+		}
+	std::string xml = R"(<ScreenSetup><CurrentCompositionTextureSize width="1000" height="500"/><screens>
+<Screen name="S"><layers>
+<Slice uniqueId="4"><Params name="Common"><Param name="Name" value="Bez"/></Params>
+  <InputRect><v x="0" y="0"/><v x="1000" y="0"/><v x="1000" y="500"/><v x="0" y="500"/></InputRect>
+  <OutputRect><v x="0" y="0"/><v x="300" y="0"/><v x="300" y="300"/><v x="0" y="300"/></OutputRect>
+  <Warper><BezierWarper controlWidth="2" controlHeight="2"><vertices>)" + bezier + R"(</vertices></BezierWarper></Warper>
+</Slice>
+<Slice uniqueId="3"><Params name="Common"><Param name="Name" value="Flat"/></Params>
+  <InputRect><v x="0" y="0"/><v x="1000" y="0"/><v x="1000" y="500"/><v x="0" y="500"/></InputRect>
+  <OutputRect><v x="0" y="0"/><v x="400" y="0"/><v x="400" y="200"/><v x="0" y="200"/></OutputRect>
+  <Warper><BezierWarper controlWidth="3" controlHeight="3"><vertices>)" + flat3 + R"(</vertices></BezierWarper></Warper>
+</Slice>
+<Slice uniqueId="2"><Params name="Common"><Param name="Name" value="Warped"/></Params>
+  <InputRect><v x="0" y="0"/><v x="1000" y="0"/><v x="1000" y="500"/><v x="0" y="500"/></InputRect>
+  <OutputRect><v x="0" y="0"/><v x="400" y="0"/><v x="400" y="200"/><v x="0" y="200"/></OutputRect>
+  <Warper><Params name="Warper"><ParamChoice name="Point Mode" value="PM_LINEAR"/></Params>
+    <BezierWarper controlWidth="3" controlHeight="3"><vertices>)" + grid3 + R"(</vertices></BezierWarper></Warper>
+  <Params name="Soft Edge"><ParamRange name="Left" value="0.2"/><ParamRange name="Right" value="40"/><ParamRange name="Gamma" value="1.8"/></Params>
+</Slice>
+<Mask uniqueId="1"><Params name="Common"><Param name="Name" value="Door"/></Params>
+  <Params name="Mask"><Param name="Invert" value="1"/></Params>
+  <OutputContour><v x="10" y="10"/><v x="90" y="10"/><v x="50" y="90"/></OutputContour>
+</Mask>
+</layers><OutputDevice><OutputDeviceVirtual width="800" height="600"/></OutputDevice></Screen></screens></ScreenSetup>)";
+	AdvancedOutputSetup setup;
+	std::string error;
+	CHECK( ImportResolumeXml( xml, setup, error ) );
+	const std::vector< Slice >& items = setup.screens[ 0 ].slices;
+	CHECK( items.size() == 4 );
+	if( items.size() != 4 )
+		return;
+	// Oldest first: the mask, then Warped, Flat, Bez.
+	const Slice& mask = items[ 0 ];
+	CHECK( mask.mask && mask.name == "Door" && mask.invert && mask.contour.size() == 3 && Near( mask.contour[ 2 ].p, { 50, 90 } ) );
+	const Slice& warped = items[ 1 ];
+	CHECK( warped.warp == WarpMode::Grid && warped.gridColumns == 3 && warped.gridRows == 3 );
+	CHECK( Near( warped.Map( 0.5f, 0.5f ), { 200, 80 }, 0.05f ) ); // raised a tenth of 200
+	CHECK( Near( warped.Map( 1, 1 ), { 400, 200 }, 0.05f ) );
+	CHECK( std::fabs( warped.edge.left - 0.2f ) < 1e-5f && std::fabs( warped.edge.right - 0.1f ) < 1e-5f && std::fabs( warped.edge.gamma - 1.8f ) < 1e-5f );
+	CHECK( items[ 2 ].warp == WarpMode::Perspective && !items[ 2 ].edge.Active() ); // an untouched warper
+	const Slice& bez = items[ 3 ];
+	CHECK( bez.warp == WarpMode::Curved && bez.gridColumns == 2 && bez.gridRows == 2 && Near( bez.Map( 1, 0 ), { 350, 0 }, 0.05f ) );
+}
+
 int main()
 {
 	TestPerspective();
@@ -309,6 +379,7 @@ int main()
 	TestSoftEdge();
 	TestSaveLoad();
 	TestResolumeImport();
+	TestResolumeWarpImport();
 	if( failures )
 	{
 		std::fprintf( stderr, "%d check(s) failed\n", failures );

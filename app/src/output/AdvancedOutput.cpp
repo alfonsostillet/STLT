@@ -1052,6 +1052,125 @@ std::string ParamValue( const std::string& body, const std::string& name )
 	size_t end = body.find( '>', at );
 	return Attribute( body.substr( at, end - at + 1 ), "value" );
 }
+
+// The value of any kind of parameter (<Param>, <ParamRange>, <ParamChoice>...) called `name`, or "".
+std::string AnyParamValue( const std::string& body, const std::string& name )
+{
+	std::string key = " name=\"" + name + "\"";
+	for( size_t at = body.find( key ); at != std::string::npos; at = body.find( key, at + 1 ) )
+	{
+		size_t open = body.rfind( '<', at );
+		if( open != std::string::npos && body.compare( open, 6, "<Param" ) == 0 )
+		{
+			size_t end = body.find( '>', at );
+			return Attribute( body.substr( open, end - open + 1 ), "value" );
+		}
+	}
+	return {};
+}
+
+bool IsTrue( const std::string& value )
+{
+	return value == "1" || value == "true" || value == "True";
+}
+
+// Resolume's warper: <BezierWarper controlWidth="W" controlHeight="H"> with its points in <vertices>, row by row
+// from the top left. The points are a grid of anchors, or (in Bézier mode) the anchors with their handles in
+// between, three to a cell; controlWidth and controlHeight count points or cells. Points in 0..1 are taken across
+// the slice's output rectangle, others as screen pixels. The anchors become a grid, curved for Bézier.
+void ImportWarp( const std::string& body, Slice& s )
+{
+	std::vector< Block > warpers = Blocks( body, "BezierWarper" );
+	if( warpers.empty() )
+		return;
+	int w = std::atoi( Attribute( warpers[ 0 ].head, "controlWidth" ).c_str() );
+	int h = std::atoi( Attribute( warpers[ 0 ].head, "controlHeight" ).c_str() );
+	std::vector< Vec2 > v = Vertices( warpers[ 0 ].body );
+	int columns = 0, rows = 0, stride = 1;
+	for( int extra : { 0, 1 } )
+	{
+		int c = w + extra, r = h + extra;
+		if( c < 2 || r < 2 || columns )
+			continue;
+		if( (int)v.size() == c * r )
+			columns = c, rows = r;
+		else if( (int)v.size() == ( 3 * c - 2 ) * ( 3 * r - 2 ) )
+			columns = c, rows = r, stride = 3;
+	}
+	if( !columns || columns > 32 || rows > 32 )
+		return;
+	int fullColumns = stride == 3 ? 3 * columns - 2 : columns;
+	bool unit       = std::all_of( v.begin(), v.end(), []( Vec2 p ) { return p.x > -0.01f && p.x < 1.01f && p.y > -0.01f && p.y < 1.01f; } );
+	std::vector< Vec2 > grid( (size_t)columns * rows );
+	bool moved = false;
+	for( int r = 0; r < rows; ++r )
+		for( int c = 0; c < columns; ++c )
+		{
+			Vec2 p  = v[ (size_t)( r * stride ) * fullColumns + c * stride ];
+			Vec2 at = unit ? s.Map( p.x, p.y ) : p;
+			Vec2 flat = s.Map( (float)c / ( columns - 1 ), (float)r / ( rows - 1 ) );
+			moved |= std::hypot( at.x - flat.x, at.y - flat.y ) > 0.5f;
+			grid[ (size_t)r * columns + c ] = at;
+		}
+	if( !moved )
+		return; // an untouched warper: the plain output rectangle
+	std::string mode = AnyParamValue( body, "Point Mode" );
+	bool bezier      = stride == 3 || mode.find( "BEZIER" ) != std::string::npos || mode.find( "Bezier" ) != std::string::npos;
+	s.gridColumns    = columns;
+	s.gridRows       = rows;
+	s.grid           = std::move( grid );
+	s.warp           = bezier ? WarpMode::Curved : WarpMode::Grid;
+}
+
+// Resolume's soft edge, from its <SoftEdge> block or a "Soft Edge" parameter group: the four widths (shares of the
+// slice, or pixels when above 1), power, luminance and gamma.
+void ImportSoftEdge( const std::string& body, Slice& s )
+{
+	std::string region;
+	std::vector< Block > blocks = Blocks( body, "SoftEdge" );
+	if( !blocks.empty() )
+		region = blocks[ 0 ].head + blocks[ 0 ].body;
+	else
+		for( const Block& b : Blocks( body, "Params" ) )
+		{
+			std::string name = Attribute( b.head, "name" );
+			if( name.find( "Soft" ) != std::string::npos || name.find( "Blend" ) != std::string::npos )
+				region = b.body;
+		}
+	if( region.empty() )
+		return;
+	std::string enabled = AnyParamValue( region, "Enabled" );
+	if( !enabled.empty() && !IsTrue( enabled ) )
+		return;
+	float minX = 1e30f, minY = 1e30f, maxX = -1e30f, maxY = -1e30f;
+	for( Vec2 p : s.OutputOutline( 1 ) )
+	{
+		minX = std::min( minX, p.x );
+		minY = std::min( minY, p.y );
+		maxX = std::max( maxX, p.x );
+		maxY = std::max( maxY, p.y );
+	}
+	auto width = [ & ]( const char* name, float size ) {
+		std::string text = AnyParamValue( region, name );
+		if( text.empty() )
+			return 0.0f;
+		float value = std::strtof( text.c_str(), nullptr );
+		if( value > 1 )
+			value /= std::max( size, 1.0f );
+		return std::clamp( value, 0.0f, 0.5f );
+	};
+	s.edge.left   = width( "Left", maxX - minX );
+	s.edge.right  = width( "Right", maxX - minX );
+	s.edge.top    = width( "Top", maxY - minY );
+	s.edge.bottom = width( "Bottom", maxY - minY );
+	auto number = [ & ]( const char* name, float fallback, float lo, float hi ) {
+		std::string text = AnyParamValue( region, name );
+		return text.empty() ? fallback : std::clamp( std::strtof( text.c_str(), nullptr ), lo, hi );
+	};
+	s.edge.power     = number( "Power", s.edge.power, 0.5f, 6 );
+	s.edge.luminance = number( "Luminance", s.edge.luminance, 0, 1 );
+	s.edge.gamma     = number( "Gamma", s.edge.gamma, 0.5f, 3 );
+}
 }
 
 bool ImportResolumeXml( const std::string& xml, AdvancedOutputSetup& out, std::string& error, int* compWidth, int* compHeight )
@@ -1096,12 +1215,13 @@ bool ImportResolumeXml( const std::string& xml, AdvancedOutputSetup& out, std::s
 			size_t at               = 0;
 			for( ;; )
 			{
-				size_t slice = body.find( "<Slice ", at ), poly = body.find( "<Polygon ", at );
-				size_t open  = std::min( slice, poly );
+				size_t slice = body.find( "<Slice ", at ), poly = body.find( "<Polygon ", at ), maskAt = body.find( "<Mask ", at );
+				size_t open  = std::min( { slice, poly, maskAt } );
 				if( open == std::string::npos )
 					break;
 				bool isPolygon  = open == poly;
-				std::string tag = isPolygon ? "Polygon" : "Slice";
+				bool isMask     = open == maskAt;
+				std::string tag = isMask ? "Mask" : isPolygon ? "Polygon" : "Slice";
 				size_t close    = body.find( "</" + tag + ">", open );
 				if( close == std::string::npos )
 					break;
@@ -1112,6 +1232,35 @@ bool ImportResolumeXml( const std::string& xml, AdvancedOutputSetup& out, std::s
 				s.polygon         = isPolygon;
 				std::string named = ParamValue( itemBody, "Name" );
 				s.name            = named.empty() ? tag : named;
+				std::string enabled = ParamValue( itemBody, "Enabled" );
+				s.enabled           = enabled.empty() || IsTrue( enabled );
+				if( isMask )
+				{
+					// A mask's outline: on the output, or else on the input, carried over to the screen.
+					std::vector< Vec2 > outline;
+					float sx = 1, sy = 1;
+					for( const char* container : { "OutputContour", "Contour", "InputContour" } )
+					{
+						std::vector< Block > b = Blocks( itemBody, container );
+						if( !b.empty() && ( outline = Vertices( b[ 0 ].body ) ).size() >= 3 )
+						{
+							if( std::string( container ) == "InputContour" )
+								sx = screen.width / cw, sy = screen.height / ch;
+							break;
+						}
+					}
+					if( outline.size() < 3 )
+						continue;
+					s.mask      = true;
+					s.pointMode = PointMode::Linear;
+					for( Vec2 p : outline )
+						s.contour.push_back( { { p.x * sx, p.y * sy }, {}, {} } );
+					s.invert = IsTrue( AnyParamValue( itemBody, "Invert" ) );
+					std::string feather = AnyParamValue( itemBody, "Feather" );
+					s.feather           = feather.empty() ? 0 : std::max( std::strtof( feather.c_str(), nullptr ), 0.0f );
+					slices.push_back( std::move( s ) );
+					continue;
+				}
 				std::vector< Block > in  = Blocks( itemBody, isPolygon ? "InputContour" : "InputRect" );
 				std::vector< Block > outB = Blocks( itemBody, isPolygon ? "OutputContour" : "OutputRect" );
 				s.input                  = in.empty() ? std::vector< Vec2 >() : Vertices( in[ 0 ].body );
@@ -1133,9 +1282,9 @@ bool ImportResolumeXml( const std::string& xml, AdvancedOutputSetup& out, std::s
 						std::copy( outP.begin(), outP.end(), s.corners );
 					else
 						s.MatchOutputToInput( cw, ch, (float)screen.width, (float)screen.height );
+					ImportWarp( itemBody, s );
 				}
-				std::string enabled = ParamValue( itemBody, "Enabled" );
-				s.enabled           = enabled.empty() || enabled == "1" || enabled == "true";
+				ImportSoftEdge( itemBody, s );
 				slices.push_back( std::move( s ) );
 			}
 			std::reverse( slices.begin(), slices.end() );
