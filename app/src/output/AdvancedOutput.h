@@ -49,11 +49,14 @@ struct SoftEdge
 	float Factor( float u, float v ) const;          // the multiplier at slice position u, v (0..1, v down)
 };
 
+// An item of a screen: a slice (a rectangle of the composition, warped onto the screen), a polygon (any shape of
+// the composition pinned point by point), or a mask (a shape that blacks out what lies below it in the list).
 struct Slice
 {
 	std::string name = "Slice";
 	bool enabled     = true;
 	bool polygon     = false;
+	bool mask        = false;
 
 	// Slice: input corners top-left, top-right, bottom-right, bottom-left. Polygon: its points, any number >= 3.
 	std::vector< Vec2 > input;
@@ -66,6 +69,7 @@ struct Slice
 
 	// Contour: the output outline, clockwise from the top-left corner; contourCorners are the indices of the
 	// top-left, top-right, bottom-right and bottom-left corners (contourCorners[ 0 ] is always 0).
+	// Masks keep their shape here too, any number of points >= 3, without corners.
 	std::vector< ContourPoint > contour;
 	int contourCorners[ 4 ] = { 0, 1, 2, 3 };
 	PointMode pointMode     = PointMode::Bezier;
@@ -76,7 +80,14 @@ struct Slice
 	SoftEdge edge;
 	bool flipHorizontal = false;
 	bool flipVertical   = false;
-	float opacity       = 1.0f;
+	float opacity       = 1.0f; // for a mask: how much it darkens
+
+	// Mask: black inside the shape, or outside it when inverted, with an edge this soft (screen pixels).
+	bool invert   = false;
+	float feather = 0;
+
+	// The output is shaped by contour points: a mask, or a slice with the Contour warp.
+	bool HasContour() const;
 
 	// Output position of slice point u, v (0..1, v down).
 	Vec2 Map( float u, float v ) const;
@@ -140,6 +151,8 @@ struct AdvancedOutputSetup
 	static AdvancedOutputSetup MakeDefault( int compWidth, int compHeight );
 	static Slice MakeSlice( const std::string& name, float compWidth, float compHeight, float screenWidth, float screenHeight );
 	static Slice MakePolygon( const std::string& name, float compWidth, float compHeight, float screenWidth, float screenHeight );
+	// A rectangle or an ellipse in the middle of the screen.
+	static Slice MakeMask( const std::string& name, float screenWidth, float screenHeight, bool ellipse );
 };
 
 std::string SaveAdvancedOutput( const AdvancedOutputSetup& setup );

@@ -80,6 +80,58 @@ void main()
 }
 )";
 
+// Masks. The fill draws white triangles that invert what is under them: a fan over the outline then leaves
+// every point covered an odd number of times white, which is the shape for any outline, even a crossing one.
+const char* kMaskFillFragment = R"(
+out vec4 fragColor;
+void main()
+{
+	fragColor = vec4( 1.0 );
+}
+)";
+
+// A Gaussian blur along uDirection, uRadius pixels each way (at most 48 taps, spaced out for wider ones).
+const char* kMaskBlurFragment = R"(
+uniform sampler2D uTex0;
+uniform vec2 uDirection;
+uniform float uRadius;
+out vec4 fragColor;
+void main()
+{
+	vec2 size = vec2( textureSize( uTex0, 0 ) );
+	vec2 uv = gl_FragCoord.xy / size;
+	int taps = int( min( ceil( uRadius ), 48.0 ) );
+	float stride = max( uRadius / 48.0, 1.0 );
+	float sigma = max( uRadius / 2.5, 0.4 );
+	float sum = 0.0, total = 0.0;
+	for( int i = -taps; i <= taps; ++i )
+	{
+		float x = float( i ) * stride;
+		float w = exp( -0.5 * x * x / ( sigma * sigma ) );
+		sum += w * texture( uTex0, uv + uDirection * x / size ).r;
+		total += w;
+	}
+	fragColor = vec4( sum / total );
+}
+)";
+
+// Darkens the screen by the coverage (or by what lies outside it): blended with ZERO, ONE_MINUS_SRC_ALPHA.
+// The coverage may be smaller than the screen; it is stretched over it.
+const char* kMaskApplyFragment = R"(
+uniform sampler2D uTex0;
+uniform vec2 uTargetSize;
+uniform int uInvert;
+uniform float uStrength;
+out vec4 fragColor;
+void main()
+{
+	float c = texture( uTex0, gl_FragCoord.xy / uTargetSize ).r;
+	if( uInvert != 0 )
+		c = 1.0 - c;
+	fragColor = vec4( 0.0, 0.0, 0.0, c * uStrength );
+}
+)";
+
 // A distinct colour per slice for the test pattern.
 void SliceColour( int index, float out[ 3 ] )
 {
@@ -104,6 +156,12 @@ bool OutputRenderer::Init( std::string& error )
 		error = "output finish shader " + finishProgram.Error();
 		return false;
 	}
+	if( !maskFillProgram.Build( kSliceVertex, kMaskFillFragment ) || !maskBlurProgram.Build( kQuadVertexShader, kMaskBlurFragment )
+	    || !maskApplyProgram.Build( kQuadVertexShader, kMaskApplyFragment ) )
+	{
+		error = "output mask shader " + maskFillProgram.Error() + maskBlurProgram.Error() + maskApplyProgram.Error();
+		return false;
+	}
 	glGenVertexArrays( 1, &vao );
 	glGenBuffers( 1, &vbo );
 	glBindVertexArray( vao );
@@ -122,6 +180,8 @@ void OutputRenderer::Shutdown()
 {
 	CloseWindows();
 	screens.clear();
+	maskCoverage.Release();
+	maskBlur.Release();
 	if( vbo )
 		glDeleteBuffers( 1, &vbo );
 	if( vao )
@@ -202,6 +262,73 @@ void OutputRenderer::DrawSlice( const Slice& slice, int index, const Screen& scr
 	glDrawArrays( GL_TRIANGLES, 0, (GLsizei)( vertices.size() / 6 ) );
 }
 
+void OutputRenderer::ApplyMask( const Slice& mask, const Screen& screen, Fbo& target, GLuint composition )
+{
+	// A wide feather is smooth: its coverage is worked out at a half or a quarter of the screen size.
+	int reduce = mask.feather >= 16 ? 4 : mask.feather >= 6 ? 2 : 1;
+	int cw = std::max( screen.width / reduce, 1 ), ch = std::max( screen.height / reduce, 1 );
+	std::vector< Vec2 > outline = mask.OutputOutline( 32 );
+	if( outline.size() < 3 || mask.opacity <= 0 || !maskCoverage.Ensure( cw, ch ) || !maskBlur.Ensure( cw, ch ) )
+		return;
+	float W = (float)screen.width, H = (float)screen.height;
+	vertices.clear();
+	auto push = [ & ]( Vec2 p ) { vertices.insert( vertices.end(), { p.x / W * 2 - 1, 1 - p.y / H * 2, 0, 0, 0, 0 } ); };
+	for( size_t i = 1; i + 1 < outline.size(); ++i )
+	{
+		push( outline[ 0 ] );
+		push( outline[ i ] );
+		push( outline[ i + 1 ] );
+	}
+
+	// Coverage: even-odd fill.
+	maskCoverage.Bind();
+	glClearColor( 0, 0, 0, 0 );
+	glClear( GL_COLOR_BUFFER_BIT );
+	glEnable( GL_BLEND );
+	glBlendFunc( GL_ONE_MINUS_DST_COLOR, GL_ZERO );
+	maskFillProgram.Use();
+	glBindVertexArray( vao );
+	glBindBuffer( GL_ARRAY_BUFFER, vbo );
+	glBufferData( GL_ARRAY_BUFFER, (GLsizeiptr)( vertices.size() * sizeof( float ) ), vertices.data(), GL_STREAM_DRAW );
+	glDrawArrays( GL_TRIANGLES, 0, (GLsizei)( vertices.size() / 6 ) );
+	glDisable( GL_BLEND );
+
+	// Feather (at least a pixel, which smooths the edge), across then down.
+	const float identity[ 9 ] = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
+	maskBlurProgram.Use();
+	glUniformMatrix3fv( maskBlurProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
+	glUniform4f( maskBlurProgram.Uniform( "uTexRect" ), 0, 0, 1, 1 );
+	glUniform1i( maskBlurProgram.Uniform( "uTex0" ), 0 );
+	glUniform1f( maskBlurProgram.Uniform( "uRadius" ), std::max( mask.feather / reduce, 1.0f ) );
+	glActiveTexture( GL_TEXTURE0 );
+	maskBlur.Bind();
+	glUniform2f( maskBlurProgram.Uniform( "uDirection" ), 1, 0 );
+	glBindTexture( GL_TEXTURE_2D, maskCoverage.Texture() );
+	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+	maskCoverage.Bind();
+	glUniform2f( maskBlurProgram.Uniform( "uDirection" ), 0, 1 );
+	glBindTexture( GL_TEXTURE_2D, maskBlur.Texture() );
+	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+
+	// Darken the screen.
+	target.Bind();
+	glEnable( GL_BLEND );
+	glBlendFunc( GL_ZERO, GL_ONE_MINUS_SRC_ALPHA );
+	maskApplyProgram.Use();
+	glUniformMatrix3fv( maskApplyProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
+	glUniform4f( maskApplyProgram.Uniform( "uTexRect" ), 0, 0, 1, 1 );
+	glUniform1i( maskApplyProgram.Uniform( "uTex0" ), 0 );
+	glUniform2f( maskApplyProgram.Uniform( "uTargetSize" ), (float)screen.width, (float)screen.height );
+	glUniform1i( maskApplyProgram.Uniform( "uInvert" ), mask.invert ? 1 : 0 );
+	glUniform1f( maskApplyProgram.Uniform( "uStrength" ), std::clamp( mask.opacity, 0.0f, 1.0f ) );
+	glBindTexture( GL_TEXTURE_2D, maskCoverage.Texture() );
+	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+
+	// Back to drawing slices.
+	glBlendFunc( GL_ONE, GL_ONE_MINUS_SRC_ALPHA );
+	glBindTexture( GL_TEXTURE_2D, composition );
+}
+
 void OutputRenderer::Render( const AdvancedOutputSetup& setup, GLuint composition, int compWidth, int compHeight )
 {
 	Match( setup.screens.size() );
@@ -225,8 +352,15 @@ void OutputRenderer::Render( const AdvancedOutputSetup& setup, GLuint compositio
 			glEnable( GL_BLEND );
 			glBlendFunc( GL_ONE, GL_ONE_MINUS_SRC_ALPHA );
 			for( size_t i = 0; i < screen.slices.size(); ++i )
-				if( screen.slices[ i ].enabled )
-					DrawSlice( screen.slices[ i ], (int)i, screen, compWidth, compHeight );
+			{
+				const Slice& slice = screen.slices[ i ];
+				if( !slice.enabled )
+					continue;
+				if( slice.mask )
+					ApplyMask( slice, screen, state.target, composition );
+				else
+					DrawSlice( slice, (int)i, screen, compWidth, compHeight );
+			}
 			ResetGlState();
 		}
 

@@ -583,7 +583,7 @@ void App::ShowScreenOn( size_t index, OutputDevice device, const std::string& di
 				// A simple one-slice screen follows the display's resolution.
 				screen.width  = d.width;
 				screen.height = d.height;
-				if( screen.slices.size() == 1 && !screen.slices[ 0 ].polygon && screen.slices[ 0 ].warp == WarpMode::Perspective )
+				if( screen.slices.size() == 1 && !screen.slices[ 0 ].polygon && !screen.slices[ 0 ].mask && screen.slices[ 0 ].warp == WarpMode::Perspective )
 					screen.slices[ 0 ].FitOutput( (float)d.width, (float)d.height );
 			}
 }

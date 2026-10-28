@@ -354,8 +354,15 @@ void Slice::SetWarp( WarpMode mode )
 	warp = mode;
 }
 
+bool Slice::HasContour() const
+{
+	return mask || ( !polygon && warp == WarpMode::Contour );
+}
+
 bool Slice::IsContourCorner( int index ) const
 {
+	if( mask )
+		return false;
 	for( int c : contourCorners )
 		if( c == index )
 			return true;
@@ -397,7 +404,7 @@ void Slice::ResetContour()
 int Slice::InsertContourPoint( Vec2 near, float maxDistance )
 {
 	int n = (int)contour.size();
-	if( n < 4 )
+	if( n < ( mask ? 3 : 4 ) )
 		return -1;
 	int bestSegment = -1;
 	float bestT = 0, best = maxDistance;
@@ -443,7 +450,7 @@ int Slice::InsertContourPoint( Vec2 near, float maxDistance )
 
 bool Slice::RemoveContourPoint( int index )
 {
-	if( index < 0 || index >= (int)contour.size() || IsContourCorner( index ) )
+	if( index < 0 || index >= (int)contour.size() || IsContourCorner( index ) || ( mask && contour.size() <= 3 ) )
 		return false;
 	contour.erase( contour.begin() + index );
 	for( int k = 1; k < 4; ++k )
@@ -495,6 +502,8 @@ bool Slice::RemovePolygonPoint( int index )
 void Slice::MatchOutputToInput( float compWidth, float compHeight, float screenWidth, float screenHeight )
 {
 	float sx = screenWidth / std::max( compWidth, 1.0f ), sy = screenHeight / std::max( compHeight, 1.0f );
+	if( mask )
+		return;
 	if( polygon )
 	{
 		output.resize( input.size() );
@@ -516,6 +525,23 @@ void Slice::MatchOutputToInput( float compWidth, float compHeight, float screenW
 
 void Slice::FitOutput( float w, float h )
 {
+	if( mask )
+	{
+		// Scale the shape's bounds (and its handles) onto the screen.
+		std::vector< Vec2 > outline = OutputOutline();
+		float minX = 1e30f, minY = 1e30f, maxX = -1e30f, maxY = -1e30f;
+		for( Vec2 p : outline )
+		{
+			minX = std::min( minX, p.x );
+			minY = std::min( minY, p.y );
+			maxX = std::max( maxX, p.x );
+			maxY = std::max( maxY, p.y );
+		}
+		float fx = w / std::max( maxX - minX, 1.0f ), fy = h / std::max( maxY - minY, 1.0f );
+		for( ContourPoint& c : contour )
+			c = { { ( c.p.x - minX ) * fx, ( c.p.y - minY ) * fy }, { c.in.x * fx, c.in.y * fy }, { c.out.x * fx, c.out.y * fy } };
+		return;
+	}
 	if( polygon )
 	{
 		// Scale the polygon's bounds onto the screen.
@@ -550,6 +576,16 @@ std::vector< Vec2 > Slice::OutputOutline( int steps ) const
 {
 	if( polygon )
 		return output;
+	if( mask )
+	{
+		std::vector< Vec2 > outline;
+		int n        = (int)contour.size();
+		int segments = pointMode == PointMode::Linear ? 1 : std::max( steps, 1 );
+		for( int i = 0; i < n; ++i )
+			for( int k = 0; k < segments; ++k )
+				outline.push_back( SegmentAt( contour[ i ], contour[ ( i + 1 ) % n ], (float)k / segments, pointMode ) );
+		return outline;
+	}
 	if( warp == WarpMode::Contour && ContourUsable( *this ) )
 		return ContourShape( *this ).Outline();
 	std::vector< Vec2 > outline;
@@ -568,7 +604,7 @@ std::vector< Vec2 > Slice::OutputOutline( int steps ) const
 
 std::vector< Vec2 > Slice::InputOutline() const
 {
-	return input;
+	return mask ? std::vector< Vec2 >() : input;
 }
 
 Slice AdvancedOutputSetup::MakeSlice( const std::string& name, float cw, float ch, float sw, float sh )
@@ -587,6 +623,36 @@ Slice AdvancedOutputSetup::MakePolygon( const std::string& name, float cw, float
 	s.polygon = true;
 	s.input   = { { cw * 0.5f, ch * 0.2f }, { cw * 0.8f, ch * 0.8f }, { cw * 0.2f, ch * 0.8f } };
 	s.MatchOutputToInput( cw, ch, sw, sh );
+	return s;
+}
+
+Slice AdvancedOutputSetup::MakeMask( const std::string& name, float sw, float sh, bool ellipse )
+{
+	Slice s;
+	s.name = name;
+	s.mask = true;
+	float cx = sw / 2, cy = sh / 2, rx = sw / 4, ry = sh / 4;
+	if( ellipse )
+	{
+		// Four points with handles of 0.5523 times the radius: a circle to within 0.03 %.
+		const float k = 0.5523f;
+		s.contour     = { { { cx, cy - ry }, { -rx * k, 0 }, { rx * k, 0 } },
+                      { { cx + rx, cy }, { 0, -ry * k }, { 0, ry * k } },
+                      { { cx, cy + ry }, { rx * k, 0 }, { -rx * k, 0 } },
+                      { { cx - rx, cy }, { 0, ry * k }, { 0, -ry * k } } };
+	}
+	else
+	{
+		// Straight handles a third of the way along each side, ready to be pulled.
+		s.contour = { { { cx - rx, cy - ry }, {}, {} }, { { cx + rx, cy - ry }, {}, {} }, { { cx + rx, cy + ry }, {}, {} }, { { cx - rx, cy + ry }, {}, {} } };
+		for( int i = 0; i < 4; ++i )
+		{
+			ContourPoint& c = s.contour[ i ];
+			Vec2 prev = s.contour[ ( i + 3 ) % 4 ].p, next = s.contour[ ( i + 1 ) % 4 ].p;
+			c.in      = { ( prev.x - c.p.x ) / 3, ( prev.y - c.p.y ) / 3 };
+			c.out     = { ( next.x - c.p.x ) / 3, ( next.y - c.p.y ) / 3 };
+		}
+	}
 	return s;
 }
 
@@ -726,7 +792,23 @@ std::string SaveAdvancedOutput( const AdvancedOutputSetup& setup )
 			json k;
 			k[ "name" ]    = sl.name;
 			k[ "enabled" ] = sl.enabled;
-			k[ "type" ]    = sl.polygon ? "polygon" : "slice";
+			k[ "type" ]    = sl.mask ? "mask" : sl.polygon ? "polygon" : "slice";
+			auto writeContour = [ & ]() {
+				json points = json::array();
+				for( const ContourPoint& c : sl.contour )
+					points.push_back( { c.p.x, c.p.y, c.in.x, c.in.y, c.out.x, c.out.y } );
+				k[ "contour" ]   = points;
+				k[ "pointMode" ] = PointModeName( sl.pointMode );
+			};
+			if( sl.mask )
+			{
+				writeContour();
+				k[ "invert" ]  = sl.invert;
+				k[ "feather" ] = sl.feather;
+				k[ "opacity" ] = sl.opacity;
+				slices.push_back( k );
+				continue;
+			}
 			k[ "input" ]   = Points( sl.input );
 			if( sl.polygon )
 				k[ "output" ] = Points( sl.output );
@@ -741,12 +823,8 @@ std::string SaveAdvancedOutput( const AdvancedOutputSetup& setup )
 				}
 				if( sl.warp == WarpMode::Contour )
 				{
-					json points = json::array();
-					for( const ContourPoint& c : sl.contour )
-						points.push_back( { c.p.x, c.p.y, c.in.x, c.in.y, c.out.x, c.out.y } );
-					k[ "contour" ]        = points;
+					writeContour();
 					k[ "contourCorners" ] = { sl.contourCorners[ 0 ], sl.contourCorners[ 1 ], sl.contourCorners[ 2 ], sl.contourCorners[ 3 ] };
-					k[ "pointMode" ]      = PointModeName( sl.pointMode );
 				}
 			}
 			k[ "softEdge" ] = { { "left", sl.edge.left },   { "right", sl.edge.right },         { "top", sl.edge.top },        { "bottom", sl.edge.bottom },
@@ -799,7 +877,29 @@ bool LoadAdvancedOutput( const std::string& text, AdvancedOutputSetup& out, std:
 					Slice sl;
 					sl.name    = k.value( "name", sl.name );
 					sl.enabled = k.value( "enabled", true );
-					sl.polygon = k.value( "type", "slice" ) == "polygon";
+					std::string type = k.value( "type", "slice" );
+					sl.polygon       = type == "polygon";
+					sl.mask          = type == "mask";
+					auto readContour = [ & ]() {
+						if( k.contains( "contour" ) && k[ "contour" ].is_array() )
+							for( const json& c : k[ "contour" ] )
+								if( c.is_array() && c.size() == 6 )
+									sl.contour.push_back( { { c[ 0 ].get< float >(), c[ 1 ].get< float >() },
+									                        { c[ 2 ].get< float >(), c[ 3 ].get< float >() },
+									                        { c[ 4 ].get< float >(), c[ 5 ].get< float >() } } );
+						sl.pointMode = ByName( k.value( "pointMode", json() ), PointModeName, PointMode::Bezier );
+					};
+					if( sl.mask )
+					{
+						readContour();
+						if( sl.contour.size() < 3 )
+							continue;
+						sl.invert  = k.value( "invert", false );
+						sl.feather = std::max( k.value( "feather", 0.0f ), 0.0f );
+						sl.opacity = k.value( "opacity", 1.0f );
+						s.slices.push_back( std::move( sl ) );
+						continue;
+					}
 					sl.input   = ReadPoints( k.value( "input", json() ) );
 					if( sl.polygon )
 					{
@@ -817,16 +917,10 @@ bool LoadAdvancedOutput( const std::string& text, AdvancedOutputSetup& out, std:
 						sl.warp = ByName( k.value( "warp", json() ), WarpModeName, WarpMode::Perspective );
 						if( sl.warp == WarpMode::Contour )
 						{
-							if( k.contains( "contour" ) && k[ "contour" ].is_array() )
-								for( const json& c : k[ "contour" ] )
-									if( c.is_array() && c.size() == 6 )
-										sl.contour.push_back( { { c[ 0 ].get< float >(), c[ 1 ].get< float >() },
-										                        { c[ 2 ].get< float >(), c[ 3 ].get< float >() },
-										                        { c[ 4 ].get< float >(), c[ 5 ].get< float >() } } );
+							readContour();
 							if( k.contains( "contourCorners" ) && k[ "contourCorners" ].is_array() && k[ "contourCorners" ].size() == 4 )
 								for( int i = 0; i < 4; ++i )
 									sl.contourCorners[ i ] = k[ "contourCorners" ][ i ].get< int >();
-							sl.pointMode = ByName( k.value( "pointMode", json() ), PointModeName, PointMode::Bezier );
 							if( !ContourUsable( sl ) )
 							{
 								sl.warp = WarpMode::Perspective;

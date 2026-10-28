@@ -1,4 +1,5 @@
-// Tests for the advanced output without a GPU: warps, contours, polygons, soft edges, saving and Resolume import.
+// Tests for the advanced output without a GPU: warps, contours, masks, polygons, soft edges, saving and Resolume import.
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <string>
@@ -249,11 +250,61 @@ static void TestContour()
 	CHECK( p.RemovePolygonPoint( 1 ) && p.output.size() == 3 && !p.RemovePolygonPoint( 0 ) );
 }
 
+static void TestMasks()
+{
+	// A rectangle mask: its outline is the rectangle, straight.
+	Slice r = AdvancedOutputSetup::MakeMask( "M", 800, 400, false );
+	CHECK( r.mask && r.HasContour() && r.contour.size() == 4 && r.InputOutline().empty() );
+	std::vector< Vec2 > outline = r.OutputOutline( 4 );
+	CHECK( outline.size() == 16 && Near( outline[ 0 ], { 200, 100 } ) && Near( outline[ 2 ], { 400, 100 }, 0.05f ) );
+	// An ellipse: every outline point lies on it.
+	Slice e = AdvancedOutputSetup::MakeMask( "E", 800, 400, true );
+	for( Vec2 p : e.OutputOutline( 16 ) )
+	{
+		float dx = ( p.x - 400 ) / 200, dy = ( p.y - 200 ) / 100;
+		CHECK( std::fabs( std::sqrt( dx * dx + dy * dy ) - 1 ) < 0.002f );
+	}
+	// Points come and go, down to a triangle; no corners are kept.
+	int at = r.InsertContourPoint( { 300, 101 }, 4 );
+	CHECK( at == 1 && r.contour.size() == 5 && !r.IsContourCorner( 0 ) );
+	CHECK( r.RemoveContourPoint( 0 ) && r.RemoveContourPoint( 0 ) && r.contour.size() == 3 && !r.RemoveContourPoint( 0 ) );
+	// Fit stretches the shape over the screen.
+	e.FitOutput( 1000, 500 );
+	float minX = 1e9f, maxX = -1e9f, minY = 1e9f, maxY = -1e9f;
+	for( Vec2 p : e.OutputOutline( 32 ) )
+	{
+		minX = std::min( minX, p.x );
+		maxX = std::max( maxX, p.x );
+		minY = std::min( minY, p.y );
+		maxY = std::max( maxY, p.y );
+	}
+	CHECK( std::fabs( minX ) < 0.5f && std::fabs( maxX - 1000 ) < 0.5f && std::fabs( minY ) < 0.5f && std::fabs( maxY - 500 ) < 0.5f );
+	// Matching the input leaves a mask alone (it has none).
+	Vec2 before = e.contour[ 0 ].p;
+	e.MatchOutputToInput( 100, 100, 200, 200 );
+	CHECK( Near( e.contour[ 0 ].p, before ) );
+
+	// Saved and loaded with its settings.
+	AdvancedOutputSetup setup = AdvancedOutputSetup::MakeDefault( 800, 400 );
+	e.invert                  = true;
+	e.feather                 = 25;
+	e.opacity                 = 0.75f;
+	setup.screens[ 0 ].slices.push_back( e );
+	AdvancedOutputSetup loaded;
+	std::string error;
+	CHECK( LoadAdvancedOutput( SaveAdvancedOutput( setup ), loaded, error ) );
+	CHECK( loaded.screens[ 0 ].slices.size() == 2 );
+	const Slice& m = loaded.screens[ 0 ].slices[ 1 ];
+	CHECK( m.mask && m.invert && std::fabs( m.feather - 25 ) < 1e-6 && std::fabs( m.opacity - 0.75f ) < 1e-6 && m.contour.size() == 4 );
+	CHECK( Near( m.contour[ 1 ].in, e.contour[ 1 ].in ) );
+}
+
 int main()
 {
 	TestPerspective();
 	TestGrids();
 	TestContour();
+	TestMasks();
 	TestPolygons();
 	TestSoftEdge();
 	TestSaveLoad();

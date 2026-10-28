@@ -17,7 +17,9 @@ class Compositor;
 // draws it, warped, onto the screen; then the screen's colour settings apply and its window or display shows it.
 //
 // A slice is drawn as a fine triangle mesh whose vertices follow the warp (perspective, grid or curved grid),
-// so straight and bent shapes alike come out smooth; soft edges are computed per pixel.
+// so straight and bent shapes alike come out smooth; soft edges are computed per pixel. A mask darkens what is
+// already drawn: its shape is filled (even-odd, so any outline works) into a coverage target, blurred by its
+// feather, and multiplied onto the screen.
 class OutputRenderer
 {
 public:
@@ -50,11 +52,14 @@ private:
 		int width = 0, height = 0;
 	};
 	void DrawSlice( const Slice& slice, int index, const Screen& screen, int compWidth, int compHeight );
+	void ApplyMask( const Slice& mask, const Screen& screen, Fbo& target, GLuint composition );
 
 	void Match( size_t count );
 	std::vector< std::unique_ptr< ScreenState > > screens; // Fbo cannot move: kept by pointer
 	Program sliceProgram;
 	Program finishProgram;
+	Program maskFillProgram, maskBlurProgram, maskApplyProgram;
+	Fbo maskCoverage, maskBlur; // shared by every screen, sized to the one being drawn
 	GLuint vao = 0, vbo = 0;
 	std::vector< float > vertices;
 };

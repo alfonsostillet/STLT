@@ -111,7 +111,14 @@ ImTextureID TextureId( GLuint texture )
 std::vector< Vec2* > EditablePoints( Slice& s, int tab )
 {
 	std::vector< Vec2* > points;
-	if( tab == InputTab )
+	if( s.mask )
+	{
+		// Masks only live on the output.
+		if( tab == OutputTab )
+			for( ContourPoint& c : s.contour )
+				points.push_back( &c.p );
+	}
+	else if( tab == InputTab )
 		for( Vec2& p : s.input )
 			points.push_back( &p );
 	else if( s.polygon )
@@ -283,6 +290,22 @@ void DrawList( App& app )
 		s.slices.push_back( AdvancedOutputSetup::MakePolygon( UniqueName( s.slices, "Polygon" ), cw, ch, (float)s.width, (float)s.height ) );
 		editor.slice = (int)s.slices.size() - 1;
 	}
+	if( ImGui::Button( "+ Mask" ) && haveScreen )
+		ImGui::OpenPopup( "##newMask" );
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "A shape that blacks out what is below it in the list (outside it, inverted)" );
+	if( ImGui::BeginPopup( "##newMask" ) )
+	{
+		for( bool ellipse : { false, true } )
+			if( ImGui::MenuItem( ellipse ? "Ellipse" : "Rectangle" ) && haveScreen )
+			{
+				Screen& s = setup.screens[ editor.screen ];
+				s.slices.push_back( AdvancedOutputSetup::MakeMask( UniqueName( s.slices, "Mask" ), (float)s.width, (float)s.height, ellipse ) );
+				editor.slice = (int)s.slices.size() - 1;
+				editor.tab   = OutputTab; // masks live on the output
+			}
+		ImGui::EndPopup();
+	}
 	ImGui::EndDisabled();
 	ImGui::Separator();
 
@@ -312,7 +335,7 @@ void DrawList( App& app )
 				ImGui::PushID( k );
 				ImGui::Checkbox( "##on", &slice.enabled );
 				ImGui::SameLine();
-				std::string name = ( slice.polygon ? "[P] " : "" ) + slice.name;
+				std::string name = ( slice.mask ? "[M] " : slice.polygon ? "[P] " : "" ) + slice.name;
 				if( ImGui::Selectable( name.c_str(), editor.screen == si && editor.slice == k ) )
 				{
 					editor.screen = si;
@@ -346,7 +369,7 @@ void DrawList( App& app )
 	{
 		std::vector< Slice >& slices = setup.screens[ editor.screen ].slices;
 		Slice copy                   = slices[ editor.slice ];
-		copy.name                    = UniqueName( slices, copy.polygon ? "Polygon" : "Slice" );
+		copy.name                    = UniqueName( slices, copy.mask ? "Mask" : copy.polygon ? "Polygon" : "Slice" );
 		slices.insert( slices.begin() + editor.slice + 1, copy );
 		editor.slice++;
 	}
@@ -419,10 +442,10 @@ constexpr float kPi = 3.14159265f;
 
 bool EditsContour( const Slice& s, int tab )
 {
-	return tab == OutputTab && !s.polygon && s.warp == WarpMode::Contour && s.contour.size() >= 4;
+	return tab == OutputTab && s.HasContour() && s.contour.size() >= ( s.mask ? 3u : 4u );
 }
 
-// Points can be added and removed: polygons on both tabs, contours on the output.
+// Points can be added and removed: polygons on both tabs, contours and masks on the output.
 bool HasPointEditing( const Slice& s, int tab )
 {
 	return s.polygon || EditsContour( s, tab );
@@ -603,7 +626,10 @@ void DrawCanvas( App& app, Screen& screen )
 		std::vector< ImVec2 > pts;
 		for( Vec2 p : line )
 			pts.push_back( toScreen( p ) );
-		ImU32 colour = i == selected ? theme::Accent : s.enabled ? IM_COL32( 230, 230, 230, 150 ) : IM_COL32( 140, 140, 140, 90 );
+		ImU32 colour = i == selected ? theme::Accent
+		               : !s.enabled ? IM_COL32( 140, 140, 140, 90 )
+		               : s.mask     ? IM_COL32( 255, 110, 110, 170 ) // masks in red
+		                            : IM_COL32( 230, 230, 230, 150 );
 		draw->AddPolyline( pts.data(), (int)pts.size(), colour, ImDrawFlags_Closed, i == selected ? Ui( 2 ) : Ui( 1 ) );
 		ImVec2 c( 0, 0 );
 		for( ImVec2 p : pts )
@@ -637,7 +663,7 @@ void DrawCanvas( App& app, Screen& screen )
 				draw->AddPolyline( column.data(), (int)column.size(), lattice, 0, Ui( 1 ) );
 			}
 		}
-		else if( EditsContour( s, tab ) )
+		else if( EditsContour( s, tab ) && !s.mask )
 		{
 			// How the picture spreads inside the contour: a line at every quarter of the slice.
 			const int n                = 32;
@@ -1040,7 +1066,7 @@ void DrawCanvas( App& app, Screen& screen )
 					if( ImGui::MenuItem( "Straight Point" ) )
 						s.contour[ editor.menuPoint ] = Straightened( s, editor.menuPoint );
 				}
-				bool removable = s.polygon ? s.input.size() > 3 : contour && !s.IsContourCorner( editor.menuPoint );
+				bool removable = s.polygon ? s.input.size() > 3 : s.mask ? s.contour.size() > 3 : contour && !s.IsContourCorner( editor.menuPoint );
 				if( HasPointEditing( s, tab ) && ImGui::MenuItem( "Delete Point", "Del", false, removable ) && RemovePoint( s, tab, editor.menuPoint ) )
 				{
 					editor.point     = -1;
@@ -1056,10 +1082,19 @@ void DrawCanvas( App& app, Screen& screen )
 				if( fresh >= 0 )
 					editor.point = fresh;
 			}
-			if( contour && ImGui::MenuItem( "Reset Contour" ) )
+			if( contour && !s.mask && ImGui::MenuItem( "Reset Contour" ) )
 			{
 				s.ResetContour();
 				editor.point = -1;
+			}
+			if( s.mask )
+			{
+				ImGui::MenuItem( "Invert", nullptr, &s.invert );
+				if( ImGui::MenuItem( "Fit to Screen" ) )
+					s.FitOutput( (float)screen.width, (float)screen.height );
+				ImGui::MenuItem( "Enabled", nullptr, &s.enabled );
+				ImGui::EndPopup();
+				return;
 			}
 			if( ImGui::MenuItem( "Match Output to Input" ) )
 				s.MatchOutputToInput( (float)app.composition.width, (float)app.composition.height, (float)screen.width, (float)screen.height );
@@ -1142,8 +1177,77 @@ void DrawScreenProps( App& app, Screen& screen )
 	ImGui::EndTable();
 }
 
+// The output mode and the selected point: shared by slices and masks.
+void EditModeRows( Slice& s )
+{
+	if( editor.tab == OutputTab )
+	{
+		Row( "Mode" );
+		if( ImGui::RadioButton( "Edit Points", editor.outputEdit == OutputEdit::Points ) )
+			editor.outputEdit = OutputEdit::Points;
+		ImGui::SameLine();
+		if( ImGui::RadioButton( "Transform", editor.outputEdit == OutputEdit::Transform ) )
+			editor.outputEdit = OutputEdit::Transform;
+	}
+	std::vector< Vec2* > points = EditablePoints( s, editor.tab );
+	if( editor.point >= 0 && editor.point < (int)points.size() )
+	{
+		Row( "Point" );
+		ImGui::DragFloat2( "##point", &points[ editor.point ]->x, 1, -16384, 16384, "%.1f" );
+	}
+}
+
+void PointModeRows( Slice& s )
+{
+	Row( "Point Mode" );
+	if( ImGui::BeginCombo( "##pointMode", PointModeName( s.pointMode ) ) )
+	{
+		for( int m = 0; m < (int)PointMode::Count; ++m )
+			if( ImGui::Selectable( PointModeName( (PointMode)m ), (int)s.pointMode == m ) )
+				s.pointMode = (PointMode)m;
+		ImGui::EndCombo();
+	}
+	Row( "Points" );
+	ImGui::Text( "%d", (int)s.contour.size() );
+}
+
+void DrawMaskProps( Screen& screen, Slice& s )
+{
+	ImGui::SeparatorText( "Mask" );
+	if( !BeginProps( "##mask" ) )
+		return;
+	Row( "Name" );
+	ImGui::InputText( "##name", &s.name );
+	Row( "Enabled" );
+	ImGui::Checkbox( "##enabled", &s.enabled );
+	Row( "Strength" );
+	SliderPercent( "##opacity", &s.opacity, 0, 1 );
+	Row( "Invert" );
+	ImGui::Checkbox( "##invert", &s.invert );
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "Black outside the shape instead of inside" );
+	Row( "Feather" );
+	ImGui::SliderFloat( "##feather", &s.feather, 0, 200, "%.0f px", ImGuiSliderFlags_AlwaysClamp );
+	EditModeRows( s );
+	PointModeRows( s );
+	Row( "" );
+	if( ImGui::Button( "Smooth All" ) )
+		for( int i = 0; i < (int)s.contour.size(); ++i )
+			s.SmoothContourPoint( i );
+	ImGui::SameLine();
+	if( ImGui::Button( "Fit Screen" ) )
+		s.FitOutput( (float)screen.width, (float)screen.height );
+	ImGui::EndTable();
+	ImGui::TextDisabled( "Blacks out what is below it in the list." );
+}
+
 void DrawSliceProps( App& app, Screen& screen, Slice& s )
 {
+	if( s.mask )
+	{
+		DrawMaskProps( screen, s );
+		return;
+	}
 	float cw = (float)app.composition.width, ch = (float)app.composition.height;
 	ImGui::SeparatorText( s.polygon ? "Polygon" : "Slice" );
 	if( !BeginProps( "##slice" ) )
@@ -1170,21 +1274,7 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 		if( ImGui::Button( "Whole Composition" ) )
 			SetRect( s, 0, 0, cw, ch );
 	}
-	if( editor.tab == OutputTab )
-	{
-		Row( "Mode" );
-		if( ImGui::RadioButton( "Edit Points", editor.outputEdit == OutputEdit::Points ) )
-			editor.outputEdit = OutputEdit::Points;
-		ImGui::SameLine();
-		if( ImGui::RadioButton( "Transform", editor.outputEdit == OutputEdit::Transform ) )
-			editor.outputEdit = OutputEdit::Transform;
-	}
-	std::vector< Vec2* > points = EditablePoints( s, editor.tab );
-	if( editor.point >= 0 && editor.point < (int)points.size() )
-	{
-		Row( "Point" );
-		ImGui::DragFloat2( "##point", &points[ editor.point ]->x, 1, -16384, 16384, "%.1f" );
-	}
+	EditModeRows( s );
 	Row( "Flip" );
 	ImGui::Checkbox( "Horizontal", &s.flipHorizontal );
 	ImGui::SameLine();
@@ -1202,16 +1292,7 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 		}
 		if( s.warp == WarpMode::Contour )
 		{
-			Row( "Point Mode" );
-			if( ImGui::BeginCombo( "##pointMode", PointModeName( s.pointMode ) ) )
-			{
-				for( int m = 0; m < (int)PointMode::Count; ++m )
-					if( ImGui::Selectable( PointModeName( (PointMode)m ), (int)s.pointMode == m ) )
-						s.pointMode = (PointMode)m;
-				ImGui::EndCombo();
-			}
-			Row( "Points" );
-			ImGui::Text( "%d", (int)s.contour.size() );
+			PointModeRows( s );
 			Row( "" );
 			if( ImGui::Button( "Smooth All" ) )
 				for( int i = 0; i < (int)s.contour.size(); ++i )
