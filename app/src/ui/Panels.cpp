@@ -913,6 +913,11 @@ void DrawCompositionPanel( App& app )
 		ParamLabel( "Master" );
 		PercentSlider( "##master", &comp.master );
 		MapTarget( app, "/composition/master" );
+		ParamLabel( "Audio" );
+		PercentSlider( "##audio", &comp.audioVolume );
+		MapTarget( app, "/composition/audio/volume" );
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "Master volume of the clips' sound\n%s", app.audio.Status().c_str() );
 		ParamLabel( "Speed" );
 		ImGui::SliderFloat( "##speed", &comp.speed, 0.0f, 4.0f, "%.2f" );
 		MapTarget( app, "/composition/speed" );
@@ -980,6 +985,9 @@ void DrawLayerPanel( App& app )
 		ParamLabel( "Opacity" );
 		PercentSlider( "##opacity", &layer.opacity );
 		MapTarget( app, layerAddress + "/video/opacity" );
+		ParamLabel( "Volume" );
+		PercentSlider( "##volume", &layer.volume );
+		MapTarget( app, layerAddress + "/audio/volume" );
 		ParamLabel( "Blend Mode" );
 		EnumCombo( "##blend", &layer.blend, BlendModeName );
 		ParamLabel( "Bypass" );
@@ -1101,6 +1109,15 @@ void DrawClipPanel( App& app )
 		ParamLabel( "Opacity" );
 		PercentSlider( "##opacity", &clip->opacity );
 		ImGui::EndTable();
+	}
+	if( clip->audio && ImGui::CollapsingHeader( "Audio", ImGuiTreeNodeFlags_DefaultOpen ) && BeginParams( "##audio" ) )
+	{
+		ParamLabel( "Volume" );
+		PercentSlider( "##volume", &clip->volume );
+		MapTarget( app, "/composition/layers/" + std::to_string( app.composition.selectedLayer + 1 ) + "/clips/" + std::to_string( app.composition.selectedColumn + 1 ) +
+		                    "/audio/volume" );
+		ImGui::EndTable();
+		ImGui::TextDisabled( "Heard while it plays forwards; the speed changes the pitch." );
 	}
 	if( ImGui::CollapsingHeader( "Transform", ImGuiTreeNodeFlags_DefaultOpen ) && BeginParams( "##transform" ) )
 	{
@@ -1274,6 +1291,7 @@ void DrawPerformancePanel( App& app )
 	ImGui::TextDisabled( "GPU: %s", Caps().renderer );
 	ImGui::TextDisabled( "OpenGL %s   DXT %s   BPTC %s   decode threads %u", Caps().version, Caps().s3tc ? "yes" : "NO", Caps().bptc ? "yes" : "no",
 	                     ThreadPool::Shared().WorkerCount() + 1 );
+	ImGui::TextDisabled( "Audio: %s", app.audio.Status().c_str() );
 	if( HasFfmpeg() )
 	{
 		bool hardware = HardwareDecoding();

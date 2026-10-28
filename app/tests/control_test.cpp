@@ -32,6 +32,9 @@ static void TestAddresses()
 	CHECK( ParseControlAddress( "/composition/video/opacity", t ) && t.kind == Kind::Master );
 	CHECK( ParseControlAddress( "/composition/tempocontroller/tempotap", t ) && t.kind == Kind::TempoTap );
 	CHECK( ParseControlAddress( "/composition/tempocontroller/tempo", t ) && t.kind == Kind::Tempo );
+	CHECK( ParseControlAddress( "/composition/audio/volume", t ) && t.kind == Kind::AudioVolume );
+	CHECK( ParseControlAddress( "/composition/layers/2/audio/volume", t ) && t.kind == Kind::LayerVolume && t.layer == 1 );
+	CHECK( ParseControlAddress( "/composition/layers/2/clips/4/audio/volume", t ) && t.kind == Kind::ClipVolume && t.column == 3 );
 	// Effect parameters in all three scopes.
 	CHECK( ParseControlAddress( "/composition/video/effects/2/params/amount", t ) && t.kind == Kind::EffectParam && t.layer == -1 && t.slot == 1 && t.param == "amount" );
 	CHECK( ParseControlAddress( "/composition/layers/4/video/effects/1/params/hue_shift", t ) && t.kind == Kind::EffectParam && t.layer == 3 && t.column == -1 && t.slot == 0 );

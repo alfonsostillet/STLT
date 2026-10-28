@@ -8,6 +8,8 @@
 
 namespace stltvj
 {
+class AudioVoice;
+
 enum class BlendMode
 {
 	Alpha,
@@ -55,6 +57,7 @@ struct Clip
 	float positionY   = 0.0f;
 	float scale       = 1.0f;
 	float rotation    = 0.0f; // degrees
+	float volume      = 1.0f; // the clip's sound, 0..1
 
 	EffectChain effects;
 
@@ -67,6 +70,7 @@ struct Clip
 	// Runtime state.
 	std::unique_ptr< ClipPlayer > player;
 	std::unique_ptr< Fbo > generatorThumbnail;
+	std::shared_ptr< AudioVoice > audio; // the clip's sound, when it has one
 	double time        = 0.0; // seconds into the movie
 	int bounceSign     = 1;
 	bool finished      = false;
@@ -90,6 +94,7 @@ struct Layer
 	std::vector< Clip > clips; // one per column; empty paths are empty cells
 	int active        = -1;    // playing column, or -1
 	float opacity     = 1.0f;
+	float volume      = 1.0f; // the sound of its clips
 	BlendMode blend   = BlendMode::Alpha;
 	bool bypass       = false;
 	bool solo         = false;
@@ -102,6 +107,7 @@ struct Composition
 	int width        = 1920;
 	int height       = 1080;
 	float master     = 1.0f;
+	float audioVolume = 1.0f; // master volume of every clip's sound
 	float speed      = 1.0f;
 	double bpm       = 120.0;
 	bool paused      = false;

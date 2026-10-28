@@ -14,6 +14,8 @@ namespace stltvj
 //   /composition/layers/L/bypassed                   bypass on or off
 //   /composition/layers/L/solo                       solo on or off
 //   /composition/layers/L/video/opacity              0..1
+//   /composition/layers/L/audio/volume               0..1, and /composition/layers/L/clips/C/audio/volume
+//   /composition/audio/volume                        master volume, 0..1
 //   /composition/master (or /composition/video/opacity)  0..1
 //   /composition/speed                               0..1 over 0..4
 //   /composition/tempocontroller/tempo               0..1 over 20..500 BPM, or the BPM itself
@@ -38,6 +40,9 @@ struct ControlTarget
 		LayerBypass,
 		LayerSolo,
 		LayerOpacity,
+		LayerVolume,
+		ClipVolume,
+		AudioVolume,
 		Master,
 		Speed,
 		Tempo,

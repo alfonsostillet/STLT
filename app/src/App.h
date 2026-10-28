@@ -6,6 +6,7 @@
 #include <memory>
 #include "Composition.h"
 #include "History.h"
+#include "audio/AudioEngine.h"
 #include "control/RemoteInputs.h"
 #include "fx/EffectRegistry.h"
 #include "render/Compositor.h"
@@ -95,6 +96,7 @@ public:
 	void SaveControlSettings() const;
 	ControlSettings control;
 	RemoteInputs remote;
+	AudioEngine audio;
 	bool learning = false;
 	std::string learnTarget;
 	std::string lastControl; // the last message, for the panel
@@ -134,6 +136,7 @@ private:
 	void SavePluginFolders() const;
 	History::State Snapshot() const;
 	void PollRemote();
+	void UpdateAudio();
 	double lastRemoteConfigure = -1e9;
 	std::map< int, float > lastMidiValues; // by note or controller: buttons act on the press
 	// Takes a composition back to an earlier state, keeping the players, generators and effects that are still

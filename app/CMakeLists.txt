@@ -41,6 +41,12 @@ FetchContent_Declare(nfd
     GIT_REPOSITORY https://github.com/btzy/nativefiledialog-extended.git
     GIT_TAG v1.2.1
     GIT_SHALLOW TRUE)
+# Sound output on every system (public domain / MIT-0): one header, built in src/audio/Miniaudio.c.
+FetchContent_Declare(miniaudio
+    GIT_REPOSITORY https://github.com/mackron/miniaudio.git
+    GIT_TAG 0.11.21
+    GIT_SHALLOW TRUE
+    SOURCE_SUBDIR no-cmake)
 # MIDI input on every system (MIT). Its sources are built below with the right system API.
 FetchContent_Declare(rtmidi
     GIT_REPOSITORY https://github.com/thestk/rtmidi.git
@@ -79,14 +85,15 @@ if(STLTVJ_WITH_FFMPEG)
         endif()
         target_include_directories(ffmpeg INTERFACE "${FFMPEG_ROOT}/include")
         target_link_libraries(ffmpeg INTERFACE
-            "${FFMPEG_ROOT}/lib/avformat.lib" "${FFMPEG_ROOT}/lib/avcodec.lib" "${FFMPEG_ROOT}/lib/swscale.lib" "${FFMPEG_ROOT}/lib/avutil.lib")
+            "${FFMPEG_ROOT}/lib/avformat.lib" "${FFMPEG_ROOT}/lib/avcodec.lib" "${FFMPEG_ROOT}/lib/swscale.lib"
+            "${FFMPEG_ROOT}/lib/swresample.lib" "${FFMPEG_ROOT}/lib/avutil.lib")
         file(GLOB FFMPEG_DLLS "${FFMPEG_ROOT}/bin/*.dll")
     else()
         find_package(PkgConfig REQUIRED)
         if(FFMPEG_ROOT)
             # Our own static build: link its private dependencies too.
             set(ENV{PKG_CONFIG_PATH} "${FFMPEG_ROOT}/lib/pkgconfig")
-            pkg_check_modules(FFMPEG REQUIRED libavformat libavcodec libswscale libavutil)
+            pkg_check_modules(FFMPEG REQUIRED libavformat libavcodec libswscale libswresample libavutil)
             target_include_directories(ffmpeg INTERFACE ${FFMPEG_STATIC_INCLUDE_DIRS})
             target_link_directories(ffmpeg INTERFACE ${FFMPEG_STATIC_LIBRARY_DIRS})
             # pkg-config splits "-framework CoreVideo" in two; joined again, CMake passes it to the linker whole
@@ -105,7 +112,7 @@ if(STLTVJ_WITH_FFMPEG)
             endforeach()
             target_link_libraries(ffmpeg INTERFACE ${FFMPEG_LINK})
         else()
-            pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libswscale libavutil)
+            pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libswscale libswresample libavutil)
             target_link_libraries(ffmpeg INTERFACE PkgConfig::FFMPEG)
         endif()
     endif()
@@ -142,6 +149,8 @@ endif()
 
 # The media engine: demuxing, HAP decoding and timing. No OpenGL, so tools and tests can use it headless.
 add_library(stltvj-media STATIC
+    src/media/AudioDecoder.cpp
+    src/media/AudioDecoder.h
     src/media/FfmpegSource.cpp
     src/media/FileReader.cpp
     src/media/FileReader.h
@@ -207,6 +216,9 @@ add_library(stltvj-core STATIC
     src/control/Control.h
     src/control/RemoteInputs.cpp
     src/control/RemoteInputs.h
+    src/audio/AudioEngine.cpp
+    src/audio/AudioEngine.h
+    src/audio/Miniaudio.c
 )
 target_include_directories(stltvj-core PUBLIC src third_party/khronos "${THIRD_PARTY}/nlohmann")
 target_compile_definitions(stltvj-core PUBLIC GLFW_INCLUDE_NONE)
@@ -245,6 +257,17 @@ else()
     endif()
 endif()
 target_link_libraries(stltvj-core PUBLIC rtmidi)
+
+# Sound through miniaudio, which finds the system's audio libraries at run time.
+FetchContent_MakeAvailable(miniaudio)
+set_source_files_properties(src/audio/Miniaudio.c PROPERTIES COMPILE_OPTIONS "$<IF:$<C_COMPILER_ID:MSVC>,/W0,-w>")
+target_include_directories(stltvj-core PUBLIC "${miniaudio_SOURCE_DIR}")
+if(APPLE)
+    target_link_libraries(stltvj-core PUBLIC "-framework CoreFoundation" "-framework CoreAudio" "-framework AudioToolbox")
+elseif(UNIX)
+    find_package(Threads REQUIRED)
+    target_link_libraries(stltvj-core PUBLIC Threads::Threads ${CMAKE_DL_LIBS} m)
+endif()
 if(WIN32)
     target_link_libraries(stltvj-core PUBLIC ws2_32) # OSC over UDP
 endif()
@@ -335,6 +358,13 @@ add_executable(control_test tests/control_test.cpp)
 target_link_libraries(control_test PRIVATE stltvj-core)
 add_test(NAME control_test COMMAND control_test)
 stltvj_ffmpeg_runtime(control_test)
+
+# Clip sound: decoding, seeking and the mix, without an audio device.
+add_executable(audio_test tests/audio_test.cpp)
+target_link_libraries(audio_test PRIVATE stltvj-core)
+target_compile_definitions(audio_test PRIVATE FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+add_test(NAME audio_test COMMAND audio_test)
+stltvj_ffmpeg_runtime(audio_test)
 
 # Undo and redo.
 add_executable(history_test tests/history_test.cpp)

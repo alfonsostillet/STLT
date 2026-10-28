@@ -6,8 +6,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include "Settings.h"
+#include "audio/AudioEngine.h"
 #include "fx/BuiltinEffects.h"
 #include "gl/Gl.h"
 #include "ui/AdvancedOutputUi.h"
@@ -116,6 +118,9 @@ bool App::Init( const LaunchOptions& launch )
 		std::fprintf( stderr, "Warning: this GPU driver reports no S3TC (DXT) support; HAP needs it\n" );
 
 	configDir = ConfigDirectory();
+	// Sound: the system's default output (STLTVJ_NO_AUDIO=1 keeps it off).
+	if( !std::getenv( "STLTVJ_NO_AUDIO" ) && !audio.Start() )
+		std::fprintf( stderr, "Audio: %s\n", audio.Status().c_str() );
 	{
 		std::string text;
 		if( ReadTextFile( ( fs::u8path( configDir ) / "control.json" ).u8string(), text ) )
@@ -253,6 +258,7 @@ void App::Shutdown()
 		WriteTextFile( ( fs::u8path( configDir ) / "last-session.stltvj" ).u8string(), SaveComposition( composition ) );
 	WriteTextFile( ( fs::u8path( configDir ) / "advanced-output.json" ).u8string(), SaveAdvancedOutput( advancedOutput ) );
 	glfwMakeContextCurrent( window );
+	audio.Stop();
 	outputs.Shutdown();
 	composition = Composition{}; // frees the players' GPU memory and plugin instances while the context is alive
 	preview.Release();
@@ -300,6 +306,7 @@ void App::LoadClip( int layer, int column, const std::string& path )
 	clip.player = std::make_unique< ClipPlayer >();
 	if( clip.player->Open( path ) )
 	{
+		clip.audio = AudioVoice::Open( path, audio.SampleRate() );
 		compositor.MakeThumbnail( *clip.player );
 		const FrameSource& source = clip.player->Source();
 		if( source.IsHap() || source.IsStill() )
@@ -446,7 +453,10 @@ bool App::OpenComposition( const std::string& path )
 				continue;
 			clip.player = std::make_unique< ClipPlayer >();
 			if( clip.player->Open( clip.path ) )
+			{
 				compositor.MakeThumbnail( *clip.player );
+				clip.audio = AudioVoice::Open( clip.path, audio.SampleRate() );
+			}
 			else
 				failures++;
 		}
@@ -552,6 +562,7 @@ void App::RestoreComposition( const std::string& text )
 			if( old == playing[ l ] )
 				follow[ l ] = c;
 			clip.player             = std::move( old->player );
+			clip.audio              = std::move( old->audio );
 			clip.generatorThumbnail = std::move( old->generatorThumbnail );
 			clip.time               = old->time;
 			clip.bounceSign         = old->bounceSign;
@@ -589,7 +600,10 @@ void App::RestoreComposition( const std::string& text )
 			{
 				clip.player = std::make_unique< ClipPlayer >();
 				if( clip.player->Open( clip.path ) )
+				{
 					compositor.MakeThumbnail( *clip.player );
+					clip.audio = AudioVoice::Open( clip.path, audio.SampleRate() );
+				}
 			}
 }
 
@@ -730,6 +744,15 @@ bool App::ApplyControl( const std::string& address, bool hasValue, float value, 
 		if( layerOk )
 			composition.layers[ t.layer ].opacity = unit;
 		return layerOk;
+	case Kind::LayerVolume:
+		if( layerOk )
+			composition.layers[ t.layer ].volume = unit;
+		return layerOk;
+	case Kind::ClipVolume:
+		if( layerOk && columnOk )
+			composition.layers[ t.layer ].clips[ t.column ].volume = unit;
+		return layerOk && columnOk;
+	case Kind::AudioVolume: composition.audioVolume = unit; return true;
 	case Kind::Master: composition.master = unit; return true;
 	case Kind::Speed: composition.speed = unit * 4; return true;
 	case Kind::Tempo: composition.bpm = value <= 1 ? 20.0 + unit * 480.0 : std::clamp( (double)value, 20.0, 500.0 ); return true;
@@ -1017,6 +1040,27 @@ void App::TapTempo()
 	}
 }
 
+void App::UpdateAudio()
+{
+	// Each playing clip's sound follows its playhead; bypassed layers, layers others solo over and a paused
+	// composition are silent.
+	bool anySolo = std::any_of( composition.layers.begin(), composition.layers.end(), []( const Layer& l ) { return l.solo; } );
+	std::vector< std::shared_ptr< AudioVoice > > voices;
+	for( Layer& layer : composition.layers )
+	{
+		if( layer.active < 0 || layer.active >= (int)layer.clips.size() )
+			continue;
+		Clip& clip = layer.clips[ layer.active ];
+		if( !clip.audio || !clip.Loaded() )
+			continue;
+		bool audible = !composition.paused && !layer.bypass && ( !anySolo || layer.solo );
+		double rate  = clip.PlayDirection() * std::fabs( clip.speed ) * composition.speed;
+		clip.audio->Follow( clip.time, rate, audible ? clip.volume * layer.volume : 0.0f );
+		voices.push_back( clip.audio );
+	}
+	audio.SetVoices( std::move( voices ), composition.audioVolume );
+}
+
 void App::UpdatePlayback( double dt )
 {
 	for( Layer& layer : composition.layers )
@@ -1044,6 +1088,7 @@ void App::Frame()
 
 	PollRemote();
 	UpdatePlayback( dt );
+	UpdateAudio();
 	if( !composition.paused )
 		composition.beat += dt * composition.speed * composition.bpm / 60.0;
 	frame.time  = now - startTime;

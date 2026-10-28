@@ -107,6 +107,8 @@ bool ParseControlAddress( const std::string& address, ControlTarget& t )
 	}
 	if( n == 3 && p[ 1 ] == "video" && p[ 2 ] == "opacity" )
 		return t.kind = Kind::Master, true;
+	if( n == 3 && p[ 1 ] == "audio" && p[ 2 ] == "volume" )
+		return t.kind = Kind::AudioVolume, true;
 	if( n == 3 && p[ 1 ] == "tempocontroller" )
 	{
 		if( p[ 2 ] == "tempo" )
@@ -136,6 +138,15 @@ bool ParseControlAddress( const std::string& address, ControlTarget& t )
 			t.kind = Kind::LayerSolo;
 		else if( n == 5 && p[ 3 ] == "video" && p[ 4 ] == "opacity" )
 			t.kind = Kind::LayerOpacity;
+		else if( n == 5 && p[ 3 ] == "audio" && p[ 4 ] == "volume" )
+			t.kind = Kind::LayerVolume;
+		else if( n == 7 && p[ 3 ] == "clips" && p[ 5 ] == "audio" && p[ 6 ] == "volume" )
+		{
+			t.column = Index( p[ 4 ] );
+			if( t.column < 0 )
+				return false;
+			t.kind = Kind::ClipVolume;
+		}
 		else if( n == 6 && p[ 3 ] == "clips" && p[ 5 ] == "connect" )
 		{
 			t.column = Index( p[ 4 ] );

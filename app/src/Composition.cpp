@@ -174,6 +174,7 @@ std::string SaveComposition( const Composition& c )
 	root[ "width" ]   = c.width;
 	root[ "height" ]  = c.height;
 	root[ "master" ]  = c.master;
+	root[ "audioVolume" ] = c.audioVolume;
 	root[ "speed" ]   = c.speed;
 	root[ "bpm" ]     = c.bpm;
 	root[ "columns" ] = c.columns;
@@ -184,6 +185,7 @@ std::string SaveComposition( const Composition& c )
 		json l;
 		l[ "name" ]    = layer.name;
 		l[ "opacity" ] = layer.opacity;
+		l[ "volume" ]  = layer.volume;
 		l[ "blend" ]   = BlendModeName( layer.blend );
 		l[ "bypass" ]  = layer.bypass;
 		l[ "effects" ] = SaveChain( layer.effects );
@@ -212,6 +214,7 @@ std::string SaveComposition( const Composition& c )
 			k[ "position" ]  = { clip.positionX, clip.positionY };
 			k[ "scale" ]     = clip.scale;
 			k[ "rotation" ]  = clip.rotation;
+			k[ "volume" ]    = clip.volume;
 			k[ "effects" ]   = SaveChain( clip.effects );
 			clips.push_back( k );
 		}
@@ -247,6 +250,7 @@ bool LoadComposition( const std::string& text, Composition& out, std::string& er
 	c.width   = std::clamp( root.value( "width", c.width ), 16, 16384 );
 	c.height  = std::clamp( root.value( "height", c.height ), 16, 16384 );
 	c.master  = root.value( "master", c.master );
+	c.audioVolume = std::clamp( root.value( "audioVolume", 1.0f ), 0.0f, 1.0f );
 	c.speed   = root.value( "speed", c.speed );
 	c.bpm     = root.value( "bpm", c.bpm );
 	if( root.contains( "effects" ) )
@@ -260,6 +264,7 @@ bool LoadComposition( const std::string& text, Composition& out, std::string& er
 			Layer layer;
 			layer.name    = l.value( "name", "Layer " + std::to_string( c.layers.size() + 1 ) );
 			layer.opacity = l.value( "opacity", 1.0f );
+			layer.volume  = std::clamp( l.value( "volume", 1.0f ), 0.0f, 1.0f );
 			layer.blend   = ByName( l.value( "blend", json() ), BlendModeName, BlendMode::Alpha );
 			layer.bypass  = l.value( "bypass", false );
 			if( l.contains( "effects" ) )
@@ -291,6 +296,7 @@ bool LoadComposition( const std::string& text, Composition& out, std::string& er
 						}
 						clip.scale    = k.value( "scale", 1.0f );
 						clip.rotation = k.value( "rotation", 0.0f );
+						clip.volume   = std::clamp( k.value( "volume", 1.0f ), 0.0f, 1.0f );
 					}
 					layer.clips.push_back( std::move( clip ) );
 				}
