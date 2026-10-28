@@ -18,6 +18,7 @@ set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 option(STLTVJ_BUILD_APP "Build the app itself (off: only the media engine, tools and tests)" ON)
 
 include(FetchContent)
+enable_testing()
 
 FetchContent_Declare(glfw
     GIT_REPOSITORY https://github.com/glfw/glfw.git
@@ -92,14 +93,21 @@ if(WIN32)
 endif()
 
 if(STLTVJ_BUILD_APP)
-add_executable(stlt-vj WIN32 MACOSX_BUNDLE
-    src/main.cpp
-    src/App.cpp
-    src/App.h
+# Everything but the user interface: composition model, effects, FFGL host, rendering.
+add_library(stltvj-core STATIC
     src/Composition.cpp
     src/Composition.h
     src/Settings.cpp
     src/Settings.h
+    src/fx/BuiltinEffects.cpp
+    src/fx/BuiltinEffects.h
+    src/fx/Effect.cpp
+    src/fx/Effect.h
+    src/fx/EffectRegistry.cpp
+    src/fx/EffectRegistry.h
+    src/fx/FfglAbi.h
+    src/fx/FfglPlugin.cpp
+    src/fx/FfglPlugin.h
     src/gl/Gl.cpp
     src/gl/Gl.h
     src/gl/Program.cpp
@@ -112,6 +120,28 @@ add_executable(stlt-vj WIN32 MACOSX_BUNDLE
     src/render/Fbo.h
     src/render/OutputWindow.cpp
     src/render/OutputWindow.h
+)
+target_include_directories(stltvj-core PUBLIC src third_party/khronos "${THIRD_PARTY}/nlohmann")
+target_compile_definitions(stltvj-core PUBLIC GLFW_INCLUDE_NONE)
+target_link_libraries(stltvj-core PUBLIC stltvj-media glfw)
+if(WIN32)
+    target_compile_definitions(stltvj-core PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+    target_compile_options(stltvj-core PUBLIC /utf-8)
+    target_link_libraries(stltvj-core PUBLIC opengl32 shell32 ole32)
+elseif(APPLE)
+    target_compile_definitions(stltvj-core PUBLIC GL_SILENCE_DEPRECATION)
+    target_link_libraries(stltvj-core PUBLIC "-framework OpenGL" "-framework Cocoa" "-framework IOKit")
+else()
+    find_package(OpenGL REQUIRED)
+    target_link_libraries(stltvj-core PUBLIC OpenGL::GL ${CMAKE_DL_LIBS})
+endif()
+
+add_executable(stlt-vj WIN32 MACOSX_BUNDLE
+    src/main.cpp
+    src/App.cpp
+    src/App.h
+    src/ui/EffectsUi.cpp
+    src/ui/EffectsUi.h
     src/ui/Panels.cpp
     src/ui/Panels.h
     src/ui/Theme.cpp
@@ -119,28 +149,21 @@ add_executable(stlt-vj WIN32 MACOSX_BUNDLE
     src/ui/Workspaces.cpp
     src/ui/Workspaces.h
 )
-target_include_directories(stlt-vj PRIVATE src third_party/khronos "${THIRD_PARTY}/nlohmann")
-target_compile_definitions(stlt-vj PRIVATE GLFW_INCLUDE_NONE)
-target_link_libraries(stlt-vj PRIVATE stltvj-media imgui glfw)
+target_link_libraries(stlt-vj PRIVATE stltvj-core imgui)
 if(WIN32)
-    target_compile_definitions(stlt-vj PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
-    target_compile_options(stlt-vj PRIVATE /utf-8)
-    target_link_libraries(stlt-vj PRIVATE opengl32)
     set_target_properties(stlt-vj PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
-elseif(APPLE)
-    target_compile_definitions(stlt-vj PRIVATE GL_SILENCE_DEPRECATION)
-    target_link_libraries(stlt-vj PRIVATE "-framework OpenGL" "-framework Cocoa" "-framework IOKit")
-else()
-    find_package(OpenGL REQUIRED)
-    target_link_libraries(stlt-vj PRIVATE OpenGL::GL ${CMAKE_DL_LIBS})
 endif()
+
+# Effects, parameters and composition files, without a GPU.
+add_executable(fx_test tests/fx_test.cpp)
+target_link_libraries(fx_test PRIVATE stltvj-core)
+add_test(NAME fx_test COMMAND fx_test)
 endif()
 
 # Headless tools: decode benchmark and tests for the media engine.
 add_executable(hapbench tools/hapbench.cpp)
 target_link_libraries(hapbench PRIVATE stltvj-media)
 
-enable_testing()
 add_executable(media_test tests/media_test.cpp)
 target_link_libraries(media_test PRIVATE stltvj-media)
 target_compile_definitions(media_test PRIVATE FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")

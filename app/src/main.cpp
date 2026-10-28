@@ -1,5 +1,6 @@
 // STLT-VJ: live HAP playback with dockable panels.
-//   stlt-vj [--fresh] [--clip LAYER,COLUMN,PATH]... [--size WxH] [--capture FILE.bmp [--frames N]]
+//   stlt-vj [--fresh] [--clip LAYER,COLUMN,PATH]... [--source LAYER,COLUMN,EFFECT-ID]...
+//           [--fx comp|layer:L|clip:L,C=EFFECT-ID]... [--launch LAYER,COLUMN]... [--list-effects] [--size WxH] [--capture FILE.bmp [--frames N]]
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -16,6 +17,8 @@ int main( int argc, char** argv )
 		bool hasValue   = i + 1 < argc;
 		if( arg == "--fresh" )
 			options.fresh = true;
+		else if( arg == "--list-effects" )
+			options.listEffects = true;
 		else if( arg == "--capture" && hasValue )
 			options.capturePath = argv[ ++i ];
 		else if( arg == "--frames" && hasValue )
@@ -30,6 +33,30 @@ int main( int argc, char** argv )
 				options.clips.push_back( { layer, column, value.substr( (size_t)consumed ) } );
 			else
 				std::fprintf( stderr, "Ignoring --clip %s (expected LAYER,COLUMN,PATH)\n", value.c_str() );
+		}
+		else if( arg == "--source" && hasValue )
+		{
+			std::string value = argv[ ++i ];
+			int layer = 0, column = 0, consumed = 0;
+			if( std::sscanf( value.c_str(), "%d,%d,%n", &layer, &column, &consumed ) == 2 && consumed > 0 && layer > 0 && column > 0 )
+				options.sources.push_back( { layer, column, value.substr( (size_t)consumed ) } );
+			else
+				std::fprintf( stderr, "Ignoring --source %s (expected LAYER,COLUMN,EFFECT-ID)\n", value.c_str() );
+		}
+		else if( arg == "--launch" && hasValue )
+		{
+			int layer = 0, column = 0;
+			if( std::sscanf( argv[ ++i ], "%d,%d", &layer, &column ) == 2 )
+				options.launches.push_back( { layer, column } );
+		}
+		else if( arg == "--fx" && hasValue )
+		{
+			std::string value = argv[ ++i ];
+			size_t equals     = value.find( '=' );
+			if( equals == std::string::npos )
+				std::fprintf( stderr, "Ignoring --fx %s (expected SCOPE=EFFECT-ID)\n", value.c_str() );
+			else
+				options.effects.push_back( { value.substr( 0, equals ), value.substr( equals + 1 ) } );
 		}
 		else
 			std::fprintf( stderr, "Unknown argument %s\n", arg.c_str() );

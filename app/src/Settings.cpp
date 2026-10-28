@@ -3,6 +3,10 @@
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#ifdef _WIN32
+#include <windows.h>
+#include <shlobj.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -22,6 +26,20 @@ std::string HomeDirectory()
 	std::string home = Env( "HOME" );
 #endif
 	return home.empty() ? fs::current_path().u8string() : home;
+}
+
+std::string DocumentsDirectory()
+{
+#ifdef _WIN32
+	PWSTR wide = nullptr;
+	if( SUCCEEDED( SHGetKnownFolderPath( FOLDERID_Documents, 0, nullptr, &wide ) ) )
+	{
+		fs::path path( wide );
+		CoTaskMemFree( wide );
+		return path.u8string();
+	}
+#endif
+	return ( fs::u8path( HomeDirectory() ) / "Documents" ).u8string();
 }
 
 std::string ConfigDirectory()

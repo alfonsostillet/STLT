@@ -29,6 +29,7 @@ const Flag kFlags[] = {
 	{ "Files", &PanelVisibility::files },
 	{ "Output", &PanelVisibility::output },
 	{ "Performance", &PanelVisibility::performance },
+	{ "Effects", &PanelVisibility::effects },
 };
 
 // [STLTVJ][Panels] section of the ini: Name=0/1 for each panel.
@@ -175,6 +176,7 @@ void Workspaces::BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size )
 	ImGui::DockBuilderDockWindow( panel::Layer, params );
 	ImGui::DockBuilderDockWindow( panel::Clip, clipParams );
 	ImGui::DockBuilderDockWindow( panel::Files, browser );
+	ImGui::DockBuilderDockWindow( panel::Effects, browser );
 	ImGui::DockBuilderDockWindow( panel::Output, browser );
 	ImGui::DockBuilderDockWindow( panel::Performance, browser );
 	ImGui::DockBuilderFinish( dockspace );

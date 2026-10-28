@@ -19,6 +19,7 @@ public:
 	void Bind() const;
 
 	GLuint Texture() const { return texture; }
+	GLuint Framebuffer() const { return framebuffer; }
 	int Width() const { return width; }
 	int Height() const { return height; }
 

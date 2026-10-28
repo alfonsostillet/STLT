@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cmath>
 #include <json.hpp>
+#include "fx/EffectRegistry.h"
 
 namespace stltvj
 {
@@ -119,7 +120,48 @@ Clip* Composition::SelectedClip()
 	if( selectedLayer < 0 || selectedLayer >= (int)layers.size() || selectedColumn < 0 || selectedColumn >= ColumnCount() )
 		return nullptr;
 	Clip& clip = layers[ selectedLayer ].clips[ selectedColumn ];
-	return clip.path.empty() ? nullptr : &clip;
+	return clip.Empty() ? nullptr : &clip;
+}
+
+static nlohmann::json SaveSlot( const EffectSlot& slot )
+{
+	using nlohmann::json;
+	json state = json::parse( slot.effect ? SaveEffectState( *slot.effect ) : slot.savedState, nullptr, false );
+	if( state.is_discarded() || !state.is_object() )
+		state = json::object();
+	if( !slot.effect && !state.contains( "id" ) )
+		state[ "id" ] = slot.missingId;
+	state[ "bypass" ] = slot.bypass;
+	state[ "mix" ]    = slot.mix;
+	return state;
+}
+
+static nlohmann::json SaveChain( const EffectChain& chain )
+{
+	nlohmann::json list = nlohmann::json::array();
+	for( const EffectSlot& slot : chain )
+		list.push_back( SaveSlot( slot ) );
+	return list;
+}
+
+// Effects come back as ids plus settings; the registry turns them into live effects (EffectRegistry::Restore).
+static EffectChain LoadChain( const nlohmann::json& list )
+{
+	EffectChain chain;
+	if( !list.is_array() )
+		return chain;
+	for( const nlohmann::json& item : list )
+	{
+		if( !item.is_object() || !item.contains( "id" ) || !item[ "id" ].is_string() )
+			continue;
+		EffectSlot slot;
+		slot.missingId  = item[ "id" ].get< std::string >();
+		slot.savedState = item.dump();
+		slot.bypass     = item.value( "bypass", false );
+		slot.mix        = item.value( "mix", 1.0f );
+		chain.push_back( std::move( slot ) );
+	}
+	return chain;
 }
 
 std::string SaveComposition( const Composition& c )
@@ -135,6 +177,7 @@ std::string SaveComposition( const Composition& c )
 	root[ "speed" ]   = c.speed;
 	root[ "bpm" ]     = c.bpm;
 	root[ "columns" ] = c.columns;
+	root[ "effects" ] = SaveChain( c.effects );
 	json layers       = json::array();
 	for( const Layer& layer : c.layers )
 	{
@@ -143,16 +186,23 @@ std::string SaveComposition( const Composition& c )
 		l[ "opacity" ] = layer.opacity;
 		l[ "blend" ]   = BlendModeName( layer.blend );
 		l[ "bypass" ]  = layer.bypass;
+		l[ "effects" ] = SaveChain( layer.effects );
 		json clips     = json::array();
 		for( const Clip& clip : layer.clips )
 		{
-			if( clip.path.empty() )
+			if( clip.Empty() )
 			{
 				clips.push_back( nullptr );
 				continue;
 			}
 			json k;
-			k[ "path" ]      = clip.path;
+			if( clip.IsGenerator() )
+			{
+				json state       = json::parse( clip.generator ? SaveEffectState( *clip.generator ) : clip.generatorState, nullptr, false );
+				k[ "generator" ] = state.is_object() ? state : json{ { "id", clip.generatorId } };
+			}
+			else
+				k[ "path" ] = clip.path;
 			k[ "name" ]      = clip.name;
 			k[ "speed" ]     = clip.speed;
 			k[ "direction" ] = clip.direction;
@@ -162,6 +212,7 @@ std::string SaveComposition( const Composition& c )
 			k[ "position" ]  = { clip.positionX, clip.positionY };
 			k[ "scale" ]     = clip.scale;
 			k[ "rotation" ]  = clip.rotation;
+			k[ "effects" ]   = SaveChain( clip.effects );
 			clips.push_back( k );
 		}
 		l[ "clips" ] = clips;
@@ -198,6 +249,8 @@ bool LoadComposition( const std::string& text, Composition& out, std::string& er
 	c.master  = root.value( "master", c.master );
 	c.speed   = root.value( "speed", c.speed );
 	c.bpm     = root.value( "bpm", c.bpm );
+	if( root.contains( "effects" ) )
+		c.effects = LoadChain( root[ "effects" ] );
 	if( root.contains( "columns" ) && root[ "columns" ].is_array() )
 		for( const json& name : root[ "columns" ] )
 			c.columns.push_back( name.is_string() ? name.get< std::string >() : "Column" );
@@ -209,6 +262,8 @@ bool LoadComposition( const std::string& text, Composition& out, std::string& er
 			layer.opacity = l.value( "opacity", 1.0f );
 			layer.blend   = ByName( l.value( "blend", json() ), BlendModeName, BlendMode::Alpha );
 			layer.bypass  = l.value( "bypass", false );
+			if( l.contains( "effects" ) )
+				layer.effects = LoadChain( l[ "effects" ] );
 			if( l.contains( "clips" ) && l[ "clips" ].is_array() )
 				for( const json& k : l[ "clips" ] )
 				{
@@ -216,6 +271,13 @@ bool LoadComposition( const std::string& text, Composition& out, std::string& er
 					if( k.is_object() )
 					{
 						clip.path      = k.value( "path", "" );
+						if( k.contains( "generator" ) && k[ "generator" ].is_object() && k[ "generator" ].contains( "id" ) )
+						{
+							clip.generatorId    = k[ "generator" ].value( "id", "" );
+							clip.generatorState = k[ "generator" ].dump();
+						}
+						if( k.contains( "effects" ) )
+							clip.effects = LoadChain( k[ "effects" ] );
 						clip.name      = k.value( "name", "" );
 						clip.speed     = k.value( "speed", 1.0f );
 						clip.direction = std::clamp( k.value( "direction", 1 ), -1, 1 );

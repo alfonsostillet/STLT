@@ -18,6 +18,10 @@
 	X( PFNGLENABLEPROC, glEnable )                                       \
 	X( PFNGLDISABLEPROC, glDisable )                                     \
 	X( PFNGLBLENDFUNCPROC, glBlendFunc )                                 \
+	X( PFNGLBLENDCOLORPROC, glBlendColor )                               \
+	X( PFNGLBLENDEQUATIONPROC, glBlendEquation )                         \
+	X( PFNGLCOLORMASKPROC, glColorMask )                                 \
+	X( PFNGLDEPTHMASKPROC, glDepthMask )                                 \
 	X( PFNGLCLEARPROC, glClear )                                         \
 	X( PFNGLCLEARCOLORPROC, glClearColor )                               \
 	X( PFNGLVIEWPORTPROC, glViewport )                                   \
@@ -44,6 +48,7 @@
 	X( PFNGLBINDFRAMEBUFFERPROC, glBindFramebuffer )                     \
 	X( PFNGLFRAMEBUFFERTEXTURE2DPROC, glFramebufferTexture2D )           \
 	X( PFNGLCHECKFRAMEBUFFERSTATUSPROC, glCheckFramebufferStatus )       \
+	X( PFNGLBLITFRAMEBUFFERPROC, glBlitFramebuffer )                     \
 	X( PFNGLCREATESHADERPROC, glCreateShader )                           \
 	X( PFNGLSHADERSOURCEPROC, glShaderSource )                           \
 	X( PFNGLCOMPILESHADERPROC, glCompileShader )                         \
@@ -61,6 +66,7 @@
 	X( PFNGLUNIFORM1IPROC, glUniform1i )                                 \
 	X( PFNGLUNIFORM1FPROC, glUniform1f )                                 \
 	X( PFNGLUNIFORM2FPROC, glUniform2f )                                 \
+	X( PFNGLUNIFORM3FPROC, glUniform3f )                                 \
 	X( PFNGLUNIFORM4FPROC, glUniform4f )                                 \
 	X( PFNGLUNIFORMMATRIX3FVPROC, glUniformMatrix3fv )                   \
 	X( PFNGLGENVERTEXARRAYSPROC, glGenVertexArrays )                     \

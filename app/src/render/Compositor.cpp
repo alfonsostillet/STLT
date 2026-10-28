@@ -1,6 +1,7 @@
 #include "Compositor.h"
 #include <algorithm>
 #include <cmath>
+#include "fx/Effect.h"
 
 namespace stltvj
 {
@@ -128,6 +129,14 @@ void SetTexRect( const Program& program, float u0, float v0, float u1, float v1 
 }
 }
 
+bool HasActiveEffects( const EffectChain& chain )
+{
+	for( const EffectSlot& slot : chain )
+		if( slot.effect && !slot.bypass && !slot.effect->IsSource() )
+			return true;
+	return false;
+}
+
 bool Compositor::Init( std::string& error )
 {
 	if( !clipProgram.Build( kQuadVertexShader, kClipFragment ) )
@@ -161,16 +170,29 @@ bool Compositor::Init( std::string& error )
 void Compositor::Shutdown()
 {
 	layerTarget.Release();
+	layerScratch.Release();
 	mix[ 0 ].Release();
 	mix[ 1 ].Release();
 	final.Release();
+	pool.clear();
 	if( vao )
 		glDeleteVertexArrays( 1, &vao );
 	vao = 0;
 }
 
+Compositor::Pair& Compositor::Targets( int width, int height )
+{
+	std::unique_ptr< Pair >& pair = pool[ { width, height } ];
+	if( !pair )
+		pair = std::make_unique< Pair >();
+	pair->a.Ensure( width, height );
+	pair->b.Ensure( width, height );
+	return *pair;
+}
+
 void Compositor::DrawClip( ClipPlayer& player, const float transform[ 9 ], float opacity )
 {
+	glBindVertexArray( vao );
 	clipProgram.Use();
 	glUniformMatrix3fv( clipProgram.Uniform( "uTransform" ), 1, GL_FALSE, transform );
 	SetTexRect( clipProgram, 0, 0, player.UMax(), player.VMax() ); // HAP rows run top to bottom
@@ -183,18 +205,132 @@ void Compositor::DrawClip( ClipPlayer& player, const float transform[ 9 ], float
 	glEnable( GL_BLEND );
 	glBlendFunc( GL_ONE, GL_ONE_MINUS_SRC_ALPHA );
 	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
-	glDisable( GL_BLEND );
+	ResetGlState();
 }
 
-void Compositor::Render( Composition& composition )
+// An FBO texture placed by `transform`, premultiplied over what is in the target.
+void Compositor::DrawTexture( GLuint texture, const float transform[ 9 ], float opacity )
+{
+	glBindVertexArray( vao );
+	copyProgram.Use();
+	glUniformMatrix3fv( copyProgram.Uniform( "uTransform" ), 1, GL_FALSE, transform );
+	SetTexRect( copyProgram, 0, 1, 1, 0 );
+	glUniform1f( copyProgram.Uniform( "uOpacity" ), opacity );
+	glActiveTexture( GL_TEXTURE0 );
+	glBindTexture( GL_TEXTURE_2D, texture );
+	glEnable( GL_BLEND );
+	glBlendFunc( GL_ONE, GL_ONE_MINUS_SRC_ALPHA );
+	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+	ResetGlState();
+}
+
+Fbo* Compositor::ApplyChain( EffectChain& chain, Fbo* source, Fbo* scratch, const FrameInfo& frame )
+{
+	float identity[ 9 ];
+	Identity( identity );
+	for( EffectSlot& slot : chain )
+	{
+		if( !slot.effect || slot.bypass || slot.effect->IsSource() || slot.mix <= 0 )
+			continue;
+		slot.effect->Update( frame );
+		scratch->Bind();
+		glClearColor( 0, 0, 0, 0 );
+		glClear( GL_COLOR_BUFFER_BIT );
+		ResetGlState();
+		if( !slot.effect->Process( source->Texture(), source->Width(), source->Height(), scratch->Framebuffer(), frame ) )
+			continue;
+		if( slot.mix < 1 )
+		{
+			// Dry/wet: result = effect * mix + input * (1 - mix), blended straight into the effect's output.
+			scratch->Bind();
+			glBindVertexArray( vao );
+			copyProgram.Use();
+			glUniformMatrix3fv( copyProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
+			SetTexRect( copyProgram, 0, 1, 1, 0 );
+			glUniform1f( copyProgram.Uniform( "uOpacity" ), 1.0f );
+			glActiveTexture( GL_TEXTURE0 );
+			glBindTexture( GL_TEXTURE_2D, source->Texture() );
+			glEnable( GL_BLEND );
+			glBlendColor( 0, 0, 0, 1 - slot.mix );
+			glBlendFunc( GL_CONSTANT_ALPHA, GL_ONE_MINUS_CONSTANT_ALPHA );
+			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+			ResetGlState();
+		}
+		std::swap( source, scratch );
+	}
+	glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+	return source;
+}
+
+Fbo* Compositor::RenderClipSource( Clip& clip, int compWidth, int compHeight, const FrameInfo& frame )
+{
+	bool effects = HasActiveEffects( clip.effects );
+	if( clip.generator )
+	{
+		Pair& t = Targets( compWidth, compHeight );
+		t.a.Bind();
+		glClearColor( 0, 0, 0, 0 );
+		glClear( GL_COLOR_BUFFER_BIT );
+		ResetGlState();
+		clip.generator->Update( frame );
+		clip.generator->Process( 0, compWidth, compHeight, t.a.Framebuffer(), frame );
+		return effects ? ApplyChain( clip.effects, &t.a, &t.b, frame ) : &t.a;
+	}
+	if( !effects || !clip.Loaded() || !clip.player->HasFrame() )
+		return nullptr;
+	ClipPlayer& player = *clip.player;
+	Pair& t            = Targets( player.Video().width, player.Video().height );
+	t.a.Bind();
+	glClearColor( 0, 0, 0, 0 );
+	glClear( GL_COLOR_BUFFER_BIT );
+	float identity[ 9 ];
+	Identity( identity );
+	DrawClip( player, identity, 1.0f );
+	return ApplyChain( clip.effects, &t.a, &t.b, frame );
+}
+
+// Draws the clip (with its effects) into `target`. forceFit ignores the clip's transform and draws on black
+// (the preview monitor); otherwise the target is cleared to transparent (a layer).
+void Compositor::DrawClipInto( Clip& clip, Fbo& target, const FrameInfo& frame, int compWidth, int compHeight, bool forceFit )
+{
+	float W = (float)target.Width(), H = (float)target.Height();
+	Fbo* source = RenderClipSource( clip, compWidth, compHeight, frame );
+	target.Bind();
+	glClearColor( 0, 0, 0, forceFit ? 1.0f : 0.0f );
+	glClear( GL_COLOR_BUFFER_BIT );
+	float transform[ 9 ];
+	if( source )
+	{
+		// A generator fills the composition; a movie keeps its own size.
+		float w = (float)source->Width(), h = (float)source->Height();
+		if( forceFit )
+			PlaceClip( transform, w, h, W, H, FitMode::Fit, 1, 0, 0, 0 );
+		else if( clip.generator )
+			PlaceClip( transform, w, h, W, H, FitMode::Stretch, clip.scale, clip.rotation, clip.positionX, clip.positionY );
+		else
+			PlaceClip( transform, w, h, W, H, clip.fit, clip.scale, clip.rotation, clip.positionX, clip.positionY );
+		DrawTexture( source->Texture(), transform, forceFit ? 1.0f : clip.opacity );
+	}
+	else if( clip.Loaded() && clip.player->HasFrame() )
+	{
+		ClipPlayer& player = *clip.player;
+		float w = (float)player.Video().width, h = (float)player.Video().height;
+		if( forceFit )
+			PlaceClip( transform, w, h, W, H, FitMode::Fit, 1, 0, 0, 0 );
+		else
+			PlaceClip( transform, w, h, W, H, clip.fit, clip.scale, clip.rotation, clip.positionX, clip.positionY );
+		target.Bind();
+		DrawClip( player, transform, forceFit ? 1.0f : clip.opacity );
+	}
+	glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+}
+
+void Compositor::Render( Composition& composition, const FrameInfo& frame )
 {
 	int W = composition.width, H = composition.height;
-	if( !layerTarget.Ensure( W, H ) || !mix[ 0 ].Ensure( W, H ) || !mix[ 1 ].Ensure( W, H ) || !final.Ensure( W, H ) )
+	if( !layerTarget.Ensure( W, H ) || !layerScratch.Ensure( W, H ) || !mix[ 0 ].Ensure( W, H ) || !mix[ 1 ].Ensure( W, H ) || !final.Ensure( W, H ) )
 		return;
-	glBindVertexArray( vao );
-	glDisable( GL_SCISSOR_TEST );
-	glDisable( GL_DEPTH_TEST );
-	glDisable( GL_CULL_FACE );
+	ResetGlState();
 
 	int current = 0;
 	mix[ current ].Bind();
@@ -209,62 +345,47 @@ void Compositor::Render( Composition& composition )
 		if( layer.bypass || ( anySolo && !layer.solo ) || layer.active < 0 || layer.opacity <= 0 )
 			continue;
 		Clip& clip = layer.clips[ layer.active ];
-		if( !clip.Loaded() || !clip.player->HasFrame() )
+		if( !clip.generator && !( clip.Loaded() && clip.player->HasFrame() ) )
 			continue;
-		ClipPlayer& player = *clip.player;
 
-		layerTarget.Bind();
-		glClearColor( 0, 0, 0, 0 );
-		glClear( GL_COLOR_BUFFER_BIT );
-		float transform[ 9 ];
-		PlaceClip( transform, (float)player.Video().width, (float)player.Video().height, (float)W, (float)H, clip.fit, clip.scale, clip.rotation,
-		           clip.positionX, clip.positionY );
-		DrawClip( player, transform, clip.opacity );
+		DrawClipInto( clip, layerTarget, frame, W, H, false );
+		Fbo* layerResult = ApplyChain( layer.effects, &layerTarget, &layerScratch, frame );
 
 		mix[ 1 - current ].Bind();
+		glBindVertexArray( vao );
 		blendProgram.Use();
 		glUniformMatrix3fv( blendProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
 		SetTexRect( blendProgram, 0, 1, 1, 0 );
 		glUniform1i( blendProgram.Uniform( "uMode" ), (int)layer.blend );
 		glUniform1f( blendProgram.Uniform( "uOpacity" ), layer.opacity );
 		glActiveTexture( GL_TEXTURE1 );
-		glBindTexture( GL_TEXTURE_2D, layerTarget.Texture() );
+		glBindTexture( GL_TEXTURE_2D, layerResult->Texture() );
 		glActiveTexture( GL_TEXTURE0 );
 		glBindTexture( GL_TEXTURE_2D, mix[ current ].Texture() );
 		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+		ResetGlState();
 		current = 1 - current;
 	}
 
+	Fbo* result = ApplyChain( composition.effects, &mix[ current ], &mix[ 1 - current ], frame );
+
 	final.Bind();
+	glBindVertexArray( vao );
 	copyProgram.Use();
 	glUniformMatrix3fv( copyProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
 	SetTexRect( copyProgram, 0, 1, 1, 0 );
 	glUniform1f( copyProgram.Uniform( "uOpacity" ), std::clamp( composition.master, 0.0f, 1.0f ) );
-	glBindTexture( GL_TEXTURE_2D, mix[ current ].Texture() );
+	glBindTexture( GL_TEXTURE_2D, result->Texture() );
 	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
-
-	glBindTexture( GL_TEXTURE_2D, 0 );
-	glUseProgram( 0 );
+	ResetGlState();
 	glBindFramebuffer( GL_FRAMEBUFFER, 0 );
 }
 
-void Compositor::RenderClipAlone( ClipPlayer& player, Fbo& target )
+void Compositor::RenderClipAlone( Clip& clip, Fbo& target, int compWidth, int compHeight, const FrameInfo& frame )
 {
 	if( !target.Texture() )
 		return;
-	glBindVertexArray( vao );
-	target.Bind();
-	glClearColor( 0, 0, 0, 1 );
-	glClear( GL_COLOR_BUFFER_BIT );
-	if( player.HasFrame() )
-	{
-		float transform[ 9 ];
-		PlaceClip( transform, (float)player.Video().width, (float)player.Video().height, (float)target.Width(), (float)target.Height(), FitMode::Fit, 1, 0, 0,
-		           0 );
-		DrawClip( player, transform, 1.0f );
-	}
-	glUseProgram( 0 );
-	glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+	DrawClipInto( clip, target, frame, compWidth, compHeight, true );
 }
 
 void Compositor::MakeThumbnail( ClipPlayer& player )
@@ -275,9 +396,35 @@ void Compositor::MakeThumbnail( ClipPlayer& player )
 	if( !player.HasFrame() )
 		player.ShowNow( 0 );
 	if( player.Thumbnail().Ensure( 160, 90 ) )
-		RenderClipAlone( player, player.Thumbnail() );
+	{
+		player.Thumbnail().Bind();
+		glClearColor( 0, 0, 0, 1 );
+		glClear( GL_COLOR_BUFFER_BIT );
+		float transform[ 9 ];
+		PlaceClip( transform, (float)player.Video().width, (float)player.Video().height, 160, 90, FitMode::Fit, 1, 0, 0, 0 );
+		DrawClip( player, transform, 1.0f );
+		glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+	}
 	if( !wasActive )
 		player.Deactivate();
+}
+
+void Compositor::MakeGeneratorThumbnail( Clip& clip, const FrameInfo& frame )
+{
+	if( !clip.generator )
+		return;
+	if( !clip.generatorThumbnail )
+		clip.generatorThumbnail = std::make_unique< Fbo >();
+	if( !clip.generatorThumbnail->Ensure( 160, 90 ) )
+		return;
+	clip.generatorThumbnail->Bind();
+	glClearColor( 0, 0, 0, 0 );
+	glClear( GL_COLOR_BUFFER_BIT );
+	ResetGlState();
+	clip.generator->Update( frame );
+	clip.generator->Process( 0, 160, 90, clip.generatorThumbnail->Framebuffer(), frame );
+	ResetGlState();
+	glBindFramebuffer( GL_FRAMEBUFFER, 0 );
 }
 
 void Compositor::DrawFitted( GLuint texture, int srcWidth, int srcHeight, int dstWidth, int dstHeight, float opacity )

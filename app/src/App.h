@@ -2,7 +2,9 @@
 #include <deque>
 #include <string>
 #include <vector>
+#include <memory>
 #include "Composition.h"
+#include "fx/EffectRegistry.h"
 #include "render/Compositor.h"
 #include "render/Fbo.h"
 #include "render/OutputWindow.h"
@@ -22,7 +24,16 @@ struct LaunchOptions
 		std::string path;
 	};
 	std::vector< ClipArg > clips;     // --clip layer,column,path (1-based, launched right away)
+	std::vector< ClipArg > sources;   // --source layer,column,effect-id (a generator, launched right away)
+	struct EffectArg
+	{
+		std::string scope; // "comp", "layer:L" or "clip:L,C"
+		std::string id;
+	};
+	std::vector< EffectArg > effects; // --fx scope=effect-id
+	std::vector< std::pair< int, int > > launches; // --launch layer,column: clips of the restored session
 	bool fresh = false;               // ignore the last session
+	bool listEffects = false;         // print the effect ids and plugin problems at start
 	int width = 0, height = 0;        // window size override
 };
 
@@ -46,10 +57,22 @@ public:
 	bool OpenComposition( const std::string& path );
 	void SetStatus( const std::string& message, bool error = false );
 	void TapTempo();
+	void ResyncBeat() { composition.beat = 0; }
+
+	// Effects and sources.
+	void AddEffect( EffectChain& chain, const std::string& id, int position = -1 );
+	void LoadGenerator( int layer, int column, const std::string& id );
+	void RescanPlugins();
+	std::vector< std::string > PluginFolders() const;
+	void AddPluginFolder( const std::string& folder );
+	void RemovePluginFolder( const std::string& folder );
 
 	// Panel state.
 	Composition composition;
 	Compositor compositor;
+	std::unique_ptr< EffectRegistry > registry;
+	std::vector< std::string > extraPluginFolders; // added by the user, besides the default ones
+	FrameInfo frame;
 	OutputWindow output;
 	Workspaces workspaces;
 	PanelVisibility panels;
@@ -74,9 +97,12 @@ private:
 	void DrawUi();
 	void Capture();
 	ClipPlayer* PlayerAt( int layer, int column );
+	void RestoreEffects(); // turns the effects of a just-loaded composition into live ones
+	void SavePluginFolders() const;
 
 	LaunchOptions options;
-	double lastTime = 0;
+	double lastTime  = 0;
+	double startTime = 0;
 	int frameCount  = 0;
 	bool outputVsync = false;
 };

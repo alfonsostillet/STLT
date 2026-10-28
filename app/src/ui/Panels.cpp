@@ -11,6 +11,7 @@
 #include "App.h"
 #include "Settings.h"
 #include "media/ThreadPool.h"
+#include "ui/EffectsUi.h"
 #include "ui/Theme.h"
 
 namespace fs = std::filesystem;
@@ -226,7 +227,7 @@ void LoadInto( App& app, int layer, int column, const std::vector< std::string >
 int FirstEmptyColumn( const Layer& layer )
 {
 	for( int c = 0; c < (int)layer.clips.size(); ++c )
-		if( layer.clips[ c ].path.empty() )
+		if( layer.clips[ c ].Empty() )
 			return c;
 	return (int)layer.clips.size();
 }
@@ -237,7 +238,7 @@ void LoadIntoSelected( App& app, const std::vector< std::string >& paths )
 	if( comp.layers.empty() )
 		comp.AddLayer();
 	int layer  = std::clamp( comp.selectedLayer, 0, (int)comp.layers.size() - 1 );
-	int column = comp.selectedColumn >= 0 && comp.layers[ layer ].clips[ comp.selectedColumn ].path.empty() ? comp.selectedColumn
+	int column = comp.selectedColumn >= 0 && comp.layers[ layer ].clips[ comp.selectedColumn ].Empty() ? comp.selectedColumn
 	                                                                                                      : FirstEmptyColumn( comp.layers[ layer ] );
 	LoadInto( app, layer, column, paths );
 }
@@ -331,6 +332,7 @@ void DrawMainMenu( App& app )
 			ImGui::MenuItem( panel::Files, nullptr, &p.files );
 			ImGui::MenuItem( panel::Output, nullptr, &p.output );
 			ImGui::MenuItem( panel::Performance, nullptr, &p.performance );
+			ImGui::MenuItem( panel::Effects, nullptr, &p.effects );
 			ImGui::EndMenu();
 		}
 		if( ImGui::BeginMenu( "Workspace" ) )
@@ -479,9 +481,14 @@ void DrawToolbar( App& app )
 	ImGui::SameLine();
 	if( ImGui::Button( "TAP" ) )
 		app.TapTempo();
+	ImGui::SameLine();
+	if( ImGui::Button( "RESYNC" ) )
+		app.ResyncBeat();
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "Start the beat over: the next beat begins now" );
 	// Beat light.
 	ImGui::SameLine( 0, Ui( 10 ) );
-	double beat      = glfwGetTime() * comp.bpm / 60.0;
+	double beat      = comp.beat;
 	float flash      = (float)( 1.0 - ( beat - std::floor( beat ) ) );
 	ImVec2 p         = ImGui::GetCursorScreenPos();
 	float h          = ImGui::GetFrameHeight();
@@ -541,6 +548,7 @@ void DrawClipGrid( App& app )
 	{
 		int layer = -1, column = -1;
 		std::vector< std::string > paths;
+		std::string generatorId;
 	} pendingLoad;
 
 	ImGui::BeginChild( "##grid", ImVec2( 0, 0 ), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar );
@@ -618,6 +626,10 @@ void DrawClipGrid( App& app )
 		ImGui::AlignTextToFramePadding();
 		if( ImGui::Selectable( layer.name.c_str(), false, 0, ImVec2( std::max( 1.0f, stripMax.x - ImGui::GetCursorScreenPos().x - Ui( 4 ) ), 0 ) ) )
 			comp.selectedLayer = l;
+		if( AcceptEffectDrop( app, layer.effects ) )
+			comp.selectedLayer = l;
+		if( !layer.effects.empty() && ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "%d effect%s on this layer", (int)layer.effects.size(), layer.effects.size() == 1 ? "" : "s" );
 		ImGui::SetCursorScreenPos( ImVec2( origin.x + Ui( 6 ), y + cellH - ImGui::GetFrameHeight() - Ui( 6 ) ) );
 		ImGui::SetNextItemWidth( leftW - Ui( 18 ) );
 		PercentSlider( "##opacity", &layer.opacity );
@@ -633,14 +645,21 @@ void DrawClipGrid( App& app )
 			bool clicked = ImGui::InvisibleButton( "##cell", ImVec2( cellW, cellH ) );
 			bool hovered = ImGui::IsItemHovered();
 			draw->AddRectFilled( min, max, hovered ? IM_COL32( 40, 40, 40, 255 ) : theme::CellEmpty );
-			if( !clip.path.empty() )
+			if( !clip.Empty() )
 			{
 				ImVec2 thumbMax( max.x, min.y + thumbH );
-				if( clip.player && clip.player->Thumbnail().Texture() )
-					draw->AddImage( TextureId( clip.player->Thumbnail().Texture() ), min, thumbMax, ImVec2( 0, 1 ), ImVec2( 1, 0 ) );
+				GLuint thumbnail = clip.player ? clip.player->Thumbnail().Texture() : clip.generatorThumbnail ? clip.generatorThumbnail->Texture() : 0;
+				if( thumbnail )
+				{
+					if( clip.generator )
+						draw->AddRectFilled( min, thumbMax, IM_COL32( 0, 0, 0, 255 ) );
+					draw->AddImage( TextureId( thumbnail ), min, thumbMax, ImVec2( 0, 1 ), ImVec2( 1, 0 ) );
+				}
 				else
 					draw->AddRectFilled( min, thumbMax, IM_COL32( 60, 30, 30, 255 ) );
-				ImU32 labelColour = clip.Loaded() ? IM_COL32( 210, 210, 210, 255 ) : theme::Error;
+				if( !clip.effects.empty() )
+					draw->AddText( ImVec2( thumbMax.x - ImGui::CalcTextSize( "fx" ).x - Ui( 3 ), min.y + Ui( 1 ) ), theme::Accent, "fx" );
+				ImU32 labelColour = clip.Playable() ? IM_COL32( 210, 210, 210, 255 ) : theme::Error;
 				draw->PushClipRect( ImVec2( min.x, thumbMax.y ), max, true );
 				draw->AddText( ImVec2( min.x + Ui( 3 ), thumbMax.y + Ui( 2 ) ), labelColour, clip.name.c_str() );
 				draw->PopClipRect();
@@ -650,8 +669,10 @@ void DrawClipGrid( App& app )
 					float progress = clip.Duration() > 0 ? (float)( clip.time / clip.Duration() ) : 0;
 					draw->AddRectFilled( ImVec2( min.x, thumbMax.y - Ui( 3 ) ), ImVec2( min.x + cellW * progress, thumbMax.y ), theme::Accent );
 				}
-				if( hovered && !clip.Loaded() && clip.player )
+				if( hovered && !clip.Playable() && clip.player )
 					ImGui::SetTooltip( "%s\n%s", clip.path.c_str(), clip.player->Error().c_str() );
+				else if( hovered && clip.IsGenerator() && !clip.generator )
+					ImGui::SetTooltip( "Source not installed: %s", clip.generatorId.c_str() );
 				else if( hovered && ImGui::GetIO().KeyAlt )
 					ImGui::SetTooltip( "%s", clip.path.c_str() );
 			}
@@ -664,12 +685,12 @@ void DrawClipGrid( App& app )
 
 			if( clicked )
 			{
-				if( clip.path.empty() )
+				if( clip.Empty() )
 					app.Select( l, c );
 				else
 					app.Launch( l, c );
 			}
-			if( !clip.path.empty() && ImGui::BeginDragDropSource() )
+			if( !clip.Empty() && ImGui::BeginDragDropSource() )
 			{
 				CellRef ref{ l, c };
 				ImGui::SetDragDropPayload( kCellPayload, &ref, sizeof( ref ) );
@@ -684,21 +705,33 @@ void DrawClipGrid( App& app )
 					app.MoveClip( ref.layer, ref.column, l, c );
 				}
 				if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kFilePayload ) )
-					pendingLoad = { l, c, { std::string( (const char*)payload->Data ) } };
+					pendingLoad = { l, c, { std::string( (const char*)payload->Data ) }, {} };
+				if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kEffectPayload ) )
+				{
+					std::string id                = (const char*)payload->Data;
+					const EffectRegistry::Entry* e = app.registry->Find( id );
+					if( e && e->source )
+						pendingLoad = { l, c, {}, id };
+					else if( !clip.Empty() )
+					{
+						app.AddEffect( clip.effects, id );
+						app.Select( l, c );
+					}
+				}
 				ImGui::EndDragDropTarget();
 			}
 			if( ImGui::BeginPopupContextItem( "##cellMenu" ) )
 			{
 				app.Select( l, c );
-				if( ImGui::MenuItem( "Launch", nullptr, false, clip.Loaded() ) )
+				if( ImGui::MenuItem( "Launch", nullptr, false, clip.Playable() ) )
 					app.Launch( l, c );
-				if( ImGui::MenuItem( "Remove Clip", nullptr, false, !clip.path.empty() ) )
+				if( ImGui::MenuItem( "Remove Clip", nullptr, false, !clip.Empty() ) )
 					app.RemoveClip( l, c );
 				ImGui::EndPopup();
 			}
 			if( dropPending && dropPoint.x >= min.x && dropPoint.x < max.x && dropPoint.y >= min.y && dropPoint.y < max.y )
 			{
-				pendingLoad = { l, c, app.droppedPaths };
+				pendingLoad = { l, c, app.droppedPaths, {} };
 				dropPending = false;
 			}
 			ImGui::PopID();
@@ -711,11 +744,13 @@ void DrawClipGrid( App& app )
 	if( ImGui::Button( "+ Layer" ) )
 		comp.AddLayer();
 	ImGui::SameLine();
-	ImGui::TextDisabled( "Drop HAP clips here or drag them from Files. Drag a clip to move it, right-click for options." );
+	ImGui::TextDisabled( "Drop HAP clips or sources on cells and effects on clips or layers. Drag a clip to move it, right-click for options." );
 	ImGui::Dummy( ImVec2( leftW + comp.ColumnCount() * ( cellW + gap ) + headerH, 0 ) );
 	ImGui::EndChild();
 
-	if( pendingLoad.layer >= 0 )
+	if( pendingLoad.layer >= 0 && !pendingLoad.generatorId.empty() )
+		app.LoadGenerator( pendingLoad.layer, pendingLoad.column, pendingLoad.generatorId );
+	else if( pendingLoad.layer >= 0 )
 		LoadInto( app, pendingLoad.layer, pendingLoad.column, pendingLoad.paths );
 	// Dropped anywhere else: fill the selected layer.
 	if( dropPending )
@@ -737,6 +772,7 @@ void DrawCompositionMonitor( App& app )
 		ImVec2 size = FitSize( area, (float)comp.width / comp.height, &offset );
 		ImGui::SetCursorPos( ImVec2( ImGui::GetCursorPosX() + offset.x, ImGui::GetCursorPosY() + offset.y ) );
 		FboImage( app.compositor.CompositionTexture(), size );
+		AcceptEffectDrop( app, comp.effects );
 		ImGui::SetCursorPosX( Ui( 6 ) );
 		ImGui::TextDisabled( "Composition - %dx%d", comp.width, comp.height );
 	}
@@ -756,7 +792,13 @@ void DrawPreviewMonitor( App& app )
 		ImVec2 offset;
 		ImVec2 size = FitSize( area, 16.0f / 9.0f, &offset );
 		ImGui::SetCursorPos( ImVec2( ImGui::GetCursorPosX() + offset.x, ImGui::GetCursorPosY() + offset.y ) );
-		if( clip && clip->Loaded() )
+		if( clip && clip->generator )
+		{
+			FboImage( app.preview.Texture(), size );
+			ImGui::SetCursorPosX( Ui( 6 ) );
+			ImGui::TextDisabled( "Preview - %s - source", clip->name.c_str() );
+		}
+		else if( clip && clip->Loaded() )
 		{
 			bool live = clip->player->Active() && clip->player->HasFrame();
 			FboImage( live ? app.preview.Texture() : clip->player->Thumbnail().Texture(), size );
@@ -824,6 +866,8 @@ void DrawCompositionPanel( App& app )
 		}
 		ImGui::EndTable();
 	}
+	if( ImGui::CollapsingHeader( "Effects", ImGuiTreeNodeFlags_DefaultOpen ) )
+		DrawEffectChain( app, comp.effects, "compositionFx" );
 	ImGui::End();
 }
 
@@ -866,7 +910,11 @@ void DrawLayerPanel( App& app )
 		app.ClearLayer( l );
 		comp.layers.erase( comp.layers.begin() + l );
 		comp.Normalise();
+		ImGui::End();
+		return;
 	}
+	if( ImGui::CollapsingHeader( "Effects", ImGuiTreeNodeFlags_DefaultOpen ) )
+		DrawEffectChain( app, layer.effects, "layerFx" );
 	ImGui::End();
 }
 
@@ -885,19 +933,37 @@ void DrawClipPanel( App& app )
 		return;
 	}
 	ImGui::SeparatorText( clip->name.c_str() );
-	if( !clip->Loaded() )
+	if( clip->IsGenerator() )
+	{
+		if( !clip->generator )
+		{
+			ImGui::TextColored( ImVec4( 0.9f, 0.35f, 0.3f, 1 ), "Source not installed: %s", clip->generatorId.c_str() );
+			ImGui::End();
+			return;
+		}
+		ImGui::TextDisabled( "Source, rendered at the composition size" );
+		if( ImGui::CollapsingHeader( "Source", ImGuiTreeNodeFlags_DefaultOpen ) )
+		{
+			ImGui::PushID( "source" );
+			DrawEffectParams( *clip->generator );
+			ImGui::PopID();
+		}
+	}
+	else if( !clip->Loaded() )
 	{
 		ImGui::TextColored( ImVec4( 0.9f, 0.35f, 0.3f, 1 ), "%s", clip->player ? clip->player->Error().c_str() : "Not loaded" );
 		ImGui::TextWrapped( "%s", clip->path.c_str() );
 		ImGui::End();
 		return;
 	}
-	ClipPlayer& player      = *clip->player;
-	const VideoTrack& video = player.Video();
-	ImGui::TextDisabled( "%s  %dx%d  %.2f fps  %zu frames  %d chunk%s", HapCodecName( video.codec ), video.width, video.height, video.FrameRate(),
-	                     player.FrameCount(), player.Layout().chunks[ 0 ], player.Layout().chunks[ 0 ] == 1 ? "" : "s" );
+	else
+	{
+		const VideoTrack& video = clip->player->Video();
+		ImGui::TextDisabled( "%s  %dx%d  %.2f fps  %zu frames  %d chunk%s", HapCodecName( video.codec ), video.width, video.height, video.FrameRate(),
+		                     clip->player->FrameCount(), clip->player->Layout().chunks[ 0 ], clip->player->Layout().chunks[ 0 ] == 1 ? "" : "s" );
+	}
 
-	if( ImGui::CollapsingHeader( "Transport", ImGuiTreeNodeFlags_DefaultOpen ) )
+	if( clip->Loaded() && ImGui::CollapsingHeader( "Transport", ImGuiTreeNodeFlags_DefaultOpen ) )
 	{
 		if( IconButton( "##reverse", Icon::Reverse, clip->direction < 0 ) )
 			clip->direction = -1;
@@ -942,8 +1008,11 @@ void DrawClipPanel( App& app )
 	}
 	if( ImGui::CollapsingHeader( "Transform", ImGuiTreeNodeFlags_DefaultOpen ) && BeginParams( "##transform" ) )
 	{
-		ParamLabel( "Fit" );
-		EnumCombo( "##fit", &clip->fit, FitModeName );
+		if( !clip->generator )
+		{
+			ParamLabel( "Fit" );
+			EnumCombo( "##fit", &clip->fit, FitModeName );
+		}
 		ParamLabel( "Position X" );
 		ImGui::DragFloat( "##x", &clip->positionX, 1.0f, -16384, 16384, "%.0f" );
 		ParamLabel( "Position Y" );
@@ -962,9 +1031,11 @@ void DrawClipPanel( App& app )
 		}
 		ImGui::EndTable();
 	}
-	if( ImGui::CollapsingHeader( "Playback Health" ) && BeginParams( "##health" ) )
+	if( ImGui::CollapsingHeader( "Effects", ImGuiTreeNodeFlags_DefaultOpen ) )
+		DrawEffectChain( app, clip->effects, "clipFx" );
+	if( clip->Loaded() && ImGui::CollapsingHeader( "Playback Health" ) && BeginParams( "##health" ) )
 	{
-		ClipPlayer::Stats stats = player.GetStats();
+		ClipPlayer::Stats stats = clip->player->GetStats();
 		ParamLabel( "Decode" );
 		ImGui::Text( "%.2f ms/frame", stats.decodeMs );
 		ParamLabel( "Upload" );
@@ -974,7 +1045,8 @@ void DrawClipPanel( App& app )
 		ImGui::EndTable();
 	}
 	ImGui::Spacing();
-	ImGui::TextDisabled( "%s", clip->path.c_str() );
+	if( !clip->path.empty() )
+		ImGui::TextDisabled( "%s", clip->path.c_str() );
 	ImGui::End();
 }
 
