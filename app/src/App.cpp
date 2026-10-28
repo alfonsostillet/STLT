@@ -9,6 +9,7 @@
 #include "Settings.h"
 #include "fx/BuiltinEffects.h"
 #include "gl/Gl.h"
+#include "ui/AdvancedOutputUi.h"
 #include "ui/EffectsUi.h"
 #include "ui/FileDialogs.h"
 #include "ui/Panels.h"
@@ -139,6 +140,11 @@ bool App::Init( const LaunchOptions& launch )
 		return false;
 	}
 	preview.Ensure( 480, 270 );
+	if( !outputs.Init( error ) )
+	{
+		std::fprintf( stderr, "%s\n", error.c_str() );
+		return false;
+	}
 
 	std::string folders;
 	if( ReadTextFile( ( fs::u8path( configDir ) / "plugin-folders.txt" ).u8string(), folders ) )
@@ -171,6 +177,10 @@ bool App::Init( const LaunchOptions& launch )
 	if( !options.fresh && fs::exists( fs::u8path( last ) ) )
 		OpenComposition( last );
 	compositionPath.clear(); // the session file is not the user's own composition
+	std::string outputText, outputError;
+	if( options.fresh || !ReadTextFile( ( fs::u8path( configDir ) / "advanced-output.json" ).u8string(), outputText )
+	    || !LoadAdvancedOutput( outputText, advancedOutput, outputError ) || advancedOutput.screens.empty() )
+		advancedOutput = AdvancedOutputSetup::MakeDefault( composition.width, composition.height );
 	for( const LaunchOptions::ClipArg& clip : options.clips )
 	{
 		LoadClip( clip.layer - 1, clip.column - 1, clip.path );
@@ -180,6 +190,19 @@ bool App::Init( const LaunchOptions& launch )
 	{
 		LoadGenerator( source.layer - 1, source.column - 1, source.path );
 		Launch( source.layer - 1, source.column - 1 );
+	}
+	if( !options.outputSetup.empty() )
+	{
+		std::string text, setupError;
+		if( fs::u8path( options.outputSetup ).extension() == ".xml" )
+			ImportResolumeOutput( options.outputSetup );
+		else if( !ReadTextFile( options.outputSetup, text ) || !LoadAdvancedOutput( text, advancedOutput, setupError ) )
+			std::fprintf( stderr, "Cannot load %s %s\n", options.outputSetup.c_str(), setupError.c_str() );
+	}
+	if( options.advancedOutputTab >= 0 )
+	{
+		panels.advancedOutput = true;
+		ShowAdvancedOutputTab( options.advancedOutputTab, 0, 0 );
 	}
 	for( auto [ layer, column ] : options.launches )
 		Launch( layer - 1, column - 1 );
@@ -215,8 +238,9 @@ void App::Shutdown()
 		return;
 	if( !options.fresh )
 		WriteTextFile( ( fs::u8path( configDir ) / "last-session.stltvj" ).u8string(), SaveComposition( composition ) );
-	output.Close();
+	WriteTextFile( ( fs::u8path( configDir ) / "advanced-output.json" ).u8string(), SaveAdvancedOutput( advancedOutput ) );
 	glfwMakeContextCurrent( window );
+	outputs.Shutdown();
 	composition = Composition{}; // frees the players' GPU memory and plugin instances while the context is alive
 	preview.Release();
 	compositor.Shutdown();
@@ -369,7 +393,6 @@ void App::Select( int layer, int column )
 
 void App::NewComposition()
 {
-	output.Close();
 	composition     = Composition::MakeDefault();
 	compositionPath.clear();
 	SetStatus( "New composition" );
@@ -543,6 +566,96 @@ void App::RemovePluginFolder( const std::string& folder )
 	SavePluginFolders();
 }
 
+void App::ShowScreenOn( size_t index, OutputDevice device, const std::string& display )
+{
+	if( advancedOutput.screens.empty() )
+		advancedOutput = AdvancedOutputSetup::MakeDefault( composition.width, composition.height );
+	if( index >= advancedOutput.screens.size() )
+		return;
+	Screen& screen = advancedOutput.screens[ index ];
+	screen.device  = device;
+	screen.display = display;
+	screen.enabled = true;
+	if( device == OutputDevice::Display )
+		for( const OutputWindow::Display& d : OutputWindow::Displays() )
+			if( d.monitorName == display && screen.slices.size() <= 1 && ( screen.width != d.width || screen.height != d.height ) )
+			{
+				// A simple one-slice screen follows the display's resolution.
+				screen.width  = d.width;
+				screen.height = d.height;
+				if( screen.slices.size() == 1 && !screen.slices[ 0 ].polygon && screen.slices[ 0 ].warp == WarpMode::Perspective )
+					screen.slices[ 0 ].FitOutput( (float)d.width, (float)d.height );
+			}
+}
+
+void App::StopOutputs()
+{
+	for( Screen& screen : advancedOutput.screens )
+		screen.device = OutputDevice::Virtual;
+}
+
+std::string App::OutputPresetDirectory() const
+{
+	return ( fs::u8path( configDir ) / "output-presets" ).u8string();
+}
+
+std::vector< std::string > App::OutputPresets() const
+{
+	std::vector< std::string > names;
+	std::error_code error;
+	for( const fs::directory_entry& entry : fs::directory_iterator( fs::u8path( OutputPresetDirectory() ), error ) )
+		if( entry.path().extension() == ".json" )
+			names.push_back( entry.path().stem().u8string() );
+	std::sort( names.begin(), names.end() );
+	return names;
+}
+
+bool App::SaveOutputPreset( const std::string& name )
+{
+	if( name.empty() || name.find_first_of( "/\\:*?\"<>|" ) != std::string::npos )
+		return false;
+	std::error_code ignored;
+	fs::create_directories( fs::u8path( OutputPresetDirectory() ), ignored );
+	return WriteTextFile( ( fs::u8path( OutputPresetDirectory() ) / fs::u8path( name + ".json" ) ).u8string(), SaveAdvancedOutput( advancedOutput ) );
+}
+
+bool App::LoadOutputPreset( const std::string& name )
+{
+	std::string text, error;
+	AdvancedOutputSetup loaded;
+	if( !ReadTextFile( ( fs::u8path( OutputPresetDirectory() ) / fs::u8path( name + ".json" ) ).u8string(), text ) || !LoadAdvancedOutput( text, loaded, error ) )
+	{
+		SetStatus( "Could not load output preset " + name + ( error.empty() ? "" : ": " + error ), true );
+		return false;
+	}
+	advancedOutput = std::move( loaded );
+	SetStatus( "Output preset " + name + " loaded" );
+	return true;
+}
+
+bool App::ImportResolumeOutput( const std::string& path )
+{
+	std::string xml, error;
+	AdvancedOutputSetup imported;
+	int compWidth = 0, compHeight = 0;
+	if( !ReadTextFile( path, xml ) || !ImportResolumeXml( xml, imported, error, &compWidth, &compHeight ) )
+	{
+		SetStatus( "Could not import " + path + ( error.empty() ? "" : ": " + error ), true );
+		return false;
+	}
+	size_t slices = 0;
+	for( const Screen& s : imported.screens )
+		slices += s.slices.size();
+	advancedOutput = std::move( imported );
+	std::string note;
+	if( compWidth != composition.width || compHeight != composition.height )
+		note = " (made for a " + std::to_string( compWidth ) + "x" + std::to_string( compHeight ) + " composition; this one is " + std::to_string( composition.width )
+		       + "x" + std::to_string( composition.height ) + ")";
+	SetStatus( "Imported " + std::to_string( advancedOutput.screens.size() ) + " screen(s) and " + std::to_string( slices ) + " slice(s) from Resolume" + note,
+	           !note.empty() );
+	return true;
+}
+
 void App::TapTempo()
 {
 	double now = glfwGetTime();
@@ -592,6 +705,7 @@ void App::Frame()
 	frame.bpm   = composition.bpm;
 	frame.beat  = composition.beat;
 	compositor.Render( composition, frame );
+	outputs.Render( advancedOutput, compositor.CompositionTexture(), composition.width, composition.height );
 	if( Clip* selected = composition.SelectedClip() )
 		if( selected->generator || ( selected->Loaded() && selected->player->Active() ) )
 			compositor.RenderClipAlone( *selected, preview, composition.width, composition.height, frame );
@@ -626,17 +740,15 @@ void App::Frame()
 	}
 
 	// Only one window may wait for vsync, or the frame rate halves: the output when it is open.
-	bool wantOutputVsync = output.IsOpen();
+	bool wantOutputVsync = outputs.AnyWindowOpen();
 	if( wantOutputVsync != outputVsync )
 	{
 		glfwSwapInterval( wantOutputVsync ? 0 : 1 );
 		outputVsync = wantOutputVsync;
 	}
 	glfwSwapBuffers( window );
-	if( output.CloseRequested() )
-		output.Close();
-	if( output.IsOpen() )
-		output.Present( compositor, compositor.CompositionTexture(), composition.width, composition.height, window );
+	outputs.SyncWindows( advancedOutput, window );
+	outputs.Present( compositor, window );
 }
 
 void App::Capture()
@@ -698,6 +810,8 @@ void App::DrawUi()
 		DrawPerformancePanel( *this );
 	if( panels.effects )
 		DrawEffectsPanel( *this );
+	if( panels.advancedOutput )
+		DrawAdvancedOutputPanel( *this );
 	droppedPaths.clear();
 }
 }

@@ -21,7 +21,8 @@ std::vector< OutputWindow::Display > OutputWindow::Displays()
 			d.refresh = mode->refreshRate;
 		}
 		const char* name = glfwGetMonitorName( monitors[ i ] );
-		d.name           = std::to_string( i + 1 ) + ": " + ( name ? name : "Display" );
+		d.monitorName    = name ? name : "Display";
+		d.name           = std::to_string( i + 1 ) + ": " + d.monitorName;
 		displays.push_back( d );
 	}
 	return displays;
@@ -32,7 +33,15 @@ OutputWindow::~OutputWindow()
 	Close();
 }
 
-bool OutputWindow::Open( GLFWwindow* shareWith, GLFWmonitor* monitor )
+GLFWmonitor* OutputWindow::FindDisplay( const std::string& monitorName )
+{
+	for( const Display& d : Displays() )
+		if( d.monitorName == monitorName )
+			return d.monitor;
+	return nullptr;
+}
+
+bool OutputWindow::Open( GLFWwindow* shareWith, GLFWmonitor* monitor, const std::string& title, int windowWidth, int windowHeight, bool vsync )
 {
 	Close();
 	glfwWindowHint( GLFW_CONTEXT_VERSION_MAJOR, 4 );
@@ -45,20 +54,20 @@ bool OutputWindow::Open( GLFWwindow* shareWith, GLFWmonitor* monitor )
 	{
 		const GLFWvidmode* mode = glfwGetVideoMode( monitor );
 		glfwWindowHint( GLFW_REFRESH_RATE, mode->refreshRate );
-		window      = glfwCreateWindow( mode->width, mode->height, "STLT-VJ Output", monitor, shareWith );
+		window      = glfwCreateWindow( mode->width, mode->height, title.c_str(), monitor, shareWith );
 		description = std::string( glfwGetMonitorName( monitor ) ? glfwGetMonitorName( monitor ) : "Display" ) + " " + std::to_string( mode->width ) + "x"
 		              + std::to_string( mode->height );
 	}
 	else
 	{
-		window      = glfwCreateWindow( 1280, 720, "STLT-VJ Output", nullptr, shareWith );
+		window      = glfwCreateWindow( windowWidth, windowHeight, title.c_str(), nullptr, shareWith );
 		description = "Window";
 	}
 	glfwDefaultWindowHints();
 	if( !window )
 		return false;
 	glfwMakeContextCurrent( window );
-	glfwSwapInterval( 1 );
+	glfwSwapInterval( vsync ? 1 : 0 );
 	glGenVertexArrays( 1, &vao );
 	glfwMakeContextCurrent( shareWith );
 	return true;

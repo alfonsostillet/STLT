@@ -7,7 +7,8 @@
 #include "fx/EffectRegistry.h"
 #include "render/Compositor.h"
 #include "render/Fbo.h"
-#include "render/OutputWindow.h"
+#include "output/AdvancedOutput.h"
+#include "output/OutputRenderer.h"
 #include "ui/Workspaces.h"
 
 struct GLFWwindow;
@@ -34,6 +35,8 @@ struct LaunchOptions
 	std::vector< std::pair< int, int > > launches; // --launch layer,column: clips of the restored session
 	bool fresh = false;               // ignore the last session
 	bool listEffects = false;         // print the effect ids and plugin problems at start
+	std::string outputSetup;          // --output-setup: an output setup (.json) or Resolume AdvancedOutput.xml to load
+	int advancedOutputTab = -1;       // --advanced-output input|output: open the editor on that tab
 	int width = 0, height = 0;        // window size override
 };
 
@@ -67,13 +70,23 @@ public:
 	void AddPluginFolder( const std::string& folder );
 	void RemovePluginFolder( const std::string& folder );
 
+	// Outputs: screen 0 on a display or in a window (the quick choices of the Output menu), all off.
+	void ShowScreenOn( size_t screen, OutputDevice device, const std::string& display = {} );
+	void StopOutputs();
+	bool SaveOutputPreset( const std::string& name );
+	bool LoadOutputPreset( const std::string& name );
+	std::vector< std::string > OutputPresets() const;
+	bool ImportResolumeOutput( const std::string& path );
+	std::string OutputPresetDirectory() const;
+
 	// Panel state.
 	Composition composition;
 	Compositor compositor;
 	std::unique_ptr< EffectRegistry > registry;
 	std::vector< std::string > extraPluginFolders; // added by the user, besides the default ones
 	FrameInfo frame;
-	OutputWindow output;
+	AdvancedOutputSetup advancedOutput;
+	OutputRenderer outputs;
 	Workspaces workspaces;
 	PanelVisibility panels;
 	Fbo preview;

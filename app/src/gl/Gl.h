@@ -73,7 +73,9 @@
 	X( PFNGLGENVERTEXARRAYSPROC, glGenVertexArrays )                     \
 	X( PFNGLDELETEVERTEXARRAYSPROC, glDeleteVertexArrays )               \
 	X( PFNGLBINDVERTEXARRAYPROC, glBindVertexArray )                     \
-	X( PFNGLDRAWARRAYSPROC, glDrawArrays )
+	X( PFNGLDRAWARRAYSPROC, glDrawArrays )                               \
+	X( PFNGLVERTEXATTRIBPOINTERPROC, glVertexAttribPointer )             \
+	X( PFNGLENABLEVERTEXATTRIBARRAYPROC, glEnableVertexAttribArray )
 
 namespace stltvj
 {

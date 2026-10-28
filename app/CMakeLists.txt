@@ -175,6 +175,10 @@ add_library(stltvj-core STATIC
     src/render/Fbo.h
     src/render/OutputWindow.cpp
     src/render/OutputWindow.h
+    src/output/AdvancedOutput.cpp
+    src/output/AdvancedOutput.h
+    src/output/OutputRenderer.cpp
+    src/output/OutputRenderer.h
 )
 target_include_directories(stltvj-core PUBLIC src third_party/khronos "${THIRD_PARTY}/nlohmann")
 target_compile_definitions(stltvj-core PUBLIC GLFW_INCLUDE_NONE)
@@ -195,6 +199,8 @@ add_executable(stlt-vj WIN32 MACOSX_BUNDLE
     src/main.cpp
     src/App.cpp
     src/App.h
+    src/ui/AdvancedOutputUi.cpp
+    src/ui/AdvancedOutputUi.h
     src/ui/EffectsUi.cpp
     src/ui/EffectsUi.h
     src/ui/FileDialogs.cpp
@@ -217,6 +223,12 @@ add_executable(fx_test tests/fx_test.cpp)
 target_link_libraries(fx_test PRIVATE stltvj-core)
 add_test(NAME fx_test COMMAND fx_test)
 stltvj_ffmpeg_runtime(fx_test)
+
+# Slice geometry, setups and Resolume import, without a GPU.
+add_executable(output_test tests/output_test.cpp)
+target_link_libraries(output_test PRIVATE stltvj-core)
+add_test(NAME output_test COMMAND output_test)
+stltvj_ffmpeg_runtime(output_test)
 endif()
 
 # Headless tools: decode benchmark and tests for the media engine.

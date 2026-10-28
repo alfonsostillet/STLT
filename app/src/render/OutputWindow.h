@@ -17,15 +17,18 @@ class OutputWindow
 public:
 	struct Display
 	{
-		std::string name;
+		std::string name;        // "2: DELL U2720Q", for menus
+		std::string monitorName; // as the system reports it: what a screen setup stores
 		int width = 0, height = 0, refresh = 0;
 		GLFWmonitor* monitor = nullptr;
 	};
 	static std::vector< Display > Displays();
+	static GLFWmonitor* FindDisplay( const std::string& monitorName );
 
 	~OutputWindow();
-	// monitor null: a 1280x720 window. Re-opening moves the output.
-	bool Open( GLFWwindow* shareWith, GLFWmonitor* monitor );
+	// monitor null: a window of windowWidth x windowHeight. Re-opening moves the output.
+	bool Open( GLFWwindow* shareWith, GLFWmonitor* monitor, const std::string& title = "STLT-VJ Output", int windowWidth = 1280, int windowHeight = 720,
+	           bool vsync = true );
 	void Close();
 	bool IsOpen() const { return window != nullptr; }
 	bool CloseRequested() const;

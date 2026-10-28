@@ -18,6 +18,7 @@ struct PanelVisibility
 	bool output             = true;
 	bool performance        = true;
 	bool effects            = true;
+	bool advancedOutput     = false; // a big editor: floats on top when opened
 };
 
 // Panel window names: also the keys ImGui saves their place under.
@@ -33,6 +34,7 @@ constexpr const char* Files              = "Files";
 constexpr const char* Output             = "Output";
 constexpr const char* Performance        = "Performance";
 constexpr const char* Effects            = "Effects";
+constexpr const char* AdvancedOutput     = "Advanced Output";
 }
 
 // Named workspaces: snapshots of where every panel is docked, floating, sized and shown.

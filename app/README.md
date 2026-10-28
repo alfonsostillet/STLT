@@ -5,7 +5,7 @@ It is an independent project, written from public specifications (HAP, FFGL, Ope
 
 ![STLT-VJ: the clip deck on top, monitors, composition, clip and performance panels below](../docs/images/stlt-vj.png)
 
-> 🇮🇹 In breve: STLT-VJ riproduce clip su più layer con pannelli agganciabili e flottanti. Legge HAP (il formato più veloce) e anche H.264, ProRes, DXV, PNG, JPEG e gli altri formati comuni, ma **con HAP le prestazioni sono nettamente migliori**: decodifica 5 volte più veloce, salti istantanei a qualsiasi frame e quasi niente CPU (vedi *Performance: HAP or not*). Trascina i file sulla griglia, dal pannello Files o con *Composition → Import Media...* (selettore file del sistema), clicca una clip per lanciarla, clicca l'intestazione di una colonna per lanciare tutta la colonna. Dal pannello *Effects* trascina un effetto su una clip, sull'intestazione di un layer o sul Composition Monitor; trascina una *Source* su una cella vuota. I plugin FFGL (anche STLT-CHASER) vengono caricati dalla cartella *Extra Effects* di Resolume. Click destro su un parametro per animarlo a tempo di BPM. *Output* apre l'uscita a schermo intero su un altro monitor. *Workspace → Save Workspace As...* salva la disposizione dei pannelli.
+> 🇮🇹 In breve: STLT-VJ riproduce clip su più layer con pannelli agganciabili e flottanti. Legge HAP (il formato più veloce) e anche H.264, ProRes, DXV, PNG, JPEG e gli altri formati comuni, ma **con HAP le prestazioni sono nettamente migliori**: decodifica 5 volte più veloce, salti istantanei a qualsiasi frame e quasi niente CPU (vedi *Performance: HAP or not*). Trascina i file sulla griglia, dal pannello Files o con *Composition → Import Media...* (selettore file del sistema), clicca una clip per lanciarla, clicca l'intestazione di una colonna per lanciare tutta la colonna. Dal pannello *Effects* trascina un effetto su una clip, sull'intestazione di un layer o sul Composition Monitor; trascina una *Source* su una cella vuota. I plugin FFGL (anche STLT-CHASER) vengono caricati dalla cartella *Extra Effects* di Resolume. Click destro su un parametro per animarlo a tempo di BPM. *Output → Advanced Output...* (Ctrl+Shift+A) apre l'editor di mappatura: più screen (display, finestra o virtuali), slice e poligoni con selezione dell'input, warp a 4 punti, griglia lineare o curva per superfici piegate, soft edge per la fusione tra proiettori, test pattern, preset e import dell'`AdvancedOutput.xml` di Resolume. *Workspace → Save Workspace As...* salva la disposizione dei pannelli.
 
 ## What works now
 
@@ -16,7 +16,7 @@ It is an independent project, written from public specifications (HAP, FFGL, Ope
 - **Layers**: opacity, blend modes (Alpha, Add, Screen, Multiply, Lighten, Darken, Difference, Subtract), bypass, solo.
 - **Clips**: forward / reverse / pause, loop, bounce or play once, speed, timeline scrubbing, opacity, fit (Fit, Fill, Stretch, Native), position, scale, rotation.
 - **Composition**: any size up to 16K, master, global speed, BPM with tap tempo.
-- **Output**: fullscreen on any display or in a window, vsynced, without slowing down the control screen.
+- **Advanced Output** (*Output → Advanced Output...*, Ctrl+Shift+A): see below.
 - **Workspace**: every panel can be docked, tabbed, split, or pulled out as its own window onto another monitor. Layouts are saved as named workspaces; the last layout and composition come back on the next start.
 - **Performance panel**: frame time graph, decode and upload time per layer, late frames.
 - **Effects**: chains on every clip, layer and on the composition, each effect with bypass, dry/wet mix and reordering (drag the headers or use the arrows). Drag effects from the Effects panel onto a clip cell, a layer name, the Composition Monitor or any effects list.
@@ -24,6 +24,20 @@ It is an independent project, written from public specifications (HAP, FFGL, Ope
 - **Sources** (generated clips, at the composition size): Solid Color, Gradient, Lines, Checker, and FFGL source plugins. Drop one on an empty cell.
 - **FFGL 2 host**: loads `.dll` (Windows) and `.bundle` (macOS) effect and source plugins from the app's plugin folder, Resolume's *Extra Effects* folders and any folder you add (Effects → Plugin Folders). Parameters show as sliders, checkboxes, buttons, menus, text and colour pickers, grouped as the plugin asks; menus, names and visibility that change live (FFGL 2.2/2.3) update in the panel. Plugins get the BPM, bar phase and time. STLT-CHASER, STLT-WIPER and STLT-OUTLINER run here as they do in Resolume.
 - **Beat-synced parameters**: right-click any parameter → Animate: saw, ping-pong, sine, square or random, over 1/4 to 64 beats, between two values. RESYNC restarts the beat.
+
+## Advanced Output
+
+![The Advanced Output editor: screens and slices on the left, the output transformation canvas with a keystoned slice, a curved grid and a polygon, slice settings on the right](../docs/images/stlt-vj-advanced-output.png)
+
+- **Screens**: as many as you need, each fullscreen on a display (chosen by name, so it finds the projector again after a restart), in a window, or virtual. Per screen: resolution, opacity, brightness, contrast, red/green/blue, and a **test pattern** that draws every slice as a coloured grid with its frame and centre, for lining up projectors.
+- **Slices**: a rectangle of the composition (*Input Selection*) placed on the screen (*Output Transformation*). **Polygons** take any shape of the composition and pin each point anywhere on the screen.
+- **Warping**: *Perspective* (four corners, for keystone), *Grid* (any number of points joined by straight lines) or *Curved Grid* (the same points joined by smooth curves, for bending onto curved or uneven surfaces). Switching keeps the current shape; grids can be refined or flattened.
+- **Soft edge** on each side, with power, luminance and gamma, to blend overlapping projectors.
+- **Editing**: drag a slice to move it, its handles to shape it; rectangles stay rectangles on the input (Alt frees a corner); Shift locks an axis; handles snap to the canvas edges and centre and to the other slices (Ctrl to drop the snap); arrows nudge by 1 pixel (Shift: 10); wheel zooms, middle button or Space pans; right-click a slice for Match Output to Input, Fit to Screen, flips. Flip, opacity, exact input position and size are in the slice settings.
+- **Presets** of the whole setup, and **import from Resolume**: *Import from Resolume* reads Arena's or Avenue's `AdvancedOutput.xml` straight from Documents, or pick any file. Screens, slices (input and output rectangles) and polygons come across; Resolume's warp grids and soft edges are not read yet.
+- The setup is saved on exit and restored on start, independently of the composition.
+
+Rendering: each slice is a fine triangle mesh that follows the warp, so perspective and curves stay smooth; the composition is sampled once per screen pixel, soft edges are computed per pixel, and each screen gets its own vsynced window.
 
 ## Performance: HAP or not
 
@@ -76,6 +90,7 @@ Width and height must be multiples of 4.
 | Space | Pause / resume everything |
 | Ctrl+S / Ctrl+O | Save / open composition |
 | Ctrl+I | Import media into the selected layer |
+| Ctrl+Shift+A | Advanced Output editor |
 | Double-click a slider | Reset it |
 | Right-click a clip or column | Clip and column options |
 
@@ -96,7 +111,7 @@ ctest --test-dir app/build -C Release          # media and effect tests
 app/build/decodebench clip.mov --random        # decode speed of any clip, no GPU needed
 ```
 
-Command line options: `--fresh` (start empty and save nothing), `--clip LAYER,COLUMN,PATH` (load and launch a clip), `--source LAYER,COLUMN,EFFECT-ID` (a generated clip), `--fx comp|layer:L|clip:L,C=EFFECT-ID` (add an effect), `--launch LAYER,COLUMN` (play a clip of the restored session), `--list-effects` (print effect ids and plugins that did not load), `--size WxH`, `--capture FILE.bmp --frames N` (screenshot after N frames, then quit).
+Command line options: `--fresh` (start empty and save nothing), `--clip LAYER,COLUMN,PATH` (load and launch a clip), `--source LAYER,COLUMN,EFFECT-ID` (a generated clip), `--fx comp|layer:L|clip:L,C=EFFECT-ID` (add an effect), `--launch LAYER,COLUMN` (play a clip of the restored session), `--list-effects` (print effect ids and plugins that did not load), `--output-setup FILE.json|AdvancedOutput.xml`, `--advanced-output input|output` (open the editor), `--size WxH`, `--capture FILE.bmp --frames N` (screenshot after N frames, then quit).
 
 FFGL plugins are loaded from `plugins/` in the settings folder, `Documents/Resolume Arena/Extra Effects`, `Documents/Resolume Avenue/Extra Effects` and the folders listed in `plugin-folders.txt`. Only FFGL 2 effects and sources are loaded; mixers and multi-input effects are listed as skipped. A composition that uses a plugin this computer does not have keeps the plugin's settings and shows it as missing.
 
@@ -108,12 +123,13 @@ Settings live in `%APPDATA%\STLT-VJ`, `~/Library/Application Support/STLT-VJ` or
 | --- | --- |
 | `src/media` | QuickTime/MP4 demuxer, HAP frame decoding, thread pool, positional file reads. No OpenGL: tested headless. |
 | `src/render` | Clip player (decode thread + pixel buffers + textures), GPU compositor with effect chains, output window. |
+| `src/output` | Advanced output: screens, slices, warps, soft edges, Resolume import, and the renderer with its output windows. |
 | `src/fx` | Effect parameters and beat animations, built-in GLSL effects and sources, the FFGL 2 host, the effect registry. |
 | `src/ui` | Panels, theme, workspaces. |
 | `src/App.*` | Main loop and the actions panels share (load, launch, move, save). |
 
 ## Next milestones
 
-1. **Advanced Output**: screens and slices with input selection, perspective corners, Bézier warp grids, soft edges and edge blending, masks and crops; import of `AdvancedOutput.xml` presets.
+1. Advanced Output: masks, reading Resolume's warp grids and soft edges on import, Spout/Syphon/NDI outputs.
 2. FFGL mixers as layer transitions, audio/FFT input for plugins that ask for it, clip parameter animation (opacity, transform).
 3. MIDI and OSC mapping; hardware decoding (VideoToolbox, D3D11) for H.264 and HEVC.

@@ -319,16 +319,21 @@ void DrawMainMenu( App& app )
 		}
 		if( ImGui::BeginMenu( "Output" ) )
 		{
+			if( ImGui::MenuItem( "Advanced Output...", "Ctrl+Shift+A" ) )
+				app.panels.advancedOutput = true;
+			ImGui::Separator();
+			ImGui::TextDisabled( "Quick: first screen" );
 			for( const OutputWindow::Display& d : OutputWindow::Displays() )
 			{
 				std::string label = "Fullscreen on " + d.name + "  (" + std::to_string( d.width ) + "x" + std::to_string( d.height ) + ")";
-				if( ImGui::MenuItem( label.c_str() ) && !app.output.Open( app.window, d.monitor ) )
-					app.SetStatus( "Could not open the output on " + d.name, true );
+				if( ImGui::MenuItem( label.c_str() ) )
+					app.ShowScreenOn( 0, OutputDevice::Display, d.monitorName );
 			}
-			if( ImGui::MenuItem( "Windowed Output" ) && !app.output.Open( app.window, nullptr ) )
-				app.SetStatus( "Could not open the output window", true );
-			if( ImGui::MenuItem( "Close Output", nullptr, false, app.output.IsOpen() ) )
-				app.output.Close();
+			if( ImGui::MenuItem( "In a Window" ) )
+				app.ShowScreenOn( 0, OutputDevice::Window );
+			ImGui::Separator();
+			if( ImGui::MenuItem( "Stop All Outputs", nullptr, false, app.outputs.AnyWindowOpen() ) )
+				app.StopOutputs();
 			ImGui::EndMenu();
 		}
 		if( ImGui::BeginMenu( "View" ) )
@@ -344,6 +349,7 @@ void DrawMainMenu( App& app )
 			ImGui::MenuItem( panel::Output, nullptr, &p.output );
 			ImGui::MenuItem( panel::Performance, nullptr, &p.performance );
 			ImGui::MenuItem( panel::Effects, nullptr, &p.effects );
+			ImGui::MenuItem( panel::AdvancedOutput, nullptr, &p.advancedOutput );
 			ImGui::EndMenu();
 		}
 		if( ImGui::BeginMenu( "Workspace" ) )
@@ -371,6 +377,8 @@ void DrawMainMenu( App& app )
 	ImGuiIO& io = ImGui::GetIO();
 	if( io.KeyCtrl && ImGui::IsKeyPressed( ImGuiKey_O, false ) )
 		openComposition = true;
+	if( io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed( ImGuiKey_A, false ) )
+		app.panels.advancedOutput = !app.panels.advancedOutput;
 	if( io.KeyCtrl && ImGui::IsKeyPressed( ImGuiKey_I, false ) )
 		ShowFileDialog( FileDialog::OpenMedia, app.browserDirectory, [ &app ]( const std::vector< std::string >& paths ) { LoadIntoSelected( app, paths ); } );
 	if( io.KeyCtrl && ImGui::IsKeyPressed( ImGuiKey_S, false ) )
@@ -539,11 +547,16 @@ void DrawToolbar( App& app )
 		fps = sum > 0 ? 1000.0f * app.frameTimes.size() / sum : 0;
 	}
 	char right[ 160 ];
-	std::snprintf( right, sizeof( right ), "Output: %s    %.0f fps", app.output.IsOpen() ? app.output.Description().c_str() : "off", fps );
+	int shown = 0;
+	for( size_t s = 0; s < app.advancedOutput.screens.size(); ++s )
+		if( app.outputs.DeviceStatus( s ).rfind( "virtual", 0 ) != 0 && app.outputs.DeviceStatus( s ).find( "not connected" ) == std::string::npos )
+			shown++;
+	std::snprintf( right, sizeof( right ), "Output: %d of %d screen%s shown    %.0f fps", shown, (int)app.advancedOutput.screens.size(),
+	               app.advancedOutput.screens.size() == 1 ? "" : "s", fps );
 	float rightWidth = ImGui::CalcTextSize( right ).x;
 	ImGui::SameLine( ImGui::GetWindowWidth() - rightWidth - Ui( 14 ) );
 	ImGui::AlignTextToFramePadding();
-	ImGui::TextColored( app.output.IsOpen() ? ImVec4( 0.4f, 0.88f, 0.75f, 1 ) : ImVec4( 0.6f, 0.6f, 0.6f, 1 ), "%s", right );
+	ImGui::TextColored( shown ? ImVec4( 0.4f, 0.88f, 0.75f, 1 ) : ImVec4( 0.6f, 0.6f, 0.6f, 1 ), "%s", right );
 	ImGui::EndGroup();
 	ImGui::SetCursorPosY( ImGui::GetCursorPosY() + Ui( 2 ) );
 }
@@ -1154,22 +1167,37 @@ void DrawOutputPanel( App& app )
 		ImGui::End();
 		return;
 	}
-	ImGui::SeparatorText( "Output" );
-	ImGui::Text( "Current: %s", app.output.IsOpen() ? app.output.Description().c_str() : "off" );
-	for( const OutputWindow::Display& d : OutputWindow::Displays() )
+	if( ImGui::Button( "Advanced Output...", ImVec2( -FLT_MIN, 0 ) ) )
+		app.panels.advancedOutput = true;
+	std::vector< OutputWindow::Display > displays = OutputWindow::Displays();
+	for( size_t s = 0; s < app.advancedOutput.screens.size(); ++s )
 	{
-		std::string label = "Fullscreen " + d.name + "  " + std::to_string( d.width ) + "x" + std::to_string( d.height ) + " @ " + std::to_string( d.refresh ) + " Hz";
-		if( ImGui::Button( label.c_str(), ImVec2( -FLT_MIN, 0 ) ) && !app.output.Open( app.window, d.monitor ) )
-			app.SetStatus( "Could not open the output on " + d.name, true );
+		Screen& screen = app.advancedOutput.screens[ s ];
+		ImGui::PushID( (int)s );
+		ImGui::SeparatorText( screen.name.c_str() );
+		std::string current = screen.device == OutputDevice::Display ? screen.display : OutputDeviceName( screen.device );
+		ImGui::SetNextItemWidth( -FLT_MIN );
+		if( ImGui::BeginCombo( "##device", current.c_str() ) )
+		{
+			if( ImGui::Selectable( "Virtual Output (not shown)", screen.device == OutputDevice::Virtual ) )
+				screen.device = OutputDevice::Virtual;
+			if( ImGui::Selectable( "Window", screen.device == OutputDevice::Window ) )
+				app.ShowScreenOn( s, OutputDevice::Window );
+			for( const OutputWindow::Display& d : displays )
+			{
+				std::string label = "Fullscreen " + d.name + "  " + std::to_string( d.width ) + "x" + std::to_string( d.height ) + " @ " + std::to_string( d.refresh ) + " Hz";
+				if( ImGui::Selectable( label.c_str(), screen.device == OutputDevice::Display && screen.display == d.monitorName ) )
+					app.ShowScreenOn( s, OutputDevice::Display, d.monitorName );
+			}
+			ImGui::EndCombo();
+		}
+		ImGui::TextDisabled( "%dx%d, %d slice%s - %s", screen.width, screen.height, (int)screen.slices.size(), screen.slices.size() == 1 ? "" : "s",
+		                     app.outputs.DeviceStatus( s ).c_str() );
+		ImGui::PopID();
 	}
-	if( ImGui::Button( "Window", ImVec2( -FLT_MIN, 0 ) ) && !app.output.Open( app.window, nullptr ) )
-		app.SetStatus( "Could not open the output window", true );
-	ImGui::BeginDisabled( !app.output.IsOpen() );
-	if( ImGui::Button( "Close Output", ImVec2( -FLT_MIN, 0 ) ) )
-		app.output.Close();
-	ImGui::EndDisabled();
 	ImGui::Spacing();
-	ImGui::TextDisabled( "The output shows the whole composition, vsynced to its display." );
+	if( ImGui::Button( "Stop All Outputs", ImVec2( -FLT_MIN, 0 ) ) )
+		app.StopOutputs();
 	ImGui::End();
 }
 

@@ -30,6 +30,7 @@ const Flag kFlags[] = {
 	{ "Output", &PanelVisibility::output },
 	{ "Performance", &PanelVisibility::performance },
 	{ "Effects", &PanelVisibility::effects },
+	{ "AdvancedOutput", &PanelVisibility::advancedOutput },
 };
 
 // [STLTVJ][Panels] section of the ini: Name=0/1 for each panel.

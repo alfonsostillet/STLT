@@ -1,6 +1,7 @@
 // STLT-VJ: live HAP playback with dockable panels.
 //   stlt-vj [--fresh] [--clip LAYER,COLUMN,PATH]... [--source LAYER,COLUMN,EFFECT-ID]...
-//           [--fx comp|layer:L|clip:L,C=EFFECT-ID]... [--launch LAYER,COLUMN]... [--list-effects] [--size WxH] [--capture FILE.bmp [--frames N]]
+//           [--fx comp|layer:L|clip:L,C=EFFECT-ID]... [--launch LAYER,COLUMN]... [--list-effects]
+//           [--output-setup FILE.json|AdvancedOutput.xml] [--advanced-output input|output] [--size WxH] [--capture FILE.bmp [--frames N]]
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -19,6 +20,10 @@ int main( int argc, char** argv )
 			options.fresh = true;
 		else if( arg == "--list-effects" )
 			options.listEffects = true;
+		else if( arg == "--output-setup" && hasValue )
+			options.outputSetup = argv[ ++i ];
+		else if( arg == "--advanced-output" && hasValue )
+			options.advancedOutputTab = std::strcmp( argv[ ++i ], "output" ) == 0 ? 1 : 0;
 		else if( arg == "--capture" && hasValue )
 			options.capturePath = argv[ ++i ];
 		else if( arg == "--frames" && hasValue )
