@@ -39,4 +39,12 @@ bool FilledSlider( const char* label, float* value, float min, float max, const 
 	ImGui::PopStyleColor( 3 );
 	return changed;
 }
+
+bool ResetValue( float* value, float reset )
+{
+	if( !ImGui::IsItemHovered() || !( ImGui::IsMouseClicked( ImGuiMouseButton_Right ) || ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) ) )
+		return false;
+	*value = reset;
+	return true;
+}
 }

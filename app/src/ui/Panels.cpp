@@ -107,11 +107,7 @@ bool PercentSlider( const char* id, float* value, float max = 1.0f, const char* 
 	bool changed  = FilledSlider( id, &percent, 0.0f, max * 100.0f, format );
 	if( changed )
 		*value = percent / 100.0f;
-	if( ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
-	{
-		*value  = 1.0f;
-		changed = true;
-	}
+	changed |= ResetValue( value, 1.0f );
 	return changed;
 }
 
@@ -642,8 +638,7 @@ void DrawToolbar( App& app )
 	ToolbarCaption( "Speed" );
 	ImGui::SetNextItemWidth( Ui( 110 ) );
 	FilledSlider( "##speed", &comp.speed, 0.0f, 4.0f, "%.2fx" );
-	if( ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
-		comp.speed = 1.0f;
+	ResetValue( &comp.speed, 1.0f );
 	MapTarget( app, "/composition/speed" );
 
 	// Right side: what the outputs show, and the frame rate.
@@ -739,13 +734,20 @@ void DrawClipGrid( App& app )
 	ImGui::BeginChild( "##grid", ImVec2( 0, 0 ), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar );
 	draw         = ImGui::GetWindowDrawList();
 	ImVec2 origin = ImGui::GetCursorScreenPos();
+	// The layer cards stay at the left of the view while the deck scrolls sideways: headers and cells are cut off
+	// where the cards end.
+	const float stickyX = origin.x + ImGui::GetScrollX();
+	const ImVec2 viewMin = ImGui::GetWindowPos();
+	const ImVec2 viewMax( viewMin.x + ImGui::GetWindowWidth(), viewMin.y + ImGui::GetWindowHeight() );
+	const float cellsLeft = stickyX + leftW;
 
 	// Column headers.
-	ImGui::SetCursorScreenPos( origin );
+	ImGui::SetCursorScreenPos( ImVec2( stickyX, origin.y ) );
 	ImGui::AlignTextToFramePadding();
 	ImGui::PushFont( Fonts().bold );
 	ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( theme::TextDim ), "%s", comp.name.c_str() );
 	ImGui::PopFont();
+	ImGui::PushClipRect( ImVec2( cellsLeft, viewMin.y ), viewMax, true );
 	for( int c = 0; c < comp.ColumnCount(); ++c )
 	{
 		ImVec2 pos( origin.x + leftW + c * ( cellW + gap ), origin.y );
@@ -784,6 +786,7 @@ void DrawClipGrid( App& app )
 		if( ImGui::IsItemHovered() )
 			ImGui::SetTooltip( "New column" );
 	}
+	ImGui::PopClipRect();
 
 	// Layers, top layer first.
 	int layerCount = (int)comp.layers.size();
@@ -796,7 +799,7 @@ void DrawClipGrid( App& app )
 
 		// Layer strip.
 		// A card per layer: the selected one raised, a bar of accent while it plays.
-		ImVec2 stripMin( origin.x, y ), stripMax( origin.x + leftW - gap * 2, y + cellH );
+		ImVec2 stripMin( stickyX, y ), stripMax( stickyX + leftW - gap * 2, y + cellH );
 		bool selectedLayer = comp.selectedLayer == l;
 		draw->AddRectFilled( stripMin, stripMax, selectedLayer ? theme::Raised : IM_COL32( 24, 27, 32, 255 ), round );
 		if( selectedLayer )
@@ -810,7 +813,7 @@ void DrawClipGrid( App& app )
 		const float row0   = y + Ui( 6 );
 		const float row2   = y + cellH - rowH - Ui( 6 );
 		const float row1   = ( row0 + rowH + row2 ) / 2 - rowH / 2;
-		ImGui::SetCursorScreenPos( ImVec2( origin.x + Ui( 12 ), row0 ) );
+		ImGui::SetCursorScreenPos( ImVec2( stickyX + Ui( 12 ), row0 ) );
 		std::string layerAddress = "/composition/layers/" + std::to_string( l + 1 );
 		if( IconButton( "##clear", Icon::Close ) )
 			app.ClearLayer( l );
@@ -846,7 +849,7 @@ void DrawClipGrid( App& app )
 		if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) )
 			ImGui::SetTooltip( "Click: the layer's settings and effects%s", layer.effects.empty() ? "" : ( "\n" + std::to_string( layer.effects.size() ) + ( layer.effects.size() == 1 ? " effect" : " effects" ) + " on this layer" ).c_str() );
 
-		ImGui::SetCursorScreenPos( ImVec2( origin.x + Ui( 12 ), row1 ) );
+		ImGui::SetCursorScreenPos( ImVec2( stickyX + Ui( 12 ), row1 ) );
 		float blendW = std::floor( innerW * 0.52f );
 		ImGui::SetNextItemWidth( blendW );
 		if( ImGui::BeginCombo( "##blend", BlendModeName( layer.blend ), ImGuiComboFlags_HeightLarge ) )
@@ -863,15 +866,16 @@ void DrawClipGrid( App& app )
 		PercentSlider( "##volume", &layer.volume, 1.0f, "Vol %.0f %%" );
 		MapTarget( app, layerAddress + "/audio/volume" );
 		if( ImGui::IsItemHovered() && !app.learning )
-			ImGui::SetTooltip( "Volume of this layer's clips (double-click: 100 %%)" );
+			ImGui::SetTooltip( "Volume of this layer's clips (right-click: 100 %%)" );
 
-		ImGui::SetCursorScreenPos( ImVec2( origin.x + Ui( 12 ), row2 ) );
+		ImGui::SetCursorScreenPos( ImVec2( stickyX + Ui( 12 ), row2 ) );
 		ImGui::SetNextItemWidth( innerW );
 		PercentSlider( "##opacity", &layer.opacity, 1.0f, "Opacity %.0f %%" );
 		MapTarget( app, layerAddress + "/video/opacity" );
 		ImGui::PopStyleVar();
 
 		// Cells.
+		ImGui::PushClipRect( ImVec2( cellsLeft, viewMin.y ), viewMax, true );
 		for( int c = 0; c < comp.ColumnCount(); ++c )
 		{
 			Clip& clip = layer.clips[ c ];
@@ -1005,18 +1009,19 @@ void DrawClipGrid( App& app )
 				ImGui::Dummy( ImVec2( cellMax.x - cellMin.x, cellMax.y - cellMin.y ) );
 				MapTarget( app, layerAddress + "/clips/" + std::to_string( c + 1 ) + "/connect" );
 			}
-			if( dropPending && dropPoint.x >= min.x && dropPoint.x < max.x && dropPoint.y >= min.y && dropPoint.y < max.y )
+			if( dropPending && dropPoint.x >= std::max( min.x, cellsLeft ) && dropPoint.x < max.x && dropPoint.y >= min.y && dropPoint.y < max.y )
 			{
 				pendingLoad = { l, c, app.droppedPaths, {} };
 				dropPending = false;
 			}
 			ImGui::PopID();
 		}
+		ImGui::PopClipRect();
 		ImGui::PopID();
 	}
 
 	float bottom = origin.y + headerH + layerCount * ( cellH + gap );
-	ImGui::SetCursorScreenPos( ImVec2( origin.x, bottom + Ui( 2 ) ) );
+	ImGui::SetCursorScreenPos( ImVec2( stickyX, bottom + Ui( 2 ) ) );
 	if( ImGui::Button( "+ Layer" ) )
 		comp.AddLayer();
 	ImGui::SameLine();
@@ -1115,6 +1120,7 @@ void DrawCompositionPanel( App& app )
 			ImGui::SetTooltip( "Master volume of the clips' sound\n%s", app.audio.Status().c_str() );
 		ParamLabel( "Speed" );
 		FilledSlider( "##speed", &comp.speed, 0.0f, 4.0f, "%.2f" );
+		ResetValue( &comp.speed, 1.0f );
 		MapTarget( app, "/composition/speed" );
 		ParamLabel( "BPM" );
 		float bpm = (float)comp.bpm;
@@ -1292,8 +1298,7 @@ void DrawClipPanel( App& app )
 		{
 			ParamLabel( "Speed" );
 			FilledSlider( "##speed", &clip->speed, 0.0f, 4.0f, "%.2f" );
-			if( ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
-				clip->speed = 1.0f;
+			ResetValue( &clip->speed, 1.0f );
 			ParamLabel( "Duration" );
 			ImGui::Text( "%s", FormatTime( duration ).c_str() );
 			ImGui::EndTable();
@@ -1323,14 +1328,18 @@ void DrawClipPanel( App& app )
 		}
 		ParamLabel( "Position X" );
 		ImGui::DragFloat( "##x", &clip->positionX, 1.0f, -16384, 16384, "%.0f" );
+		ResetValue( &clip->positionX, 0.0f );
 		ParamLabel( "Position Y" );
 		ImGui::DragFloat( "##y", &clip->positionY, 1.0f, -16384, 16384, "%.0f" );
+		ResetValue( &clip->positionY, 0.0f );
 		ParamLabel( "Scale" );
 		float scale = clip->scale * 100;
 		if( ImGui::DragFloat( "##scale", &scale, 0.5f, 0, 1000, "%.1f %%" ) )
 			clip->scale = scale / 100;
+		ResetValue( &clip->scale, 1.0f );
 		ParamLabel( "Rotation" );
 		FilledSlider( "##rotation", &clip->rotation, -180, 180, "%.1f deg" );
+		ResetValue( &clip->rotation, 0.0f );
 		ParamLabel( "" );
 		if( ImGui::Button( "Reset Transform" ) )
 		{

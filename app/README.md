@@ -13,7 +13,7 @@ It is an independent project, written from public specifications (HAP, FFGL, Ope
 - **Every other format** through FFmpeg: H.264, HEVC, ProRes, DXV, DNxHD, VP8/VP9, MPEG-4, Motion JPEG and more, in .mov, .mp4, .mkv, .avi, .mxf and similar files, plus still images (PNG with transparency, JPEG, BMP, TIFF, WebP) and animated GIFs. These play fine but cost far more than HAP: see below. The Clip panel marks clips that are not HAP.
 - **Native file dialogs**: *Composition → Open / Save As / Import Media*, *Load Media...* on a clip cell, *Browse...* in the Files panel, plugin folders and FFGL file parameters use the system's own dialogs. On Windows they run beside playback, so the output never stops while one is open.
 - **Deck**: layers × columns of clips with thumbnails. Click a clip's picture to launch it; click its name to select it without launching: the Clip panel shows it and the **Preview Monitor** plays it, apart from the output. Click a column header to launch the column, drag clips between cells, drop files from the desktop or the Files panel.
-- **Layers**: each layer's card in the deck has clear, bypass and solo, its **blend mode** (Alpha, Add, Screen, Multiply, Lighten, Darken, Difference, Subtract), its **volume** and its opacity; click the layer's name for the Layer panel and its effects.
+- **Layers**: each layer's card in the deck has clear, bypass and solo, its **blend mode** (Alpha, Add, Screen, Multiply, Lighten, Darken, Difference, Subtract), its **volume** and its opacity; click the layer's name for the Layer panel and its effects. The layer cards stay in place while the deck scrolls sideways through the columns.
 - **Clips**: forward / reverse / pause, loop, bounce or play once, speed, timeline scrubbing, opacity, fit (Fit, Fill, Stretch, Native), position, scale, rotation.
 - **Composition**: any size up to 16K, master, global speed, BPM with tap tempo.
 - **Sound**: clips with a soundtrack play it on the system's default output, in step with the picture: it follows loops, jumps and cue points, its pitch follows the speed (as on a turntable), and it is silent while a clip plays backwards or the composition is paused. Volume per clip, per layer and for the whole composition (all mappable to MIDI and OSC); bypassed layers, and layers another layer is soloed over, are silent. The Performance panel names the output in use.
@@ -27,7 +27,7 @@ It is an independent project, written from public specifications (HAP, FFGL, Ope
 - **Built-in effects**: Brightness & Contrast, Hue & Saturation, Invert, Colorize, Threshold, Mirror, Kaleidoscope, Tile, Pixelate, RGB Split, Blur, Edge Detect, Strobe (beat-synced), Trails.
 - **Sources** (generated clips, at the composition size): Solid Color, Gradient, Lines, Checker, and FFGL source plugins. Drop one on an empty cell.
 - **FFGL 2 host**: loads `.dll` (Windows) and `.bundle` (macOS) effect and source plugins from the app's plugin folder, Resolume's *Extra Effects* folders and any folder you add (Effects → Plugin Folders). Parameters show as sliders, checkboxes, buttons, menus, text and colour pickers, grouped as the plugin asks; menus, names and visibility that change live (FFGL 2.2/2.3) update in the panel. Plugins get the BPM, bar phase and time. STLT-CHASER, STLT-WIPER and STLT-OUTLINER run here as they do in Resolume.
-- **Beat-synced parameters**: right-click any parameter → Animate: saw, ping-pong, sine, square or random, over 1/4 to 64 beats, between two values. RESYNC restarts the beat.
+- **Beat-synced parameters**: click a parameter's name → Animate: saw, ping-pong, sine, square or random, over 1/4 to 64 beats, between two values. RESYNC restarts the beat.
 
 ## Advanced Output
 
@@ -105,7 +105,7 @@ Width and height must be multiples of 4.
 | Ctrl+M | Map keys and MIDI on or off (Escape leaves it) |
 | Escape on an output | Turn the output off |
 | Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) | Undo / redo: clips, layers, effects, settings and the whole Advanced Output (also in the *Edit* menu) |
-| Double-click a slider | Reset it |
+| Right-click or double-click a slider | Back to its default (opacity and volume 100 %, speed 1x, position 0...) |
 | Right-click a clip or column | Clip and column options |
 
 ## Building

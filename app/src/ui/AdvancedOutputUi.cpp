@@ -228,13 +228,13 @@ std::string ResolumeXmlPath()
 	return {};
 }
 
-bool SliderPercent( const char* id, float* value, float min, float max )
+bool SliderPercent( const char* id, float* value, float min, float max, float reset )
 {
 	float percent = *value * 100;
-	if( !FilledSlider( id, &percent, min * 100, max * 100, "%.0f %%" ) )
-		return false;
-	*value = percent / 100;
-	return true;
+	bool changed  = FilledSlider( id, &percent, min * 100, max * 100, "%.0f %%" );
+	if( changed )
+		*value = percent / 100;
+	return ResetValue( value, reset ) || changed;
 }
 
 void Row( const char* label )
@@ -1183,17 +1183,22 @@ void DrawScreenProps( App& app, Screen& screen )
 		ImGui::PopTextWrapPos();
 	}
 	Row( "Opacity" );
-	SliderPercent( "##opacity", &screen.opacity, 0, 1 );
+	SliderPercent( "##opacity", &screen.opacity, 0, 1, 1 );
 	Row( "Brightness" );
 	FilledSlider( "##brightness", &screen.brightness, -1, 1, "%.2f" );
+	ResetValue( &screen.brightness, 0 );
 	Row( "Contrast" );
 	FilledSlider( "##contrast", &screen.contrast, -1, 1, "%.2f" );
+	ResetValue( &screen.contrast, 0 );
 	Row( "Red" );
 	FilledSlider( "##red", &screen.red, -1, 1, "%.2f" );
+	ResetValue( &screen.red, 0 );
 	Row( "Green" );
 	FilledSlider( "##green", &screen.green, -1, 1, "%.2f" );
+	ResetValue( &screen.green, 0 );
 	Row( "Blue" );
 	FilledSlider( "##blue", &screen.blue, -1, 1, "%.2f" );
+	ResetValue( &screen.blue, 0 );
 	ImGui::EndTable();
 }
 
@@ -1241,13 +1246,14 @@ void DrawMaskProps( Screen& screen, Slice& s )
 	Row( "Enabled" );
 	ImGui::Checkbox( "##enabled", &s.enabled );
 	Row( "Strength" );
-	SliderPercent( "##opacity", &s.opacity, 0, 1 );
+	SliderPercent( "##opacity", &s.opacity, 0, 1, 1 );
 	Row( "Invert" );
 	ImGui::Checkbox( "##invert", &s.invert );
 	if( ImGui::IsItemHovered() )
 		ImGui::SetTooltip( "Black outside the shape instead of inside" );
 	Row( "Feather" );
 	FilledSlider( "##feather", &s.feather, 0, 200, "%.0f px", ImGuiSliderFlags_AlwaysClamp );
+	ResetValue( &s.feather, 0 );
 	EditModeRows( s );
 	PointModeRows( s );
 	Row( "" );
@@ -1277,7 +1283,7 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 	Row( "Enabled" );
 	ImGui::Checkbox( "##enabled", &s.enabled );
 	Row( "Opacity" );
-	SliderPercent( "##opacity", &s.opacity, 0, 1 );
+	SliderPercent( "##opacity", &s.opacity, 0, 1, 1 );
 
 	if( !s.polygon && s.input.size() == 4 )
 	{
@@ -1351,19 +1357,22 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 	if( ImGui::CollapsingHeader( "Soft Edge", s.edge.Active() ? ImGuiTreeNodeFlags_DefaultOpen : 0 ) && BeginProps( "##edge" ) )
 	{
 		Row( "Left" );
-		SliderPercent( "##left", &s.edge.left, 0, 0.5f );
+		SliderPercent( "##left", &s.edge.left, 0, 0.5f, 0 );
 		Row( "Right" );
-		SliderPercent( "##right", &s.edge.right, 0, 0.5f );
+		SliderPercent( "##right", &s.edge.right, 0, 0.5f, 0 );
 		Row( "Top" );
-		SliderPercent( "##top", &s.edge.top, 0, 0.5f );
+		SliderPercent( "##top", &s.edge.top, 0, 0.5f, 0 );
 		Row( "Bottom" );
-		SliderPercent( "##bottom", &s.edge.bottom, 0, 0.5f );
+		SliderPercent( "##bottom", &s.edge.bottom, 0, 0.5f, 0 );
 		Row( "Power" );
 		FilledSlider( "##power", &s.edge.power, 0.5f, 6, "%.2f" );
+		ResetValue( &s.edge.power, SoftEdge{}.power );
 		Row( "Luminance" );
 		FilledSlider( "##luminance", &s.edge.luminance, 0, 1, "%.2f" );
+		ResetValue( &s.edge.luminance, SoftEdge{}.luminance );
 		Row( "Gamma" );
 		FilledSlider( "##gamma", &s.edge.gamma, 0.5f, 3, "%.2f" );
+		ResetValue( &s.edge.gamma, SoftEdge{}.gamma );
 		ImGui::EndTable();
 	}
 }

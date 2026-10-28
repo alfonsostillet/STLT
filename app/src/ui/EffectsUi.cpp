@@ -59,10 +59,10 @@ std::string ColourLabel( const std::string& first, const char* channel )
 const float kBeatChoices[]       = { 0.25f, 0.5f, 1, 2, 4, 8, 16, 32, 64 };
 const char* kBeatChoiceNames[]   = { "1/4 beat", "1/2 beat", "1 beat", "2 beats", "4 beats", "8 beats", "16 beats", "32 beats", "64 beats" };
 
-// Right-click menu of a parameter: reset and beat-synced animation.
+// The menu a parameter's name opens: reset and beat-synced animation.
 void ParamMenu( Effect& effect, int i )
 {
-	if( !ImGui::BeginPopupContextItem( "##paramMenu" ) )
+	if( !ImGui::BeginPopup( "##paramMenu" ) )
 		return;
 	const ParamInfo& p = effect.Params()[ i ];
 	ImGui::TextDisabled( "%s", p.displayName.c_str() );
@@ -123,6 +123,31 @@ void ParamLabel( const char* label )
 	ImGui::SetNextItemWidth( -FLT_MIN );
 }
 
+// A parameter's name: a click opens its menu (reset, animate).
+void ParamName( const char* label, bool animatable )
+{
+	ImGui::TableNextRow();
+	ImGui::TableSetColumnIndex( 0 );
+	ImGui::AlignTextToFramePadding();
+	ImVec2 size = ImGui::CalcTextSize( label, nullptr, true );
+	if( ImGui::Selectable( label, false, ImGuiSelectableFlags_None, ImVec2( size.x, 0 ) ) )
+		ImGui::OpenPopup( "##paramMenu" );
+	if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) )
+		ImGui::SetTooltip( animatable ? "Click: animate to the beat, or reset\nRight-click the value: reset" : "Click: reset" );
+	ImGui::TableSetColumnIndex( 1 );
+	ImGui::SetNextItemWidth( -FLT_MIN );
+}
+
+// Right-click (or double-click) on the value just drawn: the parameter back to its default, not animated.
+void ResetParam( Effect& effect, int i )
+{
+	float value = effect.Value( i );
+	if( !ResetValue( &value, effect.Params()[ i ].defaultValue ) )
+		return;
+	effect.SetValue( i, value );
+	effect.Anim( i ) = Animation{};
+}
+
 // The effect whose parameters are being drawn, for MIDI mapping: its chain's address and place (none: -1).
 App* mapApp = nullptr;
 std::string mapScope;
@@ -148,18 +173,24 @@ int ParamWidget( Effect& effect, int i )
 		for( int k = 0; k < used; ++k )
 			c[ k ] = effect.EffectiveValue( i + k );
 		std::string label = ColourLabel( p.displayName, hsv ? "Hue" : "Red" );
-		ParamLabel( label.c_str() );
-		ImGuiColorEditFlags flags = ImGuiColorEditFlags_Float | ( hsv ? ImGuiColorEditFlags_InputHSV | ImGuiColorEditFlags_DisplayHSV : 0 );
+		ParamName( label.c_str(), p.IsAnimatable() );
+		ImGuiColorEditFlags flags = ImGuiColorEditFlags_Float | ImGuiColorEditFlags_NoOptions | ( hsv ? ImGuiColorEditFlags_InputHSV | ImGuiColorEditFlags_DisplayHSV : 0 );
 		bool changed = alpha ? ImGui::ColorEdit4( "##colour", c, flags | ImGuiColorEditFlags_AlphaBar ) : ImGui::ColorEdit3( "##colour", c, flags );
 		if( changed )
 			for( int k = 0; k < used; ++k )
 				effect.SetValue( i + k, c[ k ] );
+		if( ImGui::IsItemHovered() && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
+			for( int k = 0; k < used; ++k )
+			{
+				effect.SetValue( i + k, params[ i + k ].defaultValue );
+				effect.Anim( i + k ) = Animation{};
+			}
 		ParamMenu( effect, i );
 		ImGui::PopID();
 		return used;
 	}
 
-	ParamLabel( p.displayName.c_str() );
+	ParamName( p.displayName.c_str(), p.IsAnimatable() );
 	float value = effect.EffectiveValue( i );
 	switch( p.kind )
 	{
@@ -168,6 +199,8 @@ int ParamWidget( Effect& effect, int i )
 		bool on = value >= 0.5f;
 		if( ImGui::Checkbox( "##v", &on ) )
 			effect.SetValue( i, on ? 1.0f : 0.0f );
+		if( ImGui::IsItemHovered() && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
+			effect.SetValue( i, p.defaultValue );
 		break;
 	}
 	case ParamKind::Event:
@@ -196,6 +229,8 @@ int ParamWidget( Effect& effect, int i )
 			}
 			ImGui::EndCombo();
 		}
+		if( ImGui::IsItemHovered() && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
+			effect.SetValue( i, p.defaultValue );
 		break;
 	}
 	case ParamKind::Text:
@@ -237,8 +272,7 @@ int ParamWidget( Effect& effect, int i )
 			effect.SetValue( i, value );
 		if( animated )
 			ImGui::PopStyleColor();
-		if( ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
-			effect.SetValue( i, p.defaultValue );
+		ResetParam( effect, i );
 		break;
 	}
 	}
@@ -401,8 +435,7 @@ void DrawEffectChain( App& app, EffectChain& chain, const char* id, const std::s
 					float percent = slot.mix * 100;
 					if( FilledSlider( "##mix", &percent, 0, 100, "%.0f %%" ) )
 						slot.mix = percent / 100;
-					if( ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
-						slot.mix = 1;
+					ResetValue( &slot.mix, 1.0f );
 					ImGui::EndTable();
 				}
 				if( !scope.empty() )
