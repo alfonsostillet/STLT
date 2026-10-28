@@ -5,7 +5,7 @@ It is an independent project, written from public specifications (HAP, FFGL, Ope
 
 ![STLT-VJ: the clip deck on top, monitors, composition, clip and performance panels below](../docs/images/stlt-vj.png)
 
-> 🇮🇹 In breve: STLT-VJ riproduce clip su più layer con pannelli agganciabili e flottanti. Legge HAP (il formato più veloce) e anche H.264, ProRes, DXV, PNG, JPEG e gli altri formati comuni, ma **con HAP le prestazioni sono nettamente migliori**: decodifica 5 volte più veloce, salti istantanei a qualsiasi frame e quasi niente CPU (vedi *Performance: HAP or not*). Trascina i file sulla griglia, dal pannello Files o con *Composition → Import Media...* (selettore file del sistema), clicca una clip per lanciarla, clicca l'intestazione di una colonna per lanciare tutta la colonna. Dal pannello *Effects* trascina un effetto su una clip, sull'intestazione di un layer o sul Composition Monitor; trascina una *Source* su una cella vuota. I plugin FFGL (anche STLT-CHASER) vengono caricati dalla cartella *Extra Effects* di Resolume. Click destro su un parametro per animarlo a tempo di BPM. *Output → Advanced Output...* (Ctrl+Shift+A) apre l'editor di mappatura: più screen (display, finestra o virtuali), slice e poligoni con selezione dell'input, warp a 4 punti, griglia lineare o curva per superfici piegate, *Contour* per adattare il contorno dello slice alla superficie reale punto per punto (Edit Points, con Point Mode Bezier o Linear a destra, doppio clic sul contorno per aggiungere un punto) o tutto insieme (Transform: scala e ruota), soft edge per la fusione tra proiettori, maschere (rettangolo o ellisse, anche invertite e sfumate), test pattern, preset e import dell'`AdvancedOutput.xml` di Resolume (anche warp, soft edge e maschere). *Workspace → Save Workspace As...* salva la disposizione dei pannelli.
+> 🇮🇹 In breve: STLT-VJ riproduce clip su più layer con pannelli agganciabili e flottanti. Legge HAP (il formato più veloce) e anche H.264, ProRes, DXV, PNG, JPEG e gli altri formati comuni, ma **con HAP le prestazioni sono nettamente migliori**: decodifica 5 volte più veloce, salti istantanei a qualsiasi frame e quasi niente CPU (vedi *Performance: HAP or not*). Trascina i file sulla griglia, dal pannello Files o con *Composition → Import Media...* (selettore file del sistema), clicca una clip per lanciarla, clicca l'intestazione di una colonna per lanciare tutta la colonna. Dal pannello *Effects* trascina un effetto su una clip, sull'intestazione di un layer o sul Composition Monitor; trascina una *Source* su una cella vuota. I plugin FFGL (anche STLT-CHASER) vengono caricati dalla cartella *Extra Effects* di Resolume. Click destro su un parametro per animarlo a tempo di BPM. *Output → Advanced Output...* (Ctrl+Shift+A) apre l'editor di mappatura: più screen (display, finestra o virtuali), slice e poligoni con selezione dell'input, warp a 4 punti, griglia lineare o curva per superfici piegate, *Contour* per adattare il contorno dello slice alla superficie reale punto per punto (Edit Points, con Point Mode Bezier o Linear a destra, doppio clic sul contorno per aggiungere un punto) o tutto insieme (Transform: scala e ruota), soft edge per la fusione tra proiettori, maschere (rettangolo o ellisse, anche invertite e sfumate), test pattern, preset e import dell'`AdvancedOutput.xml` di Resolume (anche warp, soft edge e maschere). *Workspace → Save Workspace As...* salva la disposizione dei pannelli. Ctrl+Z / Ctrl+Shift+Z annullano e ripetono qualsiasi modifica (anche nell'Advanced Output).
 
 ## What works now
 
@@ -96,6 +96,7 @@ Width and height must be multiples of 4.
 | Ctrl+S / Ctrl+O | Save / open composition |
 | Ctrl+I | Import media into the selected layer |
 | Ctrl+Shift+A | Advanced Output editor |
+| Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y) | Undo / redo: clips, layers, effects, settings and the whole Advanced Output (also in the *Edit* menu) |
 | Double-click a slider | Reset it |
 | Right-click a clip or column | Clip and column options |
 
@@ -128,10 +129,11 @@ Settings live in `%APPDATA%\STLT-VJ`, `~/Library/Application Support/STLT-VJ` or
 | --- | --- |
 | `src/media` | QuickTime/MP4 demuxer, HAP frame decoding, thread pool, positional file reads. No OpenGL: tested headless. |
 | `src/render` | Clip player (decode thread + pixel buffers + textures), GPU compositor with effect chains, output window. |
-| `src/output` | Advanced output: screens, slices, warps, soft edges, Resolume import, and the renderer with its output windows. |
+| `src/output` | Advanced output: screens, slices, warps, contours, masks, soft edges, Resolume import, and the renderer with its output windows. |
 | `src/fx` | Effect parameters and beat animations, built-in GLSL effects and sources, the FFGL 2 host, the effect registry. |
 | `src/ui` | Panels, theme, workspaces. |
-| `src/App.*` | Main loop and the actions panels share (load, launch, move, save). |
+| `src/App.*` | Main loop and the actions panels share (load, launch, move, save, undo). |
+| `src/History.*` | Undo and redo by snapshots of the composition and the output setup. |
 
 ## Next milestones
 

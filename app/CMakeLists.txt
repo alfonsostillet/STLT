@@ -166,6 +166,8 @@ if(STLTVJ_BUILD_APP)
 add_library(stltvj-core STATIC
     src/Composition.cpp
     src/Composition.h
+    src/History.cpp
+    src/History.h
     src/Settings.cpp
     src/Settings.h
     src/fx/BuiltinEffects.cpp
@@ -243,6 +245,12 @@ add_executable(output_test tests/output_test.cpp)
 target_link_libraries(output_test PRIVATE stltvj-core)
 add_test(NAME output_test COMMAND output_test)
 stltvj_ffmpeg_runtime(output_test)
+
+# Undo and redo.
+add_executable(history_test tests/history_test.cpp)
+target_link_libraries(history_test PRIVATE stltvj-core)
+add_test(NAME history_test COMMAND history_test)
+stltvj_ffmpeg_runtime(history_test)
 endif()
 
 # Headless tools: decode benchmark and tests for the media engine.

@@ -220,6 +220,7 @@ bool App::Init( const LaunchOptions& launch )
 			std::fprintf( stderr, "Ignoring --fx %s=%s\n", fx.scope.c_str(), fx.id.c_str() );
 	}
 	lastTime = startTime = glfwGetTime();
+	history.Reset( Snapshot() );
 	return true;
 }
 
@@ -395,6 +396,7 @@ void App::NewComposition()
 {
 	composition     = Composition::MakeDefault();
 	compositionPath.clear();
+	history.Reset( Snapshot() );
 	SetStatus( "New composition" );
 }
 
@@ -421,6 +423,7 @@ bool App::OpenComposition( const std::string& path )
 	}
 	composition = std::move( loaded );
 	RestoreEffects();
+	history.Reset( Snapshot() );
 	int failures = 0;
 	for( Layer& layer : composition.layers )
 		for( Clip& clip : layer.clips )
@@ -452,6 +455,168 @@ bool App::OpenComposition( const std::string& path )
 	if( missing )
 		failures += missing;
 	SetStatus( failures ? "Opened " + path + " (" + std::to_string( failures ) + " clips missing or unsupported)" : "Opened " + path, failures > 0 );
+	return true;
+}
+
+History::State App::Snapshot() const
+{
+	return { SaveComposition( composition ), SaveAdvancedOutput( advancedOutput ) };
+}
+
+namespace
+{
+// Every animation off: an effect taking an earlier state gets exactly the animations that state had.
+void ClearAnimations( Effect& effect )
+{
+	for( size_t i = 0; i < effect.Params().size(); ++i )
+		effect.Anim( (int)i ) = Animation{};
+}
+
+// Hands the live effects of `old` to the matching slots of `fresh` (same effect, in order), with fresh's settings.
+void ReuseEffects( EffectChain& fresh, EffectChain* old )
+{
+	if( !old )
+		return;
+	std::vector< bool > used( old->size(), false );
+	for( EffectSlot& slot : fresh )
+		for( size_t i = 0; i < old->size(); ++i )
+			if( !used[ i ] && ( *old )[ i ].effect && ( *old )[ i ].effect->Id() == slot.missingId )
+			{
+				used[ i ]   = true;
+				slot.effect = std::move( ( *old )[ i ].effect );
+				ClearAnimations( *slot.effect );
+				LoadEffectState( *slot.effect, slot.savedState );
+				slot.missingId.clear();
+				slot.savedState.clear();
+				break;
+			}
+}
+}
+
+void App::RestoreComposition( const std::string& text )
+{
+	Composition fresh;
+	std::string error;
+	if( !LoadComposition( text, fresh, error ) )
+		return;
+	// The clips still there keep their players and generators: matched where they were, else anywhere.
+	std::vector< Clip* > taken;
+	auto same = [ & ]( const Clip& a, const Clip& b ) {
+		return !b.Empty() && a.path == b.path && a.generatorId == b.generatorId && std::find( taken.begin(), taken.end(), &b ) == taken.end();
+	};
+	auto find = [ & ]( const Clip& want, int l, int c ) -> Clip* {
+		if( l < (int)composition.layers.size() && c < (int)composition.layers[ l ].clips.size() && same( want, composition.layers[ l ].clips[ c ] ) )
+			return &composition.layers[ l ].clips[ c ];
+		for( Layer& layer : composition.layers )
+			for( Clip& clip : layer.clips )
+				if( same( want, clip ) )
+					return &clip;
+		return nullptr;
+	};
+	// The clip each layer plays, to follow it if the restored state has it in another column.
+	std::vector< const Clip* > playing( fresh.layers.size(), nullptr );
+	std::vector< int > follow( fresh.layers.size(), -1 );
+	for( int l = 0; l < (int)fresh.layers.size() && l < (int)composition.layers.size(); ++l )
+	{
+		const Layer& layer = composition.layers[ l ];
+		if( layer.active >= 0 && layer.active < (int)layer.clips.size() )
+			playing[ l ] = &layer.clips[ layer.active ];
+	}
+	for( int l = 0; l < (int)fresh.layers.size(); ++l )
+	{
+		Layer& layer = fresh.layers[ l ];
+		ReuseEffects( layer.effects, l < (int)composition.layers.size() ? &composition.layers[ l ].effects : nullptr );
+		for( int c = 0; c < (int)layer.clips.size(); ++c )
+		{
+			Clip& clip = layer.clips[ c ];
+			if( clip.Empty() )
+				continue;
+			Clip* old = find( clip, l, c );
+			if( !old )
+				continue;
+			taken.push_back( old );
+			if( old == playing[ l ] )
+				follow[ l ] = c;
+			clip.player             = std::move( old->player );
+			clip.generatorThumbnail = std::move( old->generatorThumbnail );
+			clip.time               = old->time;
+			clip.bounceSign         = old->bounceSign;
+			clip.finished           = old->finished;
+			if( old->generator )
+			{
+				clip.generator = std::move( old->generator );
+				ClearAnimations( *clip.generator );
+				LoadEffectState( *clip.generator, clip.generatorState );
+			}
+			ReuseEffects( clip.effects, &old->effects );
+		}
+	}
+	ReuseEffects( fresh.effects, &composition.effects );
+
+	// What plays and what is selected stays, where it still exists.
+	for( int l = 0; l < (int)fresh.layers.size() && l < (int)composition.layers.size(); ++l )
+	{
+		Layer& layer  = fresh.layers[ l ];
+		int active    = follow[ l ] >= 0 ? follow[ l ] : composition.layers[ l ].active;
+		layer.active  = active >= 0 && active < (int)layer.clips.size() && !layer.clips[ active ].Empty() ? active : -1;
+		layer.solo    = composition.layers[ l ].solo;
+	}
+	fresh.beat           = composition.beat;
+	fresh.paused         = composition.paused;
+	fresh.selectedLayer  = std::clamp( composition.selectedLayer, 0, std::max( (int)fresh.layers.size() - 1, 0 ) );
+	fresh.selectedColumn = composition.selectedColumn < fresh.ColumnCount() ? composition.selectedColumn : -1;
+	fresh.activeColumn   = composition.activeColumn < fresh.ColumnCount() ? composition.activeColumn : -1;
+	composition          = std::move( fresh );
+
+	RestoreEffects(); // creates the effects and generators that were not there
+	for( Layer& layer : composition.layers )
+		for( Clip& clip : layer.clips )
+			if( !clip.path.empty() && !clip.player )
+			{
+				clip.player = std::make_unique< ClipPlayer >();
+				if( clip.player->Open( clip.path ) )
+					compositor.MakeThumbnail( *clip.player );
+			}
+}
+
+bool App::Undo()
+{
+	if( ImGui::GetDragDropPayload() )
+		return false; // a drag holds pointers into the composition
+	History::State before;
+	if( !history.Undo( Snapshot(), before ) )
+		return false;
+	std::string label  = history.RedoLabel(); // the step just undone
+	History::State now = Snapshot();
+	if( before.composition != now.composition )
+		RestoreComposition( before.composition );
+	if( before.output != now.output )
+	{
+		std::string error;
+		LoadAdvancedOutput( before.output, advancedOutput, error );
+	}
+	history.Settle( Snapshot() );
+	SetStatus( "Undo " + label );
+	return true;
+}
+
+bool App::Redo()
+{
+	if( ImGui::GetDragDropPayload() )
+		return false; // a drag holds pointers into the composition
+	History::State after;
+	if( !history.Redo( Snapshot(), after ) )
+		return false;
+	History::State now = Snapshot();
+	if( after.composition != now.composition )
+		RestoreComposition( after.composition );
+	if( after.output != now.output )
+	{
+		std::string error;
+		LoadAdvancedOutput( after.output, advancedOutput, error );
+	}
+	history.Settle( Snapshot() );
+	SetStatus( "Redo " + history.UndoLabel() );
 	return true;
 }
 
@@ -719,6 +884,12 @@ void App::Frame()
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
 	DrawUi();
+	// An edit has ended when nothing is held or being typed into: record it (and, every few frames, catch
+	// keyboard edits such as nudges).
+	bool editing = ImGui::IsAnyItemActive() || ImGui::IsMouseDown( ImGuiMouseButton_Left ) || ImGui::IsMouseDown( ImGuiMouseButton_Right );
+	if( !editing && ( wasEditing || frameCount % 20 == 0 ) )
+		history.Record( Snapshot() );
+	wasEditing = editing;
 	ImGui::Render();
 
 	int width = 0, height = 0;

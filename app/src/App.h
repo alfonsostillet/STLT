@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include "Composition.h"
+#include "History.h"
 #include "fx/EffectRegistry.h"
 #include "render/Compositor.h"
 #include "render/Fbo.h"
@@ -79,6 +80,12 @@ public:
 	bool ImportResolumeOutput( const std::string& path );
 	std::string OutputPresetDirectory() const;
 
+	// Undo and redo of the composition and the output setup (Ctrl+Z, Ctrl+Shift+Z or Ctrl+Y). Steps are recorded
+	// when an edit ends: a value dragged, a field left, a menu choice, a drop.
+	bool Undo();
+	bool Redo();
+	History history;
+
 	// Panel state.
 	Composition composition;
 	Compositor compositor;
@@ -112,6 +119,11 @@ private:
 	ClipPlayer* PlayerAt( int layer, int column );
 	void RestoreEffects(); // turns the effects of a just-loaded composition into live ones
 	void SavePluginFolders() const;
+	History::State Snapshot() const;
+	// Takes a composition back to an earlier state, keeping the players, generators and effects that are still
+	// there (playback goes on) and opening the rest.
+	void RestoreComposition( const std::string& text );
+	bool wasEditing = false;
 
 	LaunchOptions options;
 	double lastTime  = 0;

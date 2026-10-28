@@ -302,6 +302,16 @@ void DrawMainMenu( App& app )
 				app.quitRequested = true;
 			ImGui::EndMenu();
 		}
+		if( ImGui::BeginMenu( "Edit" ) )
+		{
+			std::string undo = app.history.CanUndo() ? "Undo " + app.history.UndoLabel() : "Undo";
+			std::string redo = app.history.CanRedo() ? "Redo " + app.history.RedoLabel() : "Redo";
+			if( ImGui::MenuItem( undo.c_str(), "Ctrl+Z", false, app.history.CanUndo() ) )
+				app.Undo();
+			if( ImGui::MenuItem( redo.c_str(), "Ctrl+Shift+Z", false, app.history.CanRedo() ) )
+				app.Redo();
+			ImGui::EndMenu();
+		}
 		if( ImGui::BeginMenu( "Layer" ) )
 		{
 			if( ImGui::MenuItem( "New Layer" ) )
@@ -377,6 +387,16 @@ void DrawMainMenu( App& app )
 	ImGuiIO& io = ImGui::GetIO();
 	if( io.KeyCtrl && ImGui::IsKeyPressed( ImGuiKey_O, false ) )
 		openComposition = true;
+	// Text fields keep their own undo.
+	if( io.KeyCtrl && !io.WantTextInput && ImGui::IsKeyPressed( ImGuiKey_Z, false ) )
+	{
+		if( io.KeyShift )
+			app.Redo();
+		else
+			app.Undo();
+	}
+	if( io.KeyCtrl && !io.WantTextInput && ImGui::IsKeyPressed( ImGuiKey_Y, false ) )
+		app.Redo();
 	if( io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed( ImGuiKey_A, false ) )
 		app.panels.advancedOutput = !app.panels.advancedOutput;
 	if( io.KeyCtrl && ImGui::IsKeyPressed( ImGuiKey_I, false ) )
