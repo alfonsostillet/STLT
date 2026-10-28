@@ -672,7 +672,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ## Syphon Framework 5 — STLT-VJ app, macOS
 
-https://github.com/Syphon/Syphon-Framework
+https://github.com/Syphon/Syphon-Framework (commit f4761677a45b8034a3c2069ec0f3d2553da81fba)
 
 ```
 Syphon Framework License:

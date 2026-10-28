@@ -299,8 +299,8 @@ if(WIN32)
 elseif(APPLE)
     FetchContent_Declare(syphon
         GIT_REPOSITORY https://github.com/Syphon/Syphon-Framework.git
-        GIT_TAG 5
-        GIT_SHALLOW TRUE
+        # Syphon 5 from its main branch (the tag named 5 is an older tree, without SyphonOpenGLServer and ARC).
+        GIT_TAG f4761677a45b8034a3c2069ec0f3d2553da81fba
         SOURCE_SUBDIR no-cmake) # an Xcode project: its OpenGL sources are built below
     FetchContent_MakeAvailable(syphon)
     file(GLOB SYPHON_SOURCES "${syphon_SOURCE_DIR}/*.m" "${syphon_SOURCE_DIR}/*.c")
@@ -310,7 +310,7 @@ elseif(APPLE)
     file(MAKE_DIRECTORY "${CMAKE_BINARY_DIR}/syphon-include")
     file(CREATE_LINK "${syphon_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/syphon-include/Syphon" SYMBOLIC)
     target_include_directories(syphon PUBLIC "${CMAKE_BINARY_DIR}/syphon-include" "${syphon_SOURCE_DIR}")
-    target_compile_definitions(syphon PUBLIC SYPHON_CORE_SHARE)
+    target_compile_definitions(syphon PUBLIC SYPHON_CORE_SHARE PRIVATE GL_SILENCE_DEPRECATION)
     target_compile_options(syphon PRIVATE -fobjc-arc -include "${syphon_SOURCE_DIR}/Syphon_Prefix.pch" -w)
     target_link_libraries(syphon PUBLIC "-framework Cocoa" "-framework IOSurface" "-framework OpenGL")
     target_sources(stltvj-core PRIVATE src/output/SyphonSharing.mm)
