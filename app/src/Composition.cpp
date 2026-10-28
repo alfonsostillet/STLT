@@ -24,45 +24,93 @@ const char* FitModeName( FitMode mode )
 	return names[ std::clamp( (int)mode, 0, (int)FitMode::Count - 1 ) ];
 }
 
+const char* TransitionModeName( TransitionMode mode )
+{
+	static const char* names[] = { "Fade", "Fade Through Black", "Wipe Left", "Wipe Right", "Wipe Up", "Wipe Down" };
+	return names[ std::clamp( (int)mode, 0, (int)TransitionMode::Count - 1 ) ];
+}
+
+const char* LaunchQuantizeName( LaunchQuantize quantize )
+{
+	static const char* names[] = { "Now", "Beat", "Bar" };
+	return names[ std::clamp( (int)quantize, 0, (int)LaunchQuantize::Count - 1 ) ];
+}
+
+const char* ClipPropertyName( ClipProperty property )
+{
+	static const char* names[] = { "opacity", "positionX", "positionY", "scale", "rotation" };
+	return names[ std::clamp( (int)property, 0, (int)ClipProperty::Count - 1 ) ];
+}
+
+double Clip::RangeStart() const
+{
+	return std::clamp( inPoint, 0.0, Duration() );
+}
+
+double Clip::RangeEnd() const
+{
+	double duration = Duration();
+	double end      = outPoint < 0 ? duration : std::clamp( outPoint, 0.0, duration );
+	return std::max( end, std::min( duration, RangeStart() + 1e-3 ) );
+}
+
+double Clip::Rate( double bpm ) const
+{
+	if( syncBeats > 0 && bpm > 0 )
+		return ( RangeEnd() - RangeStart() ) / ( syncBeats * 60.0 / bpm );
+	return speed;
+}
+
 void Clip::Restart()
 {
-	time       = direction < 0 ? Duration() : 0.0;
+	time       = direction < 0 ? RangeEnd() : RangeStart();
+	bounceSign = 1;
+	finished   = false;
+}
+
+void Clip::JumpTo( double seconds )
+{
+	time       = std::clamp( seconds, RangeStart(), RangeEnd() );
 	bounceSign = 1;
 	finished   = false;
 }
 
 int Clip::PlayDirection() const
 {
-	if( finished || direction == 0 || speed == 0 )
+	float rate = syncBeats > 0 ? 1.0f : speed;
+	if( finished || direction == 0 || rate == 0 )
 		return 0;
-	return direction * bounceSign * ( speed < 0 ? -1 : 1 );
+	return direction * bounceSign * ( rate < 0 ? -1 : 1 );
 }
 
-void Clip::Advance( double seconds )
+void Clip::Advance( double seconds, double bpm )
 {
-	double duration = Duration();
-	if( duration <= 0 || direction == 0 || finished )
+	double start = RangeStart(), end = RangeEnd(), length = end - start;
+	if( Duration() <= 0 || direction == 0 || finished || length <= 0 )
 		return;
-	time += seconds * speed * direction * bounceSign;
+	time += seconds * Rate( bpm ) * direction * bounceSign;
 	switch( playMode )
 	{
 	case PlayMode::Loop:
-		time = std::fmod( time, duration );
-		if( time < 0 )
-			time += duration;
+		// Anywhere outside the range (the in or out point moved past the playhead) comes back into it.
+		time = start + std::fmod( time - start, length );
+		if( time < start )
+			time += length;
 		break;
 	case PlayMode::Bounce:
-		for( int guard = 0; guard < 4 && ( time < 0 || time > duration ); ++guard )
+		if( time < start - length || time > end + length )
+			time = std::clamp( time, start, end );
+		for( int guard = 0; guard < 4 && ( time < start || time > end ); ++guard )
 		{
-			time       = time < 0 ? -time : 2 * duration - time;
+			time       = time < start ? 2 * start - time : 2 * end - time;
 			bounceSign = -bounceSign;
 		}
-		time = std::clamp( time, 0.0, duration );
+		time = std::clamp( time, start, end );
 		break;
 	case PlayMode::Once:
-		if( time < 0 || time >= duration )
+		if( time < start || time >= end )
 		{
-			time     = std::clamp( time, 0.0, duration );
+			time     = std::clamp( time, start, end );
 			finished = true;
 		}
 		break;
@@ -75,6 +123,54 @@ int64_t Clip::CurrentFrame() const
 	if( !Loaded() )
 		return 0;
 	return (int64_t)player->Source().FrameAt( time );
+}
+
+float Clip::Value( ClipProperty property ) const
+{
+	switch( property )
+	{
+	case ClipProperty::Opacity: return opacity;
+	case ClipProperty::PositionX: return positionX;
+	case ClipProperty::PositionY: return positionY;
+	case ClipProperty::Scale: return scale;
+	case ClipProperty::Rotation: return rotation;
+	default: return 0;
+	}
+}
+
+void Clip::PropertyRange( ClipProperty property, float compWidth, float compHeight, float& min, float& max )
+{
+	switch( property )
+	{
+	case ClipProperty::Opacity: min = 0, max = 1; break;
+	case ClipProperty::PositionX: min = -compWidth / 2, max = compWidth / 2; break;
+	case ClipProperty::PositionY: min = -compHeight / 2, max = compHeight / 2; break;
+	case ClipProperty::Scale: min = 0, max = 2; break;
+	case ClipProperty::Rotation: min = -180, max = 180; break;
+	default: min = 0, max = 1; break;
+	}
+}
+
+float Clip::Shown( ClipProperty property, double beat, float compWidth, float compHeight ) const
+{
+	const Animation& a = animations[ (int)property ];
+	if( a.mode == AnimMode::Off )
+		return Value( property );
+	float min, max;
+	PropertyRange( property, compWidth, compHeight, min, max );
+	return min + ( max - min ) * a.Evaluate( beat );
+}
+
+float Layer::ShownOpacity( double beat ) const
+{
+	return opacityAnimation.mode == AnimMode::Off ? opacity : opacityAnimation.Evaluate( beat );
+}
+
+double Layer::TransitionSeconds( double bpm ) const
+{
+	if( transitionDuration <= 0 )
+		return 0;
+	return transitionInBeats ? transitionDuration * 60.0 / std::max( bpm, 1.0 ) : transitionDuration;
 }
 
 Composition Composition::MakeDefault()
@@ -164,6 +260,27 @@ static EffectChain LoadChain( const nlohmann::json& list )
 	return chain;
 }
 
+static nlohmann::json SaveAnimation( const Animation& a )
+{
+	return { { "mode", AnimModeName( a.mode ) }, { "beats", a.beats }, { "from", a.from }, { "to", a.to }, { "reverse", a.reverse } };
+}
+
+static Animation LoadAnimation( const nlohmann::json& j )
+{
+	Animation a;
+	if( !j.is_object() )
+		return a;
+	std::string mode = j.value( "mode", "" );
+	for( int m = 0; m < (int)AnimMode::Count; ++m )
+		if( mode == AnimModeName( (AnimMode)m ) )
+			a.mode = (AnimMode)m;
+	a.beats   = j.value( "beats", 4.0f );
+	a.from    = j.value( "from", 0.0f );
+	a.to      = j.value( "to", 1.0f );
+	a.reverse = j.value( "reverse", false );
+	return a;
+}
+
 std::string SaveComposition( const Composition& c )
 {
 	using nlohmann::json;
@@ -177,6 +294,7 @@ std::string SaveComposition( const Composition& c )
 	root[ "audioVolume" ] = c.audioVolume;
 	root[ "speed" ]   = c.speed;
 	root[ "bpm" ]     = c.bpm;
+	root[ "launchQuantize" ] = LaunchQuantizeName( c.quantize );
 	root[ "columns" ] = c.columns;
 	root[ "effects" ] = SaveChain( c.effects );
 	json layers       = json::array();
@@ -189,6 +307,9 @@ std::string SaveComposition( const Composition& c )
 		l[ "blend" ]   = BlendModeName( layer.blend );
 		l[ "bypass" ]  = layer.bypass;
 		l[ "effects" ] = SaveChain( layer.effects );
+		if( layer.opacityAnimation.mode != AnimMode::Off )
+			l[ "opacityAnimation" ] = SaveAnimation( layer.opacityAnimation );
+		l[ "transition" ] = { { "mode", TransitionModeName( layer.transition ) }, { "duration", layer.transitionDuration }, { "beats", layer.transitionInBeats } };
 		json clips     = json::array();
 		for( const Clip& clip : layer.clips )
 		{
@@ -215,6 +336,27 @@ std::string SaveComposition( const Composition& c )
 			k[ "scale" ]     = clip.scale;
 			k[ "rotation" ]  = clip.rotation;
 			k[ "volume" ]    = clip.volume;
+			if( clip.inPoint > 0 )
+				k[ "in" ] = clip.inPoint;
+			if( clip.outPoint >= 0 )
+				k[ "out" ] = clip.outPoint;
+			json cues = json::array();
+			bool anyCue = false;
+			for( double cue : clip.cues )
+			{
+				cues.push_back( cue >= 0 ? json( cue ) : json( nullptr ) );
+				anyCue |= cue >= 0;
+			}
+			if( anyCue )
+				k[ "cues" ] = cues;
+			if( clip.syncBeats > 0 )
+				k[ "syncBeats" ] = clip.syncBeats;
+			json animations = json::object();
+			for( int p = 0; p < (int)ClipProperty::Count; ++p )
+				if( clip.animations[ p ].mode != AnimMode::Off )
+					animations[ ClipPropertyName( (ClipProperty)p ) ] = SaveAnimation( clip.animations[ p ] );
+			if( !animations.empty() )
+				k[ "animations" ] = animations;
 			k[ "effects" ]   = SaveChain( clip.effects );
 			clips.push_back( k );
 		}
@@ -253,6 +395,7 @@ bool LoadComposition( const std::string& text, Composition& out, std::string& er
 	c.audioVolume = std::clamp( root.value( "audioVolume", 1.0f ), 0.0f, 1.0f );
 	c.speed   = root.value( "speed", c.speed );
 	c.bpm     = root.value( "bpm", c.bpm );
+	c.quantize = ByName( root.value( "launchQuantize", json() ), LaunchQuantizeName, LaunchQuantize::Now );
 	if( root.contains( "effects" ) )
 		c.effects = LoadChain( root[ "effects" ] );
 	if( root.contains( "columns" ) && root[ "columns" ].is_array() )
@@ -269,6 +412,15 @@ bool LoadComposition( const std::string& text, Composition& out, std::string& er
 			layer.bypass  = l.value( "bypass", false );
 			if( l.contains( "effects" ) )
 				layer.effects = LoadChain( l[ "effects" ] );
+			if( l.contains( "opacityAnimation" ) )
+				layer.opacityAnimation = LoadAnimation( l[ "opacityAnimation" ] );
+			if( l.contains( "transition" ) && l[ "transition" ].is_object() )
+			{
+				const json& t            = l[ "transition" ];
+				layer.transition         = ByName( t.value( "mode", json() ), TransitionModeName, TransitionMode::Fade );
+				layer.transitionDuration = std::max( 0.0f, t.value( "duration", 0.0f ) );
+				layer.transitionInBeats  = t.value( "beats", false );
+			}
 			if( l.contains( "clips" ) && l[ "clips" ].is_array() )
 				for( const json& k : l[ "clips" ] )
 				{
@@ -297,6 +449,16 @@ bool LoadComposition( const std::string& text, Composition& out, std::string& er
 						clip.scale    = k.value( "scale", 1.0f );
 						clip.rotation = k.value( "rotation", 0.0f );
 						clip.volume   = std::clamp( k.value( "volume", 1.0f ), 0.0f, 1.0f );
+						clip.inPoint  = std::max( 0.0, k.value( "in", 0.0 ) );
+						clip.outPoint = k.value( "out", -1.0 );
+						if( k.contains( "cues" ) && k[ "cues" ].is_array() )
+							for( int i = 0; i < kCuePoints && i < (int)k[ "cues" ].size(); ++i )
+								clip.cues[ i ] = k[ "cues" ][ i ].is_number() ? k[ "cues" ][ i ].get< double >() : -1.0;
+						clip.syncBeats = std::max( 0.0f, k.value( "syncBeats", 0.0f ) );
+						if( k.contains( "animations" ) && k[ "animations" ].is_object() )
+							for( int p = 0; p < (int)ClipProperty::Count; ++p )
+								if( k[ "animations" ].contains( ClipPropertyName( (ClipProperty)p ) ) )
+									clip.animations[ p ] = LoadAnimation( k[ "animations" ][ ClipPropertyName( (ClipProperty)p ) ] );
 					}
 					layer.clips.push_back( std::move( clip ) );
 				}

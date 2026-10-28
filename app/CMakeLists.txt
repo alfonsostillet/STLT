@@ -385,6 +385,13 @@ target_compile_definitions(audio_test PRIVATE FIXTURES_DIR="${CMAKE_CURRENT_SOUR
 add_test(NAME audio_test COMMAND audio_test)
 stltvj_ffmpeg_runtime(audio_test)
 
+# Clip ranges, cue points, BPM sync, beat animations, transitions.
+add_executable(clip_test tests/clip_test.cpp)
+target_link_libraries(clip_test PRIVATE stltvj-core)
+target_compile_definitions(clip_test PRIVATE FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
+add_test(NAME clip_test COMMAND clip_test)
+stltvj_ffmpeg_runtime(clip_test)
+
 # Undo and redo.
 add_executable(history_test tests/history_test.cpp)
 target_link_libraries(history_test PRIVATE stltvj-core)

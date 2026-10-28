@@ -9,7 +9,7 @@ namespace stltvj
 bool ControlTarget::IsButton() const
 {
 	return kind == Kind::ClipConnect || kind == Kind::ColumnConnect || kind == Kind::LayerClear || kind == Kind::TempoTap || kind == Kind::Resync
-	       || kind == Kind::Stop;
+	       || kind == Kind::Stop || kind == Kind::ClipCue || kind == Kind::LayerCue;
 }
 
 bool ControlTarget::IsSwitch() const
@@ -140,6 +140,23 @@ bool ParseControlAddress( const std::string& address, ControlTarget& t )
 			t.kind = Kind::LayerOpacity;
 		else if( n == 5 && p[ 3 ] == "audio" && p[ 4 ] == "volume" )
 			t.kind = Kind::LayerVolume;
+		else if( n == 5 && p[ 3 ] == "transition" && p[ 4 ] == "duration" )
+			t.kind = Kind::LayerTransition;
+		else if( n == 5 && p[ 3 ] == "cue" )
+		{
+			t.slot = Index( p[ 4 ] );
+			if( t.slot < 0 || t.slot >= 8 ) // the 8 cue points of a clip
+				return false;
+			t.kind = Kind::LayerCue;
+		}
+		else if( n == 7 && p[ 3 ] == "clips" && p[ 5 ] == "cue" )
+		{
+			t.column = Index( p[ 4 ] );
+			t.slot   = Index( p[ 6 ] );
+			if( t.column < 0 || t.slot < 0 || t.slot >= 8 ) // the 8 cue points of a clip
+				return false;
+			t.kind = Kind::ClipCue;
+		}
 		else if( n == 7 && p[ 3 ] == "clips" && p[ 5 ] == "audio" && p[ 6 ] == "volume" )
 		{
 			t.column = Index( p[ 4 ] );

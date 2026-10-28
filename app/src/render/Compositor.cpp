@@ -114,6 +114,35 @@ void main()
 }
 )";
 
+// From the outgoing clip (uFrom) to the incoming one (uTo), both premultiplied. Modes match TransitionMode.
+const char* kTransitionFragment = R"(
+uniform sampler2D uFrom;
+uniform sampler2D uTo;
+uniform int uMode;
+uniform float uProgress;
+in vec2 vUv;
+out vec4 fragColor;
+void main()
+{
+	vec4 a = texture( uFrom, vUv );
+	vec4 b = texture( uTo, vUv );
+	float t = clamp( uProgress, 0.0, 1.0 );
+	if( uMode == 1 )
+	{
+		fragColor = t < 0.5 ? a * ( 1.0 - 2.0 * t ) : b * ( 2.0 * t - 1.0 );
+		return;
+	}
+	if( uMode >= 2 )
+	{
+		// Wipes: the new clip slides its edge across, with a soft edge of 2 %.
+		float x = uMode == 2 ? 1.0 - vUv.x : uMode == 3 ? vUv.x : uMode == 4 ? vUv.y : 1.0 - vUv.y;
+		float edge = t * 1.02;
+		t = 1.0 - smoothstep( edge - 0.02, edge, x );
+	}
+	fragColor = mix( a, b, t );
+}
+)";
+
 void Identity( float m[ 9 ] )
 {
 	const float identity[ 9 ] = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
@@ -180,6 +209,14 @@ bool Compositor::Init( std::string& error )
 		error = "copy shader " + copyProgram.Error();
 		return false;
 	}
+	if( !transitionProgram.Build( kQuadVertexShader, kTransitionFragment ) )
+	{
+		error = "transition shader " + transitionProgram.Error();
+		return false;
+	}
+	transitionProgram.Use();
+	glUniform1i( transitionProgram.Uniform( "uFrom" ), 0 );
+	glUniform1i( transitionProgram.Uniform( "uTo" ), 1 );
 	clipProgram.Use();
 	glUniform1i( clipProgram.Uniform( "uTex0" ), 0 );
 	glUniform1i( clipProgram.Uniform( "uTex1" ), 1 );
@@ -198,6 +235,8 @@ void Compositor::Shutdown()
 {
 	layerTarget.Release();
 	layerScratch.Release();
+	transitionFrom.Release();
+	transitionTo.Release();
 	mix[ 0 ].Release();
 	mix[ 1 ].Release();
 	final.Release();
@@ -325,6 +364,13 @@ Fbo* Compositor::RenderClipSource( Clip& clip, int compWidth, int compHeight, co
 void Compositor::DrawClipInto( Clip& clip, Fbo& target, const FrameInfo& frame, int compWidth, int compHeight, bool forceFit )
 {
 	float W = (float)target.Width(), H = (float)target.Height();
+	// Opacity and transform as they are on this beat (beat animations).
+	struct
+	{
+		float opacity, x, y, scale, rotation;
+	} shown = { clip.Shown( ClipProperty::Opacity, frame.beat, W, H ), clip.Shown( ClipProperty::PositionX, frame.beat, W, H ),
+		        clip.Shown( ClipProperty::PositionY, frame.beat, W, H ), clip.Shown( ClipProperty::Scale, frame.beat, W, H ),
+		        clip.Shown( ClipProperty::Rotation, frame.beat, W, H ) };
 	Fbo* source = RenderClipSource( clip, compWidth, compHeight, frame );
 	target.Bind();
 	glClearColor( 0, 0, 0, forceFit ? 1.0f : 0.0f );
@@ -336,11 +382,9 @@ void Compositor::DrawClipInto( Clip& clip, Fbo& target, const FrameInfo& frame, 
 		float w = (float)source->Width(), h = (float)source->Height();
 		if( forceFit )
 			PlaceClip( transform, w, h, W, H, FitMode::Fit, 1, 0, 0, 0 );
-		else if( clip.generator )
-			PlaceClip( transform, w, h, W, H, FitMode::Stretch, clip.scale, clip.rotation, clip.positionX, clip.positionY );
 		else
-			PlaceClip( transform, w, h, W, H, clip.fit, clip.scale, clip.rotation, clip.positionX, clip.positionY );
-		DrawTexture( source->Texture(), transform, forceFit ? 1.0f : clip.opacity );
+			PlaceClip( transform, w, h, W, H, clip.generator ? FitMode::Stretch : clip.fit, shown.scale, shown.rotation, shown.x, shown.y );
+		DrawTexture( source->Texture(), transform, forceFit ? 1.0f : shown.opacity );
 	}
 	else if( clip.Loaded() && clip.player->HasFrame() )
 	{
@@ -349,9 +393,9 @@ void Compositor::DrawClipInto( Clip& clip, Fbo& target, const FrameInfo& frame, 
 		if( forceFit )
 			PlaceClip( transform, w, h, W, H, FitMode::Fit, 1, 0, 0, 0 );
 		else
-			PlaceClip( transform, w, h, W, H, clip.fit, clip.scale, clip.rotation, clip.positionX, clip.positionY );
+			PlaceClip( transform, w, h, W, H, clip.fit, shown.scale, shown.rotation, shown.x, shown.y );
 		target.Bind();
-		DrawClip( player, transform, forceFit ? 1.0f : clip.opacity );
+		DrawClip( player, transform, forceFit ? 1.0f : shown.opacity );
 	}
 	glBindFramebuffer( GL_FRAMEBUFFER, 0 );
 }
@@ -371,15 +415,49 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame )
 	bool anySolo = std::any_of( composition.layers.begin(), composition.layers.end(), []( const Layer& l ) { return l.solo; } );
 	float identity[ 9 ];
 	Identity( identity );
+	auto ready = []( const Clip& clip ) { return clip.generator || ( clip.Loaded() && clip.player->HasFrame() ); };
 	for( Layer& layer : composition.layers )
 	{
-		if( layer.bypass || ( anySolo && !layer.solo ) || layer.active < 0 || layer.opacity <= 0 )
+		float opacity = layer.ShownOpacity( frame.beat );
+		if( layer.bypass || ( anySolo && !layer.solo ) || layer.active < 0 || opacity <= 0 )
 			continue;
-		Clip& clip = layer.clips[ layer.active ];
-		if( !clip.generator && !( clip.Loaded() && clip.player->HasFrame() ) )
+		Clip& clip     = layer.clips[ layer.active ];
+		Clip* outgoing = layer.previous >= 0 && layer.previous < (int)layer.clips.size() && layer.transitionProgress < 1 ? &layer.clips[ layer.previous ] : nullptr;
+		if( outgoing && !ready( *outgoing ) )
+			outgoing = nullptr;
+		if( !ready( clip ) && !outgoing )
 			continue;
 
-		DrawClipInto( clip, layerTarget, frame, W, H, false );
+		if( outgoing )
+		{
+			// A transition: both clips, mixed into the layer.
+			if( !transitionFrom.Ensure( W, H ) || !transitionTo.Ensure( W, H ) )
+				continue;
+			DrawClipInto( *outgoing, transitionFrom, frame, W, H, false );
+			if( ready( clip ) )
+				DrawClipInto( clip, transitionTo, frame, W, H, false );
+			else
+			{
+				transitionTo.Bind();
+				glClearColor( 0, 0, 0, 0 );
+				glClear( GL_COLOR_BUFFER_BIT );
+			}
+			layerTarget.Bind();
+			glBindVertexArray( vao );
+			transitionProgram.Use();
+			glUniformMatrix3fv( transitionProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
+			SetTexRect( transitionProgram, 0, 1, 1, 0 );
+			glUniform1i( transitionProgram.Uniform( "uMode" ), (int)layer.transition );
+			glUniform1f( transitionProgram.Uniform( "uProgress" ), layer.transitionProgress );
+			glActiveTexture( GL_TEXTURE1 );
+			glBindTexture( GL_TEXTURE_2D, transitionTo.Texture() );
+			glActiveTexture( GL_TEXTURE0 );
+			glBindTexture( GL_TEXTURE_2D, transitionFrom.Texture() );
+			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+			ResetGlState();
+		}
+		else
+			DrawClipInto( clip, layerTarget, frame, W, H, false );
 		Fbo* layerResult = ApplyChain( layer.effects, &layerTarget, &layerScratch, frame );
 
 		mix[ 1 - current ].Bind();
@@ -388,7 +466,7 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame )
 		glUniformMatrix3fv( blendProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
 		SetTexRect( blendProgram, 0, 1, 1, 0 );
 		glUniform1i( blendProgram.Uniform( "uMode" ), (int)layer.blend );
-		glUniform1f( blendProgram.Uniform( "uOpacity" ), layer.opacity );
+		glUniform1f( blendProgram.Uniform( "uOpacity" ), opacity );
 		glActiveTexture( GL_TEXTURE1 );
 		glBindTexture( GL_TEXTURE_2D, layerResult->Texture() );
 		glActiveTexture( GL_TEXTURE0 );

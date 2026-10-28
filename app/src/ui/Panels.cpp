@@ -633,6 +633,14 @@ void DrawToolbar( App& app )
 		ImGui::Dummy( ImVec2( radius * 2 + radius * 3.2f * 3, h ) );
 	}
 
+	// When launched clips start: at once, on the next beat or on the next bar.
+	ToolbarDivider();
+	ToolbarCaption( "Launch" );
+	ImGui::SetNextItemWidth( Ui( 74 ) );
+	EnumCombo( "##quantize", &comp.quantize, LaunchQuantizeName );
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "When a launched clip or column starts: now, on the next beat, or on the next bar (4 beats)" );
+
 	// Speed.
 	ToolbarDivider();
 	ToolbarCaption( "Speed" );
@@ -760,6 +768,8 @@ void DrawClipGrid( App& app )
 		ImU32 bg     = active ? theme::Accent : hovered ? theme::RaisedHover : theme::Raised;
 		ImVec2 max( pos.x + cellW, pos.y + h );
 		draw->AddRectFilled( pos, max, bg, h / 2 );
+		if( app.IsQueued( -1, c ) )
+			draw->AddRect( pos, max, IM_COL32( 255, 196, 80, (int)( 110 + 145 * ( 0.5f + 0.5f * std::sin( (float)ImGui::GetTime() * 12 ) ) ) ), h / 2, 0, Ui( 2 ) );
 		ImU32 fg = active ? theme::OnAccent : hovered ? theme::Text : theme::TextDim;
 		float icon = h * 0.62f;
 		DrawIcon( draw, Icon::Play, ImVec2( pos.x + Ui( 8 ), pos.y + ( h - icon ) / 2 ), ImVec2( pos.x + Ui( 8 ) + icon, pos.y + ( h + icon ) / 2 ), fg );
@@ -870,7 +880,8 @@ void DrawClipGrid( App& app )
 
 		ImGui::SetCursorScreenPos( ImVec2( stickyX + Ui( 12 ), row2 ) );
 		ImGui::SetNextItemWidth( innerW );
-		PercentSlider( "##opacity", &layer.opacity, 1.0f, "Opacity %.0f %%" );
+		float shownOpacity = layer.ShownOpacity( comp.beat ); // moving with the beat: shown, not edited
+		PercentSlider( "##opacity", layer.opacityAnimation.mode == AnimMode::Off ? &layer.opacity : &shownOpacity, 1.0f, "Opacity %.0f %%" );
 		MapTarget( app, layerAddress + "/video/opacity" );
 		ImGui::PopStyleVar();
 
@@ -952,6 +963,13 @@ void DrawClipGrid( App& app )
 				draw->AddRect( min, max, IM_COL32( 230, 233, 238, 160 ), round, 0, Ui( 1.5f ) );
 			else
 				draw->AddRect( min, max, theme::CellBorder, round );
+			if( app.IsQueued( l, c ) )
+			{
+				// Waiting for its beat: a pulsing frame.
+				float pulse = 0.5f + 0.5f * std::sin( (float)ImGui::GetTime() * 12 );
+				draw->AddRect( ImVec2( min.x - Ui( 1 ), min.y - Ui( 1 ) ), ImVec2( max.x + Ui( 1 ), max.y + Ui( 1 ) ), IM_COL32( 255, 196, 80, (int)( 110 + 145 * pulse ) ), round + Ui( 1 ), 0,
+				               Ui( 2 ) );
+			}
 
 			if( clicked )
 			{
@@ -1183,8 +1201,9 @@ void DrawLayerPanel( App& app )
 		ParamLabel( "Name" );
 		ImGui::InputText( "##name", &layer.name );
 		std::string layerAddress = "/composition/layers/" + std::to_string( l + 1 );
-		ParamLabel( "Opacity" );
-		PercentSlider( "##opacity", &layer.opacity );
+		AnimatedLabel( "Opacity", layer.opacityAnimation, 0, 1 );
+		float shownOpacity = layer.ShownOpacity( comp.beat );
+		PercentSlider( "##opacity", layer.opacityAnimation.mode == AnimMode::Off ? &layer.opacity : &shownOpacity );
 		MapTarget( app, layerAddress + "/video/opacity" );
 		ParamLabel( "Volume" );
 		PercentSlider( "##volume", &layer.volume );
@@ -1197,6 +1216,26 @@ void DrawLayerPanel( App& app )
 		ParamLabel( "Solo" );
 		ImGui::Checkbox( "##solo", &layer.solo );
 		MapTarget( app, layerAddress + "/solo" );
+		ImGui::EndTable();
+	}
+	if( ImGui::CollapsingHeader( "Transition", ImGuiTreeNodeFlags_DefaultOpen ) && BeginParams( "##transition" ) )
+	{
+		// How the next clip launched on this layer takes over from the one playing.
+		ParamLabel( "Duration" );
+		FilledSlider( "##duration", &layer.transitionDuration, 0, layer.transitionInBeats ? 16.0f : 10.0f, layer.transitionDuration <= 0 ? "Cut" : layer.transitionInBeats ? "%.2f beats" : "%.2f s",
+		              ImGuiSliderFlags_AlwaysClamp );
+		ResetValue( &layer.transitionDuration, 0 );
+		MapTarget( app, "/composition/layers/" + std::to_string( l + 1 ) + "/transition/duration" );
+		ParamLabel( "In Beats" );
+		if( ImGui::Checkbox( "##beats", &layer.transitionInBeats ) )
+		{
+			// The same length, in the other unit at the current tempo.
+			double factor             = comp.bpm / 60.0;
+			layer.transitionDuration = (float)( layer.transitionInBeats ? layer.transitionDuration * factor : layer.transitionDuration / factor );
+			layer.transitionDuration = std::clamp( layer.transitionDuration, 0.0f, layer.transitionInBeats ? 16.0f : 10.0f );
+		}
+		ParamLabel( "Type" );
+		EnumCombo( "##type", &layer.transition, TransitionModeName );
 		ImGui::EndTable();
 	}
 	if( ImGui::Button( "Clear Layer" ) )
@@ -1214,6 +1253,86 @@ void DrawLayerPanel( App& app )
 	if( ImGui::CollapsingHeader( "Effects", ImGuiTreeNodeFlags_DefaultOpen ) )
 		DrawEffectChain( app, layer.effects, "layerFx", "/composition/layers/" + std::to_string( l + 1 ) );
 	ImGui::End();
+}
+
+// The clip's timeline, as in Resolume: the range between the in and out triangles under the bar (drag them),
+// beat ticks (each beat of a BPM-synced clip, else quarters), cue points, and the playhead's triangle on top.
+// A click or drag anywhere else moves the playhead.
+static void Timeline( Clip& clip, float width )
+{
+	double duration = clip.Duration();
+	if( duration <= 0 || width < Ui( 40 ) )
+		return;
+	const float pad = Ui( 7 ), headH = Ui( 9 ), barH = Ui( 12 ), footH = Ui( 14 );
+	ImVec2 p        = ImGui::GetCursorScreenPos();
+	ImGui::InvisibleButton( "##timeline", ImVec2( width, headH + barH + footH ) );
+	ImGuiID id        = ImGui::GetItemID();
+	ImGuiStorage* mem = ImGui::GetStateStorage();
+	float x0 = p.x + pad, x1 = p.x + width - pad;
+	float barTop = p.y + headH, barBottom = barTop + barH;
+	auto xAt     = [ & ]( double t ) { return x0 + ( x1 - x0 ) * (float)( t / duration ); };
+	double mouseTime = std::clamp( (double)( ImGui::GetIO().MousePos.x - x0 ) / std::max( 1.0f, x1 - x0 ), 0.0, 1.0 ) * duration;
+	double start = clip.RangeStart(), end = clip.RangeEnd();
+	const double minimum = std::min( duration, 1.0 / 30 );
+
+	// What the press grabbed: 1 the in point, 2 the out point, 3 the playhead.
+	if( ImGui::IsItemActivated() )
+	{
+		float mx = ImGui::GetIO().MousePos.x;
+		bool low = ImGui::GetIO().MousePos.y >= barBottom - Ui( 2 );
+		float dIn = std::fabs( mx - xAt( start ) ), dOut = std::fabs( mx - xAt( end ) );
+		int grab  = low && std::min( dIn, dOut ) < Ui( 8 ) ? ( dIn <= dOut ? 1 : 2 ) : 3;
+		mem->SetInt( id, grab );
+	}
+	if( ImGui::IsItemActive() )
+	{
+		switch( mem->GetInt( id, 0 ) )
+		{
+		case 1: clip.inPoint = std::clamp( mouseTime, 0.0, end - minimum ); break;
+		case 2: clip.outPoint = mouseTime >= duration - 1e-3 ? -1.0 : std::clamp( mouseTime, start + minimum, duration ); break;
+		case 3: clip.JumpTo( mouseTime ); break;
+		}
+		start = clip.RangeStart();
+		end   = clip.RangeEnd();
+	}
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "%s\nDrag the triangles under the bar to set the in and out points", FormatTime( mouseTime ).c_str() );
+
+	ImDrawList* draw = ImGui::GetWindowDrawList();
+	draw->AddRectFilled( ImVec2( x0, barTop ), ImVec2( x1, barBottom ), IM_COL32( 20, 22, 26, 255 ), Ui( 3 ) );
+	draw->AddRectFilled( ImVec2( xAt( start ), barTop ), ImVec2( xAt( end ), barBottom ), theme::Raised, Ui( 3 ) );
+	// Elapsed part of the range.
+	if( clip.time > start )
+		draw->AddRectFilled( ImVec2( xAt( start ), barTop ), ImVec2( xAt( std::min( clip.time, end ) ), barBottom ), theme::AccentFill, Ui( 3 ) );
+	// Ticks: each beat of a synced clip (at most 64), otherwise the quarters of the range.
+	int ticks = clip.syncBeats > 0 ? std::min( 64, (int)std::ceil( clip.syncBeats ) ) : 4;
+	for( int i = 1; i < ticks; ++i )
+	{
+		float x = xAt( start + ( end - start ) * i / ticks );
+		draw->AddLine( ImVec2( x, barTop + Ui( 2 ) ), ImVec2( x, barBottom - Ui( 2 ) ), theme::Line, 1.0f );
+	}
+	// Cue points: a mark and its number.
+	for( int i = 0; i < kCuePoints; ++i )
+	{
+		if( clip.cues[ i ] < 0 || clip.cues[ i ] > duration )
+			continue;
+		float x = xAt( clip.cues[ i ] );
+		draw->AddLine( ImVec2( x, barTop ), ImVec2( x, barBottom ), theme::Warning, Ui( 1.5f ) );
+		char number[ 4 ];
+		std::snprintf( number, sizeof( number ), "%d", i + 1 );
+		ImVec2 size = ImGui::CalcTextSize( number );
+		draw->AddText( Fonts().mono, ImGui::GetFontSize() * 0.75f, ImVec2( x - size.x * 0.35f, barBottom + Ui( 1 ) ), theme::Warning, number );
+	}
+	// In and out triangles under the bar, pointing up; the playhead's above it, pointing down.
+	float t = Ui( 5 );
+	for( double at : { start, end } )
+	{
+		float x = xAt( at );
+		draw->AddTriangleFilled( ImVec2( x, barBottom ), ImVec2( x - t, barBottom + t * 1.6f ), ImVec2( x + t, barBottom + t * 1.6f ), theme::Accent );
+	}
+	float px = xAt( std::clamp( clip.time, 0.0, duration ) );
+	draw->AddTriangleFilled( ImVec2( px - t * 1.2f, barTop - t * 1.6f ), ImVec2( px + t * 1.2f, barTop - t * 1.6f ), ImVec2( px, barTop ), theme::Accent );
+	draw->AddLine( ImVec2( px, barTop ), ImVec2( px, barBottom ), theme::Text, Ui( 1.5f ) );
 }
 
 void DrawClipPanel( App& app )
@@ -1268,8 +1387,16 @@ void DrawClipPanel( App& app )
 			ImGui::TextColored( ImVec4( 0.95f, 0.7f, 0.3f, 1 ), "Not HAP: decoded on the CPU. Convert to HAP for the best performance." );
 	}
 
+	Composition& comp      = app.composition;
+	std::string clipAddress = "/composition/layers/" + std::to_string( comp.selectedLayer + 1 ) + "/clips/" + std::to_string( comp.selectedColumn + 1 );
 	if( clip->Loaded() && !clip->player->Source().IsStill() && ImGui::CollapsingHeader( "Transport", ImGuiTreeNodeFlags_DefaultOpen ) )
 	{
+		double duration = clip->Duration();
+		Timeline( *clip, ImGui::GetContentRegionAvail().x );
+		ImGui::TextDisabled( "%s / %s   frame %lld   in %s   out %s", FormatTime( clip->time ).c_str(), FormatTime( duration ).c_str(), (long long)clip->CurrentFrame(),
+		                     FormatTime( clip->RangeStart() ).c_str(), FormatTime( clip->RangeEnd() ).c_str() );
+
+		// Direction, loop mode, and how fast: free (speed) or fitted to a number of beats.
 		if( IconButton( "##reverse", Icon::Reverse, clip->direction < 0 ) )
 			clip->direction = -1;
 		ImGui::SameLine();
@@ -1282,40 +1409,139 @@ void DrawClipPanel( App& app )
 			clip->finished  = false;
 		}
 		ImGui::SameLine();
-		ImGui::SetNextItemWidth( Ui( 110 ) );
+		ImGui::SetNextItemWidth( Ui( 100 ) );
 		EnumCombo( "##playMode", &clip->playMode, PlayModeName );
-
-		float time     = (float)clip->time;
-		float duration = (float)clip->Duration();
-		std::string label = FormatTime( clip->time ) + " / " + FormatTime( duration ) + "   frame " + std::to_string( clip->CurrentFrame() );
-		ImGui::SetNextItemWidth( -FLT_MIN );
-		if( FilledSlider( "##time", &time, 0.0f, duration, label.c_str() ) )
+		ImGui::SameLine();
+		bool sync = clip->syncBeats > 0;
+		ImGui::SetNextItemWidth( Ui( 110 ) );
+		if( ImGui::BeginCombo( "##timing", sync ? "BPM Sync" : "Timeline" ) )
 		{
-			clip->time     = std::clamp( (double)time, 0.0, (double)duration );
-			clip->finished = false;
+			if( ImGui::Selectable( "Timeline", !sync ) )
+				clip->syncBeats = 0;
+			if( ImGui::Selectable( "BPM Sync", sync ) && !sync )
+			{
+				// The nearest power of two of beats at the current tempo.
+				double beats    = ( clip->RangeEnd() - clip->RangeStart() ) * comp.bpm / 60.0;
+				clip->syncBeats = std::clamp( std::exp2( std::round( std::log2( std::max( beats, 0.25 ) ) ) ), 0.25, 256.0 );
+			}
+			ImGui::EndCombo();
 		}
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "Timeline: plays at its speed. BPM Sync: the clip (between in and out) lasts a number of beats, whatever the tempo." );
 		if( BeginParams( "##transport" ) )
 		{
-			ParamLabel( "Speed" );
-			FilledSlider( "##speed", &clip->speed, 0.0f, 4.0f, "%.2f" );
-			ResetValue( &clip->speed, 1.0f );
-			ParamLabel( "Duration" );
-			ImGui::Text( "%s", FormatTime( duration ).c_str() );
+			if( sync )
+			{
+				ParamLabel( "Beats" );
+				ImGui::SetNextItemWidth( Ui( 70 ) );
+				float beats = clip->syncBeats;
+				if( ImGui::DragFloat( "##beats", &beats, 0.05f, 0.25f, 256, "%g" ) )
+					clip->syncBeats = std::clamp( beats, 0.25f, 256.0f );
+				for( auto [ label, factor, step ] : { std::tuple{ "-", 1.0f, -1.0f }, std::tuple{ "+", 1.0f, 1.0f }, std::tuple{ "/2", 0.5f, 0.0f }, std::tuple{ "x2", 2.0f, 0.0f } } )
+				{
+					ImGui::SameLine();
+					if( ImGui::Button( label ) )
+						clip->syncBeats = std::clamp( clip->syncBeats * factor + step, 0.25f, 256.0f );
+				}
+			}
+			else
+			{
+				ParamLabel( "Speed" );
+				FilledSlider( "##speed", &clip->speed, 0.0f, 4.0f, "%.2fx" );
+				ResetValue( &clip->speed, 1.0f );
+			}
 			ImGui::EndTable();
 		}
+
+		// In and out points: where the playhead is now (or drag the triangles under the timeline).
+		if( ImGui::Button( "Set In" ) )
+			clip->inPoint = std::min( clip->time, clip->RangeEnd() - 1e-3 );
+		ImGui::SameLine();
+		if( ImGui::Button( "Set Out" ) )
+			clip->outPoint = std::max( clip->time, clip->RangeStart() + 1e-3 );
+		ImGui::SameLine();
+		if( ImGui::Button( "Clear In/Out" ) )
+		{
+			clip->inPoint  = 0;
+			clip->outPoint = -1;
+		}
+
+		// Cue points: click an empty one to place it at the playhead, a set one to play from it; right-click clears.
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextUnformatted( "Cues" );
+		ImGui::SameLine();
+		float spacing = ImGui::GetStyle().ItemSpacing.x * 0.5f;
+		float width   = ( ImGui::GetContentRegionAvail().x - spacing * ( kCuePoints - 1 ) ) / kCuePoints;
+		for( int i = 0; i < kCuePoints; ++i )
+		{
+			ImGui::PushID( i );
+			if( i > 0 )
+				ImGui::SameLine( 0, spacing );
+			bool set = clip->cues[ i ] >= 0;
+			if( set )
+			{
+				ImGui::PushStyleColor( ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4( theme::AccentDim ) );
+				ImGui::PushStyleColor( ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4( theme::Accent ) );
+			}
+			char label[ 4 ];
+			std::snprintf( label, sizeof( label ), "%d", i + 1 );
+			if( ImGui::Button( label, ImVec2( width, 0 ) ) )
+			{
+				if( set )
+					app.JumpToCue( comp.selectedLayer, comp.selectedColumn, i );
+				else
+					clip->cues[ i ] = clip->time;
+			}
+			if( set )
+				ImGui::PopStyleColor( 2 );
+			if( set && ImGui::IsItemHovered() && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
+				clip->cues[ i ] = -1;
+			if( ImGui::IsItemHovered() && !app.learning )
+			{
+				if( set )
+					ImGui::SetTooltip( "Cue %d at %s\nClick: play from here (map it to a key or MIDI with Ctrl+M)\nRight-click: clear", i + 1, FormatTime( clip->cues[ i ] ).c_str() );
+				else
+					ImGui::SetTooltip( "Click: put cue %d here (%s)", i + 1, FormatTime( clip->time ).c_str() );
+			}
+			MapTarget( app, clipAddress + "/cue/" + std::to_string( i + 1 ) );
+			ImGui::PopID();
+		}
 	}
+
+	// Settings that can follow the beat: while one moves its slider shows where it is and takes no edits.
+	float W = (float)comp.width, H = (float)comp.height;
+	float shownValues[ (int)ClipProperty::Count ];
+	auto edited = [ & ]( ClipProperty p ) -> float* {
+		if( clip->animations[ (int)p ].mode == AnimMode::Off )
+		{
+			switch( p )
+			{
+			case ClipProperty::Opacity: return &clip->opacity;
+			case ClipProperty::PositionX: return &clip->positionX;
+			case ClipProperty::PositionY: return &clip->positionY;
+			case ClipProperty::Scale: return &clip->scale;
+			default: return &clip->rotation;
+			}
+		}
+		shownValues[ (int)p ] = clip->Shown( p, comp.beat, W, H );
+		return &shownValues[ (int)p ];
+	};
+	auto label = [ & ]( const char* text, ClipProperty p ) {
+		float lo, hi;
+		Clip::PropertyRange( p, W, H, lo, hi );
+		AnimatedLabel( text, clip->animations[ (int)p ], lo, hi );
+	};
 	if( ImGui::CollapsingHeader( "Video", ImGuiTreeNodeFlags_DefaultOpen ) && BeginParams( "##video" ) )
 	{
-		ParamLabel( "Opacity" );
-		PercentSlider( "##opacity", &clip->opacity );
+		label( "Opacity", ClipProperty::Opacity );
+		PercentSlider( "##opacity", edited( ClipProperty::Opacity ) );
 		ImGui::EndTable();
 	}
 	if( clip->audio && ImGui::CollapsingHeader( "Audio", ImGuiTreeNodeFlags_DefaultOpen ) && BeginParams( "##audio" ) )
 	{
 		ParamLabel( "Volume" );
 		PercentSlider( "##volume", &clip->volume );
-		MapTarget( app, "/composition/layers/" + std::to_string( app.composition.selectedLayer + 1 ) + "/clips/" + std::to_string( app.composition.selectedColumn + 1 ) +
-		                    "/audio/volume" );
+		MapTarget( app, clipAddress + "/audio/volume" );
 		ImGui::EndTable();
 		ImGui::TextDisabled( "Heard while it plays forwards; the speed changes the pitch." );
 	}
@@ -1326,31 +1552,37 @@ void DrawClipPanel( App& app )
 			ParamLabel( "Fit" );
 			EnumCombo( "##fit", &clip->fit, FitModeName );
 		}
-		ParamLabel( "Position X" );
-		ImGui::DragFloat( "##x", &clip->positionX, 1.0f, -16384, 16384, "%.0f" );
-		ResetValue( &clip->positionX, 0.0f );
-		ParamLabel( "Position Y" );
-		ImGui::DragFloat( "##y", &clip->positionY, 1.0f, -16384, 16384, "%.0f" );
-		ResetValue( &clip->positionY, 0.0f );
-		ParamLabel( "Scale" );
-		float scale = clip->scale * 100;
+		label( "Position X", ClipProperty::PositionX );
+		float* x = edited( ClipProperty::PositionX );
+		ImGui::DragFloat( "##x", x, 1.0f, -16384, 16384, "%.0f" );
+		ResetValue( x, 0.0f );
+		label( "Position Y", ClipProperty::PositionY );
+		float* y = edited( ClipProperty::PositionY );
+		ImGui::DragFloat( "##y", y, 1.0f, -16384, 16384, "%.0f" );
+		ResetValue( y, 0.0f );
+		label( "Scale", ClipProperty::Scale );
+		float* scaleValue = edited( ClipProperty::Scale );
+		float scale       = *scaleValue * 100;
 		if( ImGui::DragFloat( "##scale", &scale, 0.5f, 0, 1000, "%.1f %%" ) )
-			clip->scale = scale / 100;
-		ResetValue( &clip->scale, 1.0f );
-		ParamLabel( "Rotation" );
-		FilledSlider( "##rotation", &clip->rotation, -180, 180, "%.1f deg" );
-		ResetValue( &clip->rotation, 0.0f );
+			*scaleValue = scale / 100;
+		ResetValue( scaleValue, 1.0f );
+		label( "Rotation", ClipProperty::Rotation );
+		float* rotation = edited( ClipProperty::Rotation );
+		FilledSlider( "##rotation", rotation, -180, 180, "%.1f deg" );
+		ResetValue( rotation, 0.0f );
 		ParamLabel( "" );
 		if( ImGui::Button( "Reset Transform" ) )
 		{
 			clip->positionX = clip->positionY = clip->rotation = 0;
 			clip->scale                                        = 1;
+			for( ClipProperty p : { ClipProperty::PositionX, ClipProperty::PositionY, ClipProperty::Scale, ClipProperty::Rotation } )
+				clip->animations[ (int)p ] = Animation{};
 		}
 		ImGui::EndTable();
+		ImGui::TextDisabled( "Click a setting's name to animate it to the beat." );
 	}
 	if( ImGui::CollapsingHeader( "Effects", ImGuiTreeNodeFlags_DefaultOpen ) )
-		DrawEffectChain( app, clip->effects, "clipFx",
-		                 "/composition/layers/" + std::to_string( app.composition.selectedLayer + 1 ) + "/clips/" + std::to_string( app.composition.selectedColumn + 1 ) );
+		DrawEffectChain( app, clip->effects, "clipFx", clipAddress );
 	if( clip->Loaded() && ImGui::CollapsingHeader( "Playback Health" ) && BeginParams( "##health" ) )
 	{
 		ClipPlayer::Stats stats = clip->player->GetStats();

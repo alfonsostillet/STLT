@@ -33,6 +33,43 @@ enum class PlayMode
 };
 const char* PlayModeName( PlayMode mode );
 
+// How a playing clip gives way to the next one launched on its layer.
+enum class TransitionMode
+{
+	Fade,      // crossfade
+	FadeBlack, // out to black, then in
+	WipeLeft,  // the new clip comes in from the right
+	WipeRight,
+	WipeUp,
+	WipeDown,
+	Count
+};
+const char* TransitionModeName( TransitionMode mode );
+
+// When a launched clip starts: at once, or on the next beat or bar (4 beats).
+enum class LaunchQuantize
+{
+	Now,
+	Beat,
+	Bar,
+	Count
+};
+const char* LaunchQuantizeName( LaunchQuantize quantize );
+
+// The clip settings that can follow the beat.
+enum class ClipProperty
+{
+	Opacity,
+	PositionX,
+	PositionY,
+	Scale,
+	Rotation,
+	Count
+};
+const char* ClipPropertyName( ClipProperty property );
+
+constexpr int kCuePoints = 8;
+
 // How a clip fills the composition before its own transform.
 enum class FitMode
 {
@@ -58,6 +95,14 @@ struct Clip
 	float scale       = 1.0f;
 	float rotation    = 0.0f; // degrees
 	float volume      = 1.0f; // the clip's sound, 0..1
+	// The part of the movie that plays (seconds; out < 0: to the end), and up to 8 cue points to jump to
+	// (seconds; < 0: not set).
+	double inPoint = 0, outPoint = -1;
+	double cues[ kCuePoints ] = { -1, -1, -1, -1, -1, -1, -1, -1 };
+	// BPM sync: the range lasts this many beats, whatever the tempo (0: free, played at `speed`).
+	float syncBeats = 0;
+	// Beat-synced movement of opacity, position, scale and rotation (from/to: 0..1 of PropertyRange).
+	Animation animations[ (int)ClipProperty::Count ];
 
 	EffectChain effects;
 
@@ -81,11 +126,22 @@ struct Clip
 	// Something that can play: a loaded movie or a live generator.
 	bool Playable() const { return Loaded() || generator != nullptr; }
 	double Duration() const { return Loaded() ? player->Source().Duration() : 0.0; }
-	// Moves the playhead by `seconds` of composition time.
-	void Advance( double seconds );
+	// The playing range, from the in and out points (never empty).
+	double RangeStart() const;
+	double RangeEnd() const;
+	// Movie seconds per composition second: `speed`, or what fits the range into syncBeats beats.
+	double Rate( double bpm ) const;
+	// Moves the playhead by `seconds` of composition time, within the range.
+	void Advance( double seconds, double bpm );
 	void Restart();
+	// Puts the playhead at `seconds` (kept within the range), playing on from there.
+	void JumpTo( double seconds );
 	int64_t CurrentFrame() const;
 	int PlayDirection() const;
+	// A property as shown now: its value, or where its beat animation is.
+	float Shown( ClipProperty property, double beat, float compWidth, float compHeight ) const;
+	float Value( ClipProperty property ) const;
+	static void PropertyRange( ClipProperty property, float compWidth, float compHeight, float& min, float& max );
 };
 
 struct Layer
@@ -99,6 +155,19 @@ struct Layer
 	bool bypass       = false;
 	bool solo         = false;
 	EffectChain effects;
+	Animation opacityAnimation; // beat-synced opacity (0..1)
+	// Launching a clip while another plays: a transition of this length (seconds, or beats with
+	// transitionInBeats; 0: cut).
+	TransitionMode transition = TransitionMode::Fade;
+	float transitionDuration  = 0;
+	bool transitionInBeats    = false;
+
+	// Runtime: the clip fading out during a transition (-1: none) and how far the transition is (0..1).
+	int previous             = -1;
+	float transitionProgress = 1;
+
+	float ShownOpacity( double beat ) const;
+	double TransitionSeconds( double bpm ) const;
 };
 
 struct Composition
@@ -112,6 +181,7 @@ struct Composition
 	double bpm       = 120.0;
 	bool paused      = false;
 	double beat      = 0.0; // beats since start (runtime): drives beat-synced effects and animations
+	LaunchQuantize quantize = LaunchQuantize::Now;
 	std::vector< std::string > columns;
 	std::vector< Layer > layers; // index 0 is the bottom layer
 	EffectChain effects;

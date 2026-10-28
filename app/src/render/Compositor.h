@@ -55,9 +55,11 @@ private:
 	Program clipProgram;
 	Program blendProgram;
 	Program copyProgram;
+	Program transitionProgram;
 	GLuint vao = 0;
 	Fbo layerTarget;
 	Fbo layerScratch;
+	Fbo transitionFrom, transitionTo; // the two clips of a layer in transition
 	Fbo mix[ 2 ];
 	Fbo final;
 	std::map< std::pair< int, int >, std::unique_ptr< Pair > > pool;

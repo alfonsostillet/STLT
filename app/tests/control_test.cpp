@@ -107,6 +107,18 @@ static void TestMidi()
 	CHECK( MidiKeyName( { MidiKey::Type::Controller, 9, 21 } ) == "CC 21 ch 10" );
 }
 
+static void TestCueAddresses()
+{
+	ControlTarget t;
+	CHECK( ParseControlAddress( "/composition/layers/2/clips/3/cue/4", t ) && t.kind == ControlTarget::Kind::ClipCue && t.layer == 1 && t.column == 2 && t.slot == 3 );
+	CHECK( t.IsButton() );
+	CHECK( ParseControlAddress( "/composition/layers/1/cue/8", t ) && t.kind == ControlTarget::Kind::LayerCue && t.layer == 0 && t.slot == 7 );
+	CHECK( !ParseControlAddress( "/composition/layers/1/cue/9", t ) );
+	CHECK( !ParseControlAddress( "/composition/layers/1/clips/1/cue/0", t ) );
+	CHECK( ParseControlAddress( "/composition/layers/3/transition/duration", t ) && t.kind == ControlTarget::Kind::LayerTransition && t.layer == 2 );
+	CHECK( !t.IsButton() && !t.IsSwitch() );
+}
+
 static void TestSettings()
 {
 	ControlSettings s;
@@ -133,6 +145,7 @@ int main()
 	TestAddresses();
 	TestOsc();
 	TestMidi();
+	TestCueAddresses();
 	TestSettings();
 	if( failures )
 	{

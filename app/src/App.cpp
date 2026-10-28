@@ -218,12 +218,12 @@ bool App::Init( const LaunchOptions& launch )
 	for( const LaunchOptions::ClipArg& clip : options.clips )
 	{
 		LoadClip( clip.layer - 1, clip.column - 1, clip.path );
-		Launch( clip.layer - 1, clip.column - 1 );
+		Launch( clip.layer - 1, clip.column - 1, true );
 	}
 	for( const LaunchOptions::ClipArg& source : options.sources )
 	{
 		LoadGenerator( source.layer - 1, source.column - 1, source.path );
-		Launch( source.layer - 1, source.column - 1 );
+		Launch( source.layer - 1, source.column - 1, true );
 	}
 	if( !options.outputSetup.empty() )
 	{
@@ -240,7 +240,7 @@ bool App::Init( const LaunchOptions& launch )
 		ShowAdvancedOutputTab( options.advancedOutputTab, 0, 0 );
 	}
 	for( auto [ layer, column ] : options.launches )
-		Launch( layer - 1, column - 1 );
+		Launch( layer - 1, column - 1, true );
 	for( const LaunchOptions::EffectArg& fx : options.effects )
 	{
 		int layer = 0, column = 0;
@@ -351,6 +351,8 @@ void App::RemoveClip( int layer, int column )
 		return;
 	if( composition.layers[ layer ].active == column )
 		ClearLayer( layer );
+	if( composition.layers[ layer ].previous == column )
+		FinishTransition( layer );
 	composition.layers[ layer ].clips[ column ] = Clip{};
 }
 
@@ -360,6 +362,8 @@ void App::MoveClip( int fromLayer, int fromColumn, int toLayer, int toColumn )
 	if( fromLayer < 0 || fromLayer >= layers || toLayer < 0 || toLayer >= layers || fromColumn < 0 || fromColumn >= columns || toColumn < 0
 	    || toColumn >= columns || ( fromLayer == toLayer && fromColumn == toColumn ) )
 		return;
+	FinishTransition( fromLayer );
+	FinishTransition( toLayer );
 	Layer& a = composition.layers[ fromLayer ];
 	Layer& b = composition.layers[ toLayer ];
 	if( fromLayer == toLayer )
@@ -382,20 +386,46 @@ void App::MoveClip( int fromLayer, int fromColumn, int toLayer, int toColumn )
 	Select( toLayer, toColumn );
 }
 
-void App::Launch( int layer, int column )
+void App::Launch( int layer, int column, bool now )
 {
 	if( layer < 0 || layer >= (int)composition.layers.size() || column < 0 || column >= composition.ColumnCount() )
 		return;
 	Layer& l   = composition.layers[ layer ];
 	Clip& clip = l.clips[ column ];
 	Select( layer, column );
+	if( !now && composition.quantize != LaunchQuantize::Now && clip.Playable() )
+	{
+		// On the next beat or bar; a later launch on the same layer replaces it.
+		double beats = composition.quantize == LaunchQuantize::Bar ? 4.0 : 1.0;
+		double at    = ( std::floor( composition.beat / beats ) + 1 ) * beats;
+		queuedLaunches.erase( std::remove_if( queuedLaunches.begin(), queuedLaunches.end(), [ & ]( const QueuedLaunch& q ) { return q.layer == layer; } ),
+		                      queuedLaunches.end() );
+		queuedLaunches.push_back( { layer, column, at } );
+		return;
+	}
 	if( !clip.Playable() )
 	{
 		ClearLayer( layer );
 		return;
 	}
 	if( l.active >= 0 && l.active != column )
-		ClearLayer( layer );
+	{
+		// Another clip plays: it hands over through the layer's transition, or stops.
+		FinishTransition( layer );
+		if( l.TransitionSeconds( composition.bpm ) > 0 )
+		{
+			l.previous           = l.active;
+			l.transitionProgress = 0;
+		}
+		else
+			ClearLayer( layer );
+	}
+	else if( l.previous == column )
+	{
+		// Back to the clip that was fading out: it simply goes on.
+		l.previous           = -1;
+		l.transitionProgress = 1;
+	}
 	l.active = column;
 	if( clip.generator )
 		return;
@@ -405,27 +435,100 @@ void App::Launch( int layer, int column )
 	clip.player->ShowNow( clip.CurrentFrame() );
 }
 
-void App::LaunchColumn( int column )
+void App::LaunchColumn( int column, bool now )
 {
+	if( !now && composition.quantize != LaunchQuantize::Now )
+	{
+		double beats = composition.quantize == LaunchQuantize::Bar ? 4.0 : 1.0;
+		queuedLaunches.clear(); // the column decides every layer
+		queuedLaunches.push_back( { -1, column, ( std::floor( composition.beat / beats ) + 1 ) * beats } );
+		return;
+	}
 	for( int layer = 0; layer < (int)composition.layers.size(); ++layer )
 	{
 		Layer& l = composition.layers[ layer ];
 		if( column < (int)l.clips.size() && l.clips[ column ].Playable() )
-			Launch( layer, column );
+			Launch( layer, column, true );
 		else
 			ClearLayer( layer );
 	}
 	composition.activeColumn = column;
 }
 
-void App::ClearLayer( int layer )
+bool App::IsQueued( int layer, int column ) const
+{
+	for( const QueuedLaunch& q : queuedLaunches )
+		if( q.column == column && ( q.layer == layer || q.layer < 0 ) )
+			return true;
+	return false;
+}
+
+void App::RunQueuedLaunches( bool all )
+{
+	std::vector< QueuedLaunch > due;
+	for( auto q = queuedLaunches.begin(); q != queuedLaunches.end(); )
+	{
+		if( all || composition.beat >= q->beat )
+		{
+			due.push_back( *q );
+			q = queuedLaunches.erase( q );
+		}
+		else
+			++q;
+	}
+	for( const QueuedLaunch& q : due )
+	{
+		if( q.layer < 0 )
+			LaunchColumn( q.column, true );
+		else
+			Launch( q.layer, q.column, true );
+	}
+}
+
+void App::ResyncBeat()
+{
+	composition.beat = 0;
+	RunQueuedLaunches( true ); // what waited for a beat goes on the new first beat
+}
+
+void App::JumpToCue( int layer, int column, int cue )
+{
+	if( layer < 0 || layer >= (int)composition.layers.size() || column < 0 || column >= composition.ColumnCount() || cue < 0 || cue >= kCuePoints )
+		return;
+	Layer& l   = composition.layers[ layer ];
+	Clip& clip = l.clips[ column ];
+	if( clip.cues[ cue ] < 0 || !clip.Loaded() )
+		return;
+	if( l.active != column )
+		Launch( layer, column, true );
+	if( l.active != column )
+		return;
+	clip.JumpTo( clip.cues[ cue ] );
+	clip.player->ShowNow( clip.CurrentFrame() );
+}
+
+void App::FinishTransition( int layer )
 {
 	if( layer < 0 || layer >= (int)composition.layers.size() )
 		return;
 	Layer& l = composition.layers[ layer ];
+	if( l.previous >= 0 && l.previous != l.active && l.previous < (int)l.clips.size() && l.clips[ l.previous ].player )
+		l.clips[ l.previous ].player->Deactivate();
+	l.previous           = -1;
+	l.transitionProgress = 1;
+}
+
+void App::ClearLayer( int layer )
+{
+	if( layer < 0 || layer >= (int)composition.layers.size() )
+		return;
+	FinishTransition( layer );
+	Layer& l = composition.layers[ layer ];
 	if( l.active >= 0 && l.active < (int)l.clips.size() && l.clips[ l.active ].player )
 		l.clips[ l.active ].player->Deactivate();
 	l.active = -1;
+	queuedLaunches.erase( std::remove_if( queuedLaunches.begin(), queuedLaunches.end(), [ & ]( const QueuedLaunch& q ) { return q.layer == layer; } ),
+	                      queuedLaunches.end() );
 }
 
 void App::Select( int layer, int column )
@@ -544,6 +647,10 @@ void App::RestoreComposition( const std::string& text )
 	std::string error;
 	if( !LoadComposition( text, fresh, error ) )
 		return;
+	// Transitions end and waiting launches are dropped: the clips they name may move.
+	for( int l = 0; l < (int)composition.layers.size(); ++l )
+		FinishTransition( l );
+	queuedLaunches.clear();
 	// The clips still there keep their players and generators: matched where they were, else anywhere.
 	std::vector< Clip* > taken;
 	auto same = [ & ]( const Clip& a, const Clip& b ) {
@@ -836,6 +943,21 @@ bool App::ApplyControl( const std::string& address, bool hasValue, float value, 
 		if( layerOk && columnOk )
 			composition.layers[ t.layer ].clips[ t.column ].volume = unit;
 		return layerOk && columnOk;
+	case Kind::ClipCue:
+		if( press && layerOk && columnOk )
+			JumpToCue( t.layer, t.column, t.slot );
+		return layerOk && columnOk;
+	case Kind::LayerCue:
+		if( press && layerOk && composition.layers[ t.layer ].active >= 0 )
+			JumpToCue( t.layer, composition.layers[ t.layer ].active, t.slot );
+		return layerOk;
+	case Kind::LayerTransition:
+		if( layerOk )
+		{
+			Layer& layer             = composition.layers[ t.layer ];
+			layer.transitionDuration = unit * ( layer.transitionInBeats ? 16.0f : 10.0f );
+		}
+		return layerOk;
 	case Kind::AudioVolume: composition.audioVolume = unit; return true;
 	case Kind::Master: composition.master = unit; return true;
 	case Kind::Speed: composition.speed = unit * 4; return true;
@@ -1184,29 +1306,49 @@ void App::UpdateAudio()
 	{
 		if( layer.active < 0 || layer.active >= (int)layer.clips.size() )
 			continue;
-		Clip& clip = layer.clips[ layer.active ];
-		if( !clip.audio || !clip.Loaded() )
-			continue;
 		bool audible = !composition.paused && !layer.bypass && ( !anySolo || layer.solo );
-		double rate  = clip.PlayDirection() * std::fabs( clip.speed ) * composition.speed;
-		clip.audio->Follow( clip.time, rate, audible ? clip.volume * layer.volume : 0.0f );
-		voices.push_back( clip.audio );
+		// During a transition the outgoing clip's sound fades out as the new one fades in.
+		bool fading  = layer.previous >= 0 && layer.previous < (int)layer.clips.size() && layer.transitionProgress < 1;
+		for( int which = 0; which < ( fading ? 2 : 1 ); ++which )
+		{
+			Clip& clip = layer.clips[ which == 0 ? layer.active : layer.previous ];
+			if( !clip.audio || !clip.Loaded() )
+				continue;
+			float fade  = !fading ? 1.0f : which == 0 ? layer.transitionProgress : 1.0f - layer.transitionProgress;
+			double rate = clip.PlayDirection() * std::fabs( clip.Rate( composition.bpm ) ) * composition.speed;
+			clip.audio->Follow( clip.time, rate, audible ? clip.volume * layer.volume * fade : 0.0f );
+			voices.push_back( clip.audio );
+		}
 	}
 	audio.SetVoices( std::move( voices ), composition.audioVolume );
 }
 
 void App::UpdatePlayback( double dt )
 {
-	for( Layer& layer : composition.layers )
+	for( int index = 0; index < (int)composition.layers.size(); ++index )
 	{
+		Layer& layer = composition.layers[ index ];
 		if( layer.active < 0 )
 			continue;
-		Clip& clip = layer.clips[ layer.active ];
-		if( !clip.Loaded() )
-			continue; // generators run on composition time
-		if( !composition.paused )
-			clip.Advance( dt * composition.speed );
-		clip.player->Update( clip.CurrentFrame(), composition.paused ? 0 : clip.PlayDirection() );
+		auto play = [ & ]( Clip& clip ) {
+			if( !clip.Loaded() )
+				return; // generators run on composition time
+			if( !composition.paused )
+				clip.Advance( dt * composition.speed, composition.bpm );
+			clip.player->Update( clip.CurrentFrame(), composition.paused ? 0 : clip.PlayDirection() );
+		};
+		if( layer.previous >= 0 )
+		{
+			// A transition: the outgoing clip plays on until it is over (time in seconds, or in beats).
+			double seconds = layer.TransitionSeconds( composition.bpm );
+			if( !composition.paused )
+				layer.transitionProgress += seconds > 0 ? (float)( dt * ( layer.transitionInBeats ? composition.speed : 1.0 ) / seconds ) : 1.0f;
+			if( layer.transitionProgress >= 1 || layer.previous >= (int)layer.clips.size() )
+				FinishTransition( index );
+			else
+				play( layer.clips[ layer.previous ] );
+		}
+		play( layer.clips[ layer.active ] );
 	}
 }
 
@@ -1215,14 +1357,14 @@ void App::UpdatePreview( double dt )
 	int l          = composition.selectedLayer;
 	int c          = composition.selectedColumn;
 	Clip* selected = composition.SelectedClip();
-	bool live      = selected && composition.layers[ l ].active == c;
+	bool live      = selected && ( composition.layers[ l ].active == c || composition.layers[ l ].previous == c );
 	ClipPlayer* wanted = selected && !live && selected->Loaded() && selected->Playable() ? selected->player.get() : nullptr;
 	if( previewPlayer && previewPlayer != wanted )
 	{
 		// Stop the clip previewed until now, unless it has since been launched (or removed: then it is gone).
 		for( Layer& layer : composition.layers )
 			for( int column = 0; column < (int)layer.clips.size(); ++column )
-				if( layer.clips[ column ].player.get() == previewPlayer && layer.active != column )
+				if( layer.clips[ column ].player.get() == previewPlayer && layer.active != column && layer.previous != column )
 					previewPlayer->Deactivate();
 		previewPlayer = nullptr;
 	}
@@ -1236,7 +1378,7 @@ void App::UpdatePreview( double dt )
 		previewPlayer = wanted;
 	}
 	if( !composition.paused )
-		selected->Advance( dt * composition.speed );
+		selected->Advance( dt * composition.speed, composition.bpm );
 	wanted->Update( selected->CurrentFrame(), composition.paused ? 0 : selected->PlayDirection() );
 }
 
@@ -1255,6 +1397,7 @@ void App::Frame()
 	UpdateAudio();
 	if( !composition.paused )
 		composition.beat += dt * composition.speed * composition.bpm / 60.0;
+	RunQueuedLaunches( false );
 	frame.time  = now - startTime;
 	frame.delta = dt;
 	frame.bpm   = composition.bpm;

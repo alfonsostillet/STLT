@@ -75,35 +75,70 @@ void ParamMenu( Effect& effect, int i )
 		effect.Anim( i ) = Animation{};
 	}
 	if( p.IsAnimatable() )
-	{
-		Animation& a = effect.Anim( i );
-		ImGui::SeparatorText( "Animate" );
-		ImGui::SetNextItemWidth( Ui( 140 ) );
-		if( ImGui::BeginCombo( "Mode", AnimModeName( a.mode ) ) )
-		{
-			for( int m = 0; m < (int)AnimMode::Count; ++m )
-				if( ImGui::Selectable( AnimModeName( (AnimMode)m ), (int)a.mode == m ) )
-					a.mode = (AnimMode)m;
-			ImGui::EndCombo();
-		}
-		int beatIndex = 4;
-		for( int b = 0; b < (int)std::size( kBeatChoices ); ++b )
-			if( std::fabs( kBeatChoices[ b ] - a.beats ) < 1e-3f )
-				beatIndex = b;
-		ImGui::SetNextItemWidth( Ui( 140 ) );
-		if( ImGui::Combo( "Period", &beatIndex, kBeatChoiceNames, (int)std::size( kBeatChoiceNames ) ) )
-			a.beats = kBeatChoices[ beatIndex ];
-		float lo = p.min + ( p.max - p.min ) * a.from, hi = p.min + ( p.max - p.min ) * a.to;
-		ImGui::SetNextItemWidth( Ui( 140 ) );
-		if( FilledSlider( "From", &lo, p.min, p.max ) && p.max != p.min )
-			a.from = ( lo - p.min ) / ( p.max - p.min );
-		ImGui::SetNextItemWidth( Ui( 140 ) );
-		if( FilledSlider( "To", &hi, p.min, p.max ) && p.max != p.min )
-			a.to = ( hi - p.min ) / ( p.max - p.min );
-		ImGui::Checkbox( "Reverse", &a.reverse );
-	}
+		AnimationControls( effect.Anim( i ), p.min, p.max );
 	ImGui::EndPopup();
 }
+}
+
+void AnimationControls( Animation& a, float min, float max )
+{
+	ImGui::SeparatorText( "Animate to the beat" );
+	ImGui::SetNextItemWidth( Ui( 140 ) );
+	if( ImGui::BeginCombo( "Mode", AnimModeName( a.mode ) ) )
+	{
+		for( int m = 0; m < (int)AnimMode::Count; ++m )
+			if( ImGui::Selectable( AnimModeName( (AnimMode)m ), (int)a.mode == m ) )
+				a.mode = (AnimMode)m;
+		ImGui::EndCombo();
+	}
+	int beatIndex = 4;
+	for( int b = 0; b < (int)std::size( kBeatChoices ); ++b )
+		if( std::fabs( kBeatChoices[ b ] - a.beats ) < 1e-3f )
+			beatIndex = b;
+	ImGui::SetNextItemWidth( Ui( 140 ) );
+	if( ImGui::Combo( "Period", &beatIndex, kBeatChoiceNames, (int)std::size( kBeatChoiceNames ) ) )
+		a.beats = kBeatChoices[ beatIndex ];
+	float lo = min + ( max - min ) * a.from, hi = min + ( max - min ) * a.to;
+	ImGui::SetNextItemWidth( Ui( 140 ) );
+	if( FilledSlider( "From", &lo, min, max ) && max != min )
+		a.from = ( lo - min ) / ( max - min );
+	ImGui::SetNextItemWidth( Ui( 140 ) );
+	if( FilledSlider( "To", &hi, min, max ) && max != min )
+		a.to = ( hi - min ) / ( max - min );
+	ImGui::Checkbox( "Reverse", &a.reverse );
+}
+
+void AnimatedLabel( const char* label, Animation& anim, float min, float max )
+{
+	ImGui::TableNextRow();
+	ImGui::TableSetColumnIndex( 0 );
+	ImGui::AlignTextToFramePadding();
+	ImGui::PushID( label );
+	bool moving = anim.mode != AnimMode::Off;
+	if( moving )
+		ImGui::PushStyleColor( ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4( theme::Accent ) );
+	ImVec2 size = ImGui::CalcTextSize( label, nullptr, true );
+	if( ImGui::Selectable( label, false, ImGuiSelectableFlags_None, ImVec2( size.x, 0 ) ) )
+		ImGui::OpenPopup( "##animate" );
+	if( moving )
+		ImGui::PopStyleColor();
+	if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) )
+		ImGui::SetTooltip( moving ? "Moving with the beat: click to change or stop it" : "Click: animate to the beat" );
+	if( ImGui::BeginPopup( "##animate" ) )
+	{
+		ImGui::TextDisabled( "%s", label );
+		if( moving && ImGui::MenuItem( "Stop Animating" ) )
+			anim.mode = AnimMode::Off;
+		AnimationControls( anim, min, max );
+		ImGui::EndPopup();
+	}
+	ImGui::PopID();
+	ImGui::TableSetColumnIndex( 1 );
+	ImGui::SetNextItemWidth( -FLT_MIN );
+}
+
+namespace
+{
 
 void AnimatedMark( bool animated )
 {

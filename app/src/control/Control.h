@@ -15,6 +15,9 @@ namespace stltvj
 //   /composition/layers/L/solo                       solo on or off
 //   /composition/layers/L/video/opacity              0..1
 //   /composition/layers/L/audio/volume               0..1, and /composition/layers/L/clips/C/audio/volume
+//   /composition/layers/L/clips/C/cue/N              jump to cue point N (1..8), launching the clip if needed
+//   /composition/layers/L/cue/N                      jump to cue point N of the clip playing on the layer
+//   /composition/layers/L/transition/duration        0..1 over 0..10 seconds (or 0..16 beats)
 //   /composition/audio/volume                        master volume, 0..1
 //   /composition/master (or /composition/video/opacity)  0..1
 //   /composition/speed                               0..1 over 0..4
@@ -42,6 +45,9 @@ struct ControlTarget
 		LayerOpacity,
 		LayerVolume,
 		ClipVolume,
+		ClipCue,
+		LayerCue,
+		LayerTransition,
 		AudioVolume,
 		Master,
 		Speed,
@@ -55,7 +61,7 @@ struct ControlTarget
 	Kind kind  = Kind::None;
 	int layer  = -1; // 0-based
 	int column = -1; // 0-based
-	int slot   = -1; // effect position in its chain, 0-based
+	int slot   = -1; // effect position in its chain, or cue point, 0-based
 	std::string param;
 	// Effect scope: the composition (layer < 0), a layer (column < 0) or a clip.
 

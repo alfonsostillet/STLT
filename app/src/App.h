@@ -66,8 +66,12 @@ public:
 	void LoadClip( int layer, int column, const std::string& path );
 	void RemoveClip( int layer, int column );
 	void MoveClip( int fromLayer, int fromColumn, int toLayer, int toColumn );
-	void Launch( int layer, int column );
-	void LaunchColumn( int column );
+	// With the composition's launch quantize set, a launch waits for the next beat or bar unless `now`.
+	void Launch( int layer, int column, bool now = false );
+	void LaunchColumn( int column, bool now = false );
+	bool IsQueued( int layer, int column ) const; // waiting for its beat (column -1: any column launch)
+	// Plays the clip from cue point `cue` (0..7), launching it if it is not playing; nothing if the cue is not set.
+	void JumpToCue( int layer, int column, int cue );
 	void ClearLayer( int layer );
 	void Select( int layer, int column );
 	void NewComposition();
@@ -75,7 +79,7 @@ public:
 	bool OpenComposition( const std::string& path );
 	void SetStatus( const std::string& message, bool error = false );
 	void TapTempo();
-	void ResyncBeat() { composition.beat = 0; }
+	void ResyncBeat();
 
 	// Effects and sources.
 	void AddEffect( EffectChain& chain, const std::string& id, int position = -1 );
@@ -160,6 +164,15 @@ private:
 	void UpdatePreview( double dt );
 	ClipPlayer* previewPlayer = nullptr;
 	void UpdateQuickOutput();
+	// Ends a layer's transition: the outgoing clip stops.
+	void FinishTransition( int layer );
+	struct QueuedLaunch
+	{
+		int layer, column; // layer -1: the whole column
+		double beat;       // when it goes
+	};
+	std::vector< QueuedLaunch > queuedLaunches;
+	void RunQueuedLaunches( bool all );
 	void SaveOutputMode() const;
 	std::string quickOutputKey; // what quickOutput was made for
 	std::vector< std::pair< int, std::string > > keysHeld; // mapped keys down (ImGuiKey), to release them
