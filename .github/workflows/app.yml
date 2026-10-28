@@ -51,7 +51,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           if [ ! -f "$HOME/ffmpeg/lib/libavcodec.a" ]; then
-            FFMPEG_BUILD_DIR="$RUNNER_TEMP/ffmpeg-src" app/scripts/build-ffmpeg.sh "$HOME/ffmpeg"
+            FFMPEG_BUILD_DIR="$RUNNER_TEMP/ffmpeg-src" sh app/scripts/build-ffmpeg.sh "$HOME/ffmpeg"
           fi
 
       - name: Build

@@ -463,9 +463,9 @@ void DrawCanvas( App& app, Screen& screen )
 			ImVec2 p          = toScreen( *points[ k ] );
 			bool hot          = editor.drag == Drag::Handle && editor.handle == (int)k;
 			ImVec2 d( io.MousePos.x - p.x, io.MousePos.y - p.y );
-			bool near         = hovered && d.x * d.x + d.y * d.y < handle * handle * 4;
+			bool underMouse   = hovered && d.x * d.x + d.y * d.y < handle * handle * 4;
 			draw->AddRectFilled( ImVec2( p.x - handle, p.y - handle ), ImVec2( p.x + handle, p.y + handle ),
-			                     hot || near ? IM_COL32( 255, 255, 255, 255 ) : theme::Accent );
+			                     hot || underMouse ? IM_COL32( 255, 255, 255, 255 ) : theme::Accent );
 			draw->AddRect( ImVec2( p.x - handle, p.y - handle ), ImVec2( p.x + handle, p.y + handle ), IM_COL32( 0, 0, 0, 200 ) );
 		}
 	}
