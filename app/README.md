@@ -19,6 +19,7 @@ It is an independent project, written from public specifications (HAP, FFGL, Ope
 - **Sound**: clips with a soundtrack play it on the system's default output, in step with the picture: it follows loops, jumps and cue points, its pitch follows the speed (as on a turntable), and it is silent while a clip plays backwards or the composition is paused. Volume per clip, per layer and for the whole composition (all mappable to MIDI and OSC); bypassed layers, and layers another layer is soloed over, are silent. The Performance panel names the output in use.
 - **Advanced Output** (*Output → Advanced Output...*, Ctrl+Shift+A): see below.
 - **MIDI and OSC** (*Control* panel): press *Learn MIDI* (Ctrl+M), click a control (a clip, a column, a layer's buttons or opacity, master, speed, BPM, tap, any effect parameter) and move a knob or press a key: it is mapped (right-click a mapped control to forget it; mappings are kept between sessions). OSC arrives on a UDP port with addresses modelled on Resolume's: `/composition/layers/1/clips/2/connect`, `/composition/columns/3/connect`, `/composition/layers/2/video/opacity 0.5`, `/composition/master`, `/composition/tempocontroller/tempo`, `/composition/tempocontroller/tempotap`, `/composition/layers/1/video/effects/1/params/amount` (values 0..1). In Learn mode, hovering a control shows its address.
+- **Look**: a dark interface in a few steps of depth, one teal accent for what is live or selected, text kept at 4.5:1 contrast or more, Inter for text and JetBrains Mono for figures that change (BPM, frame rate), both compiled into the program; sliders fill up to their value, so levels read at a glance from across a dark room.
 - **Workspace**: every panel can be docked, tabbed, split, or pulled out as its own window onto another monitor. Layouts are saved as named workspaces; the last layout and composition come back on the next start.
 - **Performance panel**: frame time graph, decode and upload time per layer, late frames.
 - **Effects**: chains on every clip, layer and on the composition, each effect with bypass, dry/wet mix and reordering (drag the headers or use the arrows). Drag effects from the Effects panel onto a clip cell, a layer name, the Composition Monitor or any effects list.
@@ -136,7 +137,7 @@ Settings live in `%APPDATA%\STLT-VJ`, `~/Library/Application Support/STLT-VJ` or
 | `src/render` | Clip player (decode thread + pixel buffers + textures), GPU compositor with effect chains, output window. |
 | `src/output` | Advanced output: screens, slices, warps, contours, masks, soft edges, Resolume import, and the renderer with its output windows. |
 | `src/fx` | Effect parameters and beat animations, built-in GLSL effects and sources, the FFGL 2 host, the effect registry. |
-| `src/ui` | Panels, theme, workspaces. |
+| `src/ui` | Panels, theme and fonts, widgets (filled sliders), workspaces. |
 | `src/App.*` | Main loop and the actions panels share (load, launch, move, save, undo). |
 | `src/audio` | Clip sound: voices that follow their clip's playhead, and the mix on the audio device (miniaudio). |
 | `src/control` | Remote control: the OSC/MIDI address space, OSC parsing, MIDI messages and mappings, the UDP and MIDI inputs. |

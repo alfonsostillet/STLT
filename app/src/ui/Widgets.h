@@ -1,0 +1,10 @@
+#pragma once
+#include <imgui.h>
+
+namespace stltvj
+{
+// A slider drawn as a bar filled up to its value with the value written across it, as live video and audio
+// software does: readable at a glance from across a dark room. When the range spans zero the fill starts at zero
+// (brightness, contrast...). Same arguments and behaviour as ImGui::SliderFloat (drag, Ctrl+click to type).
+bool FilledSlider( const char* label, float* value, float min, float max, const char* format = "%.3f", ImGuiSliderFlags flags = 0 );
+}

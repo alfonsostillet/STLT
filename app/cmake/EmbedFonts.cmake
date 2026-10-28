@@ -1,0 +1,21 @@
+# Writes OUTPUT, a C++ file holding each font in FONTS (paths) as a byte array named after the file
+# (Inter-Regular.ttf: kFont_Inter_Regular and kFont_Inter_Regular_size).
+# cmake -DOUTPUT=... -DFONTS="a.ttf;b.ttf" -P EmbedFonts.cmake
+set(text "// Generated from app/resources/fonts by cmake/EmbedFonts.cmake: do not edit.\n#include <cstddef>\n\nnamespace stltvj\n{\n")
+foreach(font IN LISTS FONTS)
+    get_filename_component(name "${font}" NAME_WE)
+    string(MAKE_C_IDENTIFIER "${name}" id)
+    file(READ "${font}" hex HEX)
+    string(LENGTH "${hex}" length)
+    math(EXPR bytes "${length} / 2")
+    string(REGEX REPLACE "([0-9a-f][0-9a-f])" "0x\\1," hex "${hex}")
+    string(REGEX REPLACE "(0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,0x..,)" "\\1\n" hex "${hex}")
+    string(APPEND text "extern const unsigned char kFont_${id}[] = {\n${hex}\n};\nextern const size_t kFont_${id}_size = ${bytes};\n\n")
+endforeach()
+string(APPEND text "}\n")
+if(EXISTS "${OUTPUT}")
+    file(READ "${OUTPUT}" old)
+endif()
+if(NOT old STREQUAL text)
+    file(WRITE "${OUTPUT}" "${text}")
+endif()

@@ -12,6 +12,7 @@
 #include "ui/ControlUi.h"
 #include "ui/FileDialogs.h"
 #include "ui/Theme.h"
+#include "ui/Widgets.h"
 #include "ui/Workspaces.h"
 
 namespace fs = std::filesystem;
@@ -94,10 +95,10 @@ void ParamMenu( Effect& effect, int i )
 			a.beats = kBeatChoices[ beatIndex ];
 		float lo = p.min + ( p.max - p.min ) * a.from, hi = p.min + ( p.max - p.min ) * a.to;
 		ImGui::SetNextItemWidth( Ui( 140 ) );
-		if( ImGui::SliderFloat( "From", &lo, p.min, p.max ) && p.max != p.min )
+		if( FilledSlider( "From", &lo, p.min, p.max ) && p.max != p.min )
 			a.from = ( lo - p.min ) / ( p.max - p.min );
 		ImGui::SetNextItemWidth( Ui( 140 ) );
-		if( ImGui::SliderFloat( "To", &hi, p.min, p.max ) && p.max != p.min )
+		if( FilledSlider( "To", &hi, p.min, p.max ) && p.max != p.min )
 			a.to = ( hi - p.min ) / ( p.max - p.min );
 		ImGui::Checkbox( "Reverse", &a.reverse );
 	}
@@ -232,7 +233,7 @@ int ParamWidget( Effect& effect, int i )
 		if( animated )
 			ImGui::PushStyleColor( ImGuiCol_SliderGrab, ImVec4( 1.0f, 0.75f, 0.3f, 1 ) );
 		float lo = std::min( p.min, p.max ), hi = std::max( p.min, p.max );
-		if( ImGui::SliderFloat( "##v", &value, lo, hi, integer ? "%.0f" : ( hi - lo > 50 ? "%.1f" : "%.3f" ) ) && !animated )
+		if( FilledSlider( "##v", &value, lo, hi, integer ? "%.0f" : ( hi - lo > 50 ? "%.1f" : "%.3f" ) ) && !animated )
 			effect.SetValue( i, value );
 		if( animated )
 			ImGui::PopStyleColor();
@@ -398,7 +399,7 @@ void DrawEffectChain( App& app, EffectChain& chain, const char* id, const std::s
 					ImGui::TableSetupColumn( "value", ImGuiTableColumnFlags_WidthStretch );
 					ParamLabel( "Mix" );
 					float percent = slot.mix * 100;
-					if( ImGui::SliderFloat( "##mix", &percent, 0, 100, "%.0f %%" ) )
+					if( FilledSlider( "##mix", &percent, 0, 100, "%.0f %%" ) )
 						slot.mix = percent / 100;
 					if( ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
 						slot.mix = 1;

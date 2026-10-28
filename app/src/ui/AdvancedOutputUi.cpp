@@ -8,6 +8,7 @@
 #include "Settings.h"
 #include "ui/FileDialogs.h"
 #include "ui/Theme.h"
+#include "ui/Widgets.h"
 #include "ui/Workspaces.h"
 
 namespace fs = std::filesystem;
@@ -230,7 +231,7 @@ std::string ResolumeXmlPath()
 bool SliderPercent( const char* id, float* value, float min, float max )
 {
 	float percent = *value * 100;
-	if( !ImGui::SliderFloat( id, &percent, min * 100, max * 100, "%.0f %%" ) )
+	if( !FilledSlider( id, &percent, min * 100, max * 100, "%.0f %%" ) )
 		return false;
 	*value = percent / 100;
 	return true;
@@ -1184,15 +1185,15 @@ void DrawScreenProps( App& app, Screen& screen )
 	Row( "Opacity" );
 	SliderPercent( "##opacity", &screen.opacity, 0, 1 );
 	Row( "Brightness" );
-	ImGui::SliderFloat( "##brightness", &screen.brightness, -1, 1, "%.2f" );
+	FilledSlider( "##brightness", &screen.brightness, -1, 1, "%.2f" );
 	Row( "Contrast" );
-	ImGui::SliderFloat( "##contrast", &screen.contrast, -1, 1, "%.2f" );
+	FilledSlider( "##contrast", &screen.contrast, -1, 1, "%.2f" );
 	Row( "Red" );
-	ImGui::SliderFloat( "##red", &screen.red, -1, 1, "%.2f" );
+	FilledSlider( "##red", &screen.red, -1, 1, "%.2f" );
 	Row( "Green" );
-	ImGui::SliderFloat( "##green", &screen.green, -1, 1, "%.2f" );
+	FilledSlider( "##green", &screen.green, -1, 1, "%.2f" );
 	Row( "Blue" );
-	ImGui::SliderFloat( "##blue", &screen.blue, -1, 1, "%.2f" );
+	FilledSlider( "##blue", &screen.blue, -1, 1, "%.2f" );
 	ImGui::EndTable();
 }
 
@@ -1246,7 +1247,7 @@ void DrawMaskProps( Screen& screen, Slice& s )
 	if( ImGui::IsItemHovered() )
 		ImGui::SetTooltip( "Black outside the shape instead of inside" );
 	Row( "Feather" );
-	ImGui::SliderFloat( "##feather", &s.feather, 0, 200, "%.0f px", ImGuiSliderFlags_AlwaysClamp );
+	FilledSlider( "##feather", &s.feather, 0, 200, "%.0f px", ImGuiSliderFlags_AlwaysClamp );
 	EditModeRows( s );
 	PointModeRows( s );
 	Row( "" );
@@ -1358,11 +1359,11 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 		Row( "Bottom" );
 		SliderPercent( "##bottom", &s.edge.bottom, 0, 0.5f );
 		Row( "Power" );
-		ImGui::SliderFloat( "##power", &s.edge.power, 0.5f, 6, "%.2f" );
+		FilledSlider( "##power", &s.edge.power, 0.5f, 6, "%.2f" );
 		Row( "Luminance" );
-		ImGui::SliderFloat( "##luminance", &s.edge.luminance, 0, 1, "%.2f" );
+		FilledSlider( "##luminance", &s.edge.luminance, 0, 1, "%.2f" );
 		Row( "Gamma" );
-		ImGui::SliderFloat( "##gamma", &s.edge.gamma, 0.5f, 3, "%.2f" );
+		FilledSlider( "##gamma", &s.edge.gamma, 0.5f, 3, "%.2f" );
 		ImGui::EndTable();
 	}
 }
@@ -1377,7 +1378,7 @@ void ShowAdvancedOutputTab( int tab, int screen, int slice )
 
 void DrawAdvancedOutputPanel( App& app )
 {
-	ImGui::SetNextWindowSize( ImVec2( Ui( 1250 ), Ui( 720 ) ), ImGuiCond_FirstUseEver );
+	ImGui::SetNextWindowSize( ImVec2( Ui( 1290 ), Ui( 740 ) ), ImGuiCond_FirstUseEver );
 	if( !ImGui::Begin( panel::AdvancedOutput, &app.panels.advancedOutput ) )
 	{
 		ImGui::End();
@@ -1394,7 +1395,7 @@ void DrawAdvancedOutputPanel( App& app )
 	{
 		ImGui::TableSetupColumn( "list", ImGuiTableColumnFlags_WidthFixed, Ui( 230 ) );
 		ImGui::TableSetupColumn( "canvas", ImGuiTableColumnFlags_WidthStretch );
-		ImGui::TableSetupColumn( "props", ImGuiTableColumnFlags_WidthFixed, Ui( 300 ) );
+		ImGui::TableSetupColumn( "props", ImGuiTableColumnFlags_WidthFixed, Ui( 340 ) );
 		ImGui::TableNextRow();
 
 		ImGui::TableSetColumnIndex( 0 );

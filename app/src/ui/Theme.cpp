@@ -1,119 +1,149 @@
 #include "Theme.h"
-#include <filesystem>
+#include <cstddef>
 
 namespace stltvj
 {
-static ImVec4 Rgb( int r, int g, int b, float a = 1.0f )
+// From the generated EmbeddedFonts.cpp.
+extern const unsigned char kFont_Inter_Regular[];
+extern const size_t kFont_Inter_Regular_size;
+extern const unsigned char kFont_Inter_SemiBold[];
+extern const size_t kFont_Inter_SemiBold_size;
+extern const unsigned char kFont_JetBrainsMono_Medium[];
+extern const size_t kFont_JetBrainsMono_Medium_size;
+
+namespace
+{
+UiFonts fonts;
+
+ImVec4 Color( ImU32 c, float alpha = -1 )
+{
+	ImVec4 v = ImGui::ColorConvertU32ToFloat4( c );
+	if( alpha >= 0 )
+		v.w = alpha;
+	return v;
+}
+
+ImVec4 Rgb( int r, int g, int b, float a = 1.0f )
 {
 	return ImVec4( r / 255.0f, g / 255.0f, b / 255.0f, a );
 }
 
-static void LoadFont( float size )
+ImFont* AddFont( const unsigned char* data, size_t size, float pixels )
 {
-	ImGuiIO& io = ImGui::GetIO();
-	const char* candidates[] = {
-#if defined( _WIN32 )
-		"C:\\Windows\\Fonts\\segoeui.ttf",
-		"C:\\Windows\\Fonts\\arial.ttf",
-#elif defined( __APPLE__ )
-		"/System/Library/Fonts/Supplemental/Arial.ttf",
-		"/Library/Fonts/Arial.ttf",
-		"/System/Library/Fonts/Helvetica.ttc",
-#else
-		"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-		"/usr/share/fonts/TTF/DejaVuSans.ttf",
-		"/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-#endif
-	};
-	for( const char* path : candidates )
-	{
-		std::error_code ignored;
-		if( std::filesystem::exists( path, ignored ) && io.Fonts->AddFontFromFileTTF( path, size ) )
-			return;
-	}
 	ImFontConfig config;
-	config.SizePixels = size;
-	io.Fonts->AddFontDefault( &config );
+	config.FontDataOwnedByAtlas = false; // static data
+	config.OversampleH          = 2;
+	config.OversampleV          = 1;
+	config.PixelSnapH           = false;
+	static const ImWchar ranges[] = { 0x0020, 0x00FF, 0x0100, 0x017F, 0x2010, 0x203A, 0x2190, 0x2193, 0x2212, 0x2212, 0x20AC, 0x20AC, 0x25B2, 0x25C4, 0 };
+	return ImGui::GetIO().Fonts->AddFontFromMemoryTTF( (void*)data, (int)size, pixels, &config, ranges );
+}
 }
 
-void ApplyTheme( float contentScale )
+const UiFonts& Fonts()
 {
-	ImGuiStyle& style       = ImGui::GetStyle();
-	style                   = ImGuiStyle();
-	style.WindowPadding     = ImVec2( 6, 6 );
-	style.FramePadding      = ImVec2( 6, 3 );
-	style.ItemSpacing       = ImVec2( 4, 4 );
-	style.ItemInnerSpacing  = ImVec2( 4, 3 );
-	style.CellPadding       = ImVec2( 4, 2 );
-	style.IndentSpacing     = 12;
-	style.ScrollbarSize     = 10;
-	style.GrabMinSize       = 8;
-	style.WindowBorderSize  = 1;
-	style.FrameBorderSize   = 0;
-	style.TabBorderSize     = 0;
-	style.WindowRounding    = 0;
-	style.ChildRounding     = 0;
-	style.FrameRounding     = 2;
-	style.PopupRounding     = 2;
-	style.ScrollbarRounding = 2;
-	style.GrabRounding      = 2;
-	style.TabRounding       = 2;
-	style.WindowTitleAlign  = ImVec2( 0.5f, 0.5f );
-	style.DockingSeparatorSize = 3;
+	return fonts;
+}
 
-	ImVec4* c                            = style.Colors;
-	c[ ImGuiCol_Text ]                   = Rgb( 222, 222, 222 );
-	c[ ImGuiCol_TextDisabled ]           = Rgb( 120, 120, 120 );
-	c[ ImGuiCol_WindowBg ]               = Rgb( 32, 32, 32 );
-	c[ ImGuiCol_ChildBg ]                = Rgb( 26, 26, 26 );
-	c[ ImGuiCol_PopupBg ]                = Rgb( 38, 38, 38, 0.98f );
-	c[ ImGuiCol_Border ]                 = Rgb( 18, 18, 18 );
-	c[ ImGuiCol_BorderShadow ]           = Rgb( 0, 0, 0, 0 );
-	c[ ImGuiCol_FrameBg ]                = Rgb( 50, 50, 50 );
-	c[ ImGuiCol_FrameBgHovered ]         = Rgb( 62, 62, 62 );
-	c[ ImGuiCol_FrameBgActive ]          = Rgb( 70, 70, 70 );
-	c[ ImGuiCol_TitleBg ]                = Rgb( 40, 40, 40 );
-	c[ ImGuiCol_TitleBgActive ]          = Rgb( 46, 46, 46 );
-	c[ ImGuiCol_TitleBgCollapsed ]       = Rgb( 40, 40, 40 );
-	c[ ImGuiCol_MenuBarBg ]              = Rgb( 36, 36, 36 );
-	c[ ImGuiCol_ScrollbarBg ]            = Rgb( 26, 26, 26 );
-	c[ ImGuiCol_ScrollbarGrab ]          = Rgb( 70, 70, 70 );
-	c[ ImGuiCol_ScrollbarGrabHovered ]   = Rgb( 90, 90, 90 );
-	c[ ImGuiCol_ScrollbarGrabActive ]    = Rgb( 102, 225, 192 );
-	c[ ImGuiCol_CheckMark ]              = Rgb( 102, 225, 192 );
-	c[ ImGuiCol_SliderGrab ]             = Rgb( 102, 225, 192 );
-	c[ ImGuiCol_SliderGrabActive ]       = Rgb( 150, 240, 215 );
-	c[ ImGuiCol_Button ]                 = Rgb( 54, 54, 54 );
-	c[ ImGuiCol_ButtonHovered ]          = Rgb( 70, 70, 70 );
-	c[ ImGuiCol_ButtonActive ]           = Rgb( 102, 225, 192 );
-	c[ ImGuiCol_Header ]                 = Rgb( 52, 52, 52 );
-	c[ ImGuiCol_HeaderHovered ]          = Rgb( 64, 64, 64 );
-	c[ ImGuiCol_HeaderActive ]           = Rgb( 56, 120, 104 );
-	c[ ImGuiCol_Separator ]              = Rgb( 20, 20, 20 );
-	c[ ImGuiCol_SeparatorHovered ]       = Rgb( 102, 225, 192, 0.6f );
-	c[ ImGuiCol_SeparatorActive ]        = Rgb( 102, 225, 192 );
-	c[ ImGuiCol_ResizeGrip ]             = Rgb( 0, 0, 0, 0 );
-	c[ ImGuiCol_ResizeGripHovered ]      = Rgb( 102, 225, 192, 0.6f );
-	c[ ImGuiCol_ResizeGripActive ]       = Rgb( 102, 225, 192 );
-	c[ ImGuiCol_Tab ]                    = Rgb( 38, 38, 38 );
-	c[ ImGuiCol_TabHovered ]             = Rgb( 64, 64, 64 );
-	c[ ImGuiCol_TabSelected ]            = Rgb( 56, 56, 56 );
-	c[ ImGuiCol_TabSelectedOverline ]    = Rgb( 102, 225, 192 );
-	c[ ImGuiCol_TabDimmed ]              = Rgb( 34, 34, 34 );
-	c[ ImGuiCol_TabDimmedSelected ]      = Rgb( 46, 46, 46 );
-	c[ ImGuiCol_TabDimmedSelectedOverline ] = Rgb( 70, 70, 70 );
-	c[ ImGuiCol_DockingPreview ]         = Rgb( 102, 225, 192, 0.45f );
-	c[ ImGuiCol_DockingEmptyBg ]         = Rgb( 20, 20, 20 );
-	c[ ImGuiCol_PlotLines ]              = Rgb( 102, 225, 192 );
-	c[ ImGuiCol_PlotHistogram ]          = Rgb( 102, 225, 192 );
-	c[ ImGuiCol_TableHeaderBg ]          = Rgb( 44, 44, 44 );
-	c[ ImGuiCol_TextSelectedBg ]         = Rgb( 102, 225, 192, 0.35f );
-	c[ ImGuiCol_DragDropTarget ]         = Rgb( 102, 225, 192 );
-	c[ ImGuiCol_NavCursor ]              = Rgb( 102, 225, 192 );
-	c[ ImGuiCol_ModalWindowDimBg ]       = Rgb( 0, 0, 0, 0.5f );
+void ApplyTheme( float scale )
+{
+	ImGuiStyle& style = ImGui::GetStyle();
+	style             = ImGuiStyle();
 
-	style.ScaleAllSizes( contentScale );
-	ImGui::GetIO().Fonts->Clear();
-	LoadFont( 15.0f * contentScale );
+	// Room to breathe, soft corners, hairline borders.
+	style.WindowPadding            = ImVec2( 10, 8 );
+	style.FramePadding             = ImVec2( 8, 5 );
+	style.ItemSpacing              = ImVec2( 8, 6 );
+	style.ItemInnerSpacing         = ImVec2( 6, 4 );
+	style.CellPadding              = ImVec2( 6, 4 );
+	style.IndentSpacing            = 14;
+	style.ScrollbarSize            = 10;
+	style.GrabMinSize              = 10;
+	style.WindowBorderSize         = 1;
+	style.ChildBorderSize          = 0;
+	style.PopupBorderSize          = 1;
+	style.FrameBorderSize          = 0;
+	style.TabBorderSize            = 0;
+	style.TabBarBorderSize         = 1;
+	style.TabBarOverlineSize       = 2;
+	style.WindowRounding           = 8;
+	style.ChildRounding            = 6;
+	style.FrameRounding            = 5;
+	style.PopupRounding            = 8;
+	style.ScrollbarRounding        = 8;
+	style.GrabRounding             = 4;
+	style.TabRounding              = 6;
+	style.WindowTitleAlign         = ImVec2( 0.0f, 0.5f );
+	style.WindowMenuButtonPosition = ImGuiDir_None; // the docking menu triangle on every tab: clutter
+	style.SeparatorTextBorderSize  = 1;
+	style.SeparatorTextPadding     = ImVec2( 0, 6 );
+	style.SeparatorTextAlign       = ImVec2( 0, 0.5f );
+	style.DockingSeparatorSize     = 2;
+	style.DisabledAlpha            = 0.45f;
+
+	ImVec4* c                               = style.Colors;
+	c[ ImGuiCol_Text ]                      = Color( theme::Text );
+	c[ ImGuiCol_TextDisabled ]              = Color( theme::TextDim );
+	c[ ImGuiCol_WindowBg ]                  = Color( theme::Panel );
+	c[ ImGuiCol_ChildBg ]                   = Rgb( 0, 0, 0, 0 );
+	c[ ImGuiCol_PopupBg ]                   = Rgb( 26, 29, 34, 0.98f );
+	c[ ImGuiCol_Border ]                    = Color( theme::Line );
+	c[ ImGuiCol_BorderShadow ]              = Rgb( 0, 0, 0, 0 );
+	c[ ImGuiCol_FrameBg ]                   = Color( theme::Raised );
+	c[ ImGuiCol_FrameBgHovered ]            = Color( theme::RaisedHover );
+	c[ ImGuiCol_FrameBgActive ]             = Rgb( 47, 52, 61 );
+	c[ ImGuiCol_TitleBg ]                   = Color( theme::Base );
+	c[ ImGuiCol_TitleBgActive ]             = Rgb( 17, 19, 23 );
+	c[ ImGuiCol_TitleBgCollapsed ]          = Color( theme::Base );
+	c[ ImGuiCol_MenuBarBg ]                 = Color( theme::Base );
+	c[ ImGuiCol_ScrollbarBg ]               = Rgb( 0, 0, 0, 0 );
+	c[ ImGuiCol_ScrollbarGrab ]             = Rgb( 255, 255, 255, 0.10f );
+	c[ ImGuiCol_ScrollbarGrabHovered ]      = Rgb( 255, 255, 255, 0.18f );
+	c[ ImGuiCol_ScrollbarGrabActive ]       = Color( theme::Accent, 0.7f );
+	c[ ImGuiCol_CheckMark ]                 = Color( theme::Accent );
+	c[ ImGuiCol_SliderGrab ]                = Color( theme::Accent );
+	c[ ImGuiCol_SliderGrabActive ]          = Rgb( 160, 240, 220 );
+	c[ ImGuiCol_Button ]                    = Color( theme::Raised );
+	c[ ImGuiCol_ButtonHovered ]             = Color( theme::RaisedHover );
+	c[ ImGuiCol_ButtonActive ]              = Color( theme::AccentDim );
+	c[ ImGuiCol_Header ]                    = Rgb( 255, 255, 255, 0.05f );
+	c[ ImGuiCol_HeaderHovered ]             = Rgb( 255, 255, 255, 0.08f );
+	c[ ImGuiCol_HeaderActive ]              = Color( theme::AccentFill );
+	c[ ImGuiCol_Separator ]                 = Color( theme::Line );
+	c[ ImGuiCol_SeparatorHovered ]          = Color( theme::Accent, 0.6f );
+	c[ ImGuiCol_SeparatorActive ]           = Color( theme::Accent );
+	c[ ImGuiCol_ResizeGrip ]                = Rgb( 0, 0, 0, 0 );
+	c[ ImGuiCol_ResizeGripHovered ]         = Color( theme::Accent, 0.6f );
+	c[ ImGuiCol_ResizeGripActive ]          = Color( theme::Accent );
+	c[ ImGuiCol_Tab ]                       = Rgb( 0, 0, 0, 0 );
+	c[ ImGuiCol_TabHovered ]                = Color( theme::RaisedHover );
+	c[ ImGuiCol_TabSelected ]               = Color( theme::Raised );
+	c[ ImGuiCol_TabSelectedOverline ]       = Color( theme::Accent );
+	c[ ImGuiCol_TabDimmed ]                 = Rgb( 0, 0, 0, 0 );
+	c[ ImGuiCol_TabDimmedSelected ]         = Rgb( 26, 29, 34 );
+	c[ ImGuiCol_TabDimmedSelectedOverline ] = Rgb( 255, 255, 255, 0.15f );
+	c[ ImGuiCol_DockingPreview ]            = Color( theme::Accent, 0.35f );
+	c[ ImGuiCol_DockingEmptyBg ]            = Color( theme::Base );
+	c[ ImGuiCol_PlotLines ]                 = Color( theme::Accent );
+	c[ ImGuiCol_PlotHistogram ]             = Color( theme::Accent );
+	c[ ImGuiCol_TableHeaderBg ]             = Rgb( 255, 255, 255, 0.04f );
+	c[ ImGuiCol_TableBorderStrong ]         = Color( theme::Line );
+	c[ ImGuiCol_TableBorderLight ]          = Rgb( 255, 255, 255, 0.04f );
+	c[ ImGuiCol_TableRowBg ]                = Rgb( 0, 0, 0, 0 );
+	c[ ImGuiCol_TableRowBgAlt ]             = Rgb( 255, 255, 255, 0.025f );
+	c[ ImGuiCol_TextLink ]                  = Color( theme::Accent );
+	c[ ImGuiCol_TextSelectedBg ]            = Color( theme::Accent, 0.30f );
+	c[ ImGuiCol_DragDropTarget ]            = Color( theme::Accent );
+	c[ ImGuiCol_NavCursor ]                 = Color( theme::Accent );
+	c[ ImGuiCol_ModalWindowDimBg ]          = Rgb( 0, 0, 0, 0.55f );
+
+	style.ScaleAllSizes( scale );
+	ImGuiIO& io = ImGui::GetIO();
+	io.Fonts->Clear();
+	fonts.body    = AddFont( kFont_Inter_Regular, kFont_Inter_Regular_size, 15.0f * scale );
+	fonts.bold    = AddFont( kFont_Inter_SemiBold, kFont_Inter_SemiBold_size, 15.0f * scale );
+	fonts.mono    = AddFont( kFont_JetBrainsMono_Medium, kFont_JetBrainsMono_Medium_size, 14.0f * scale );
+	fonts.display = AddFont( kFont_JetBrainsMono_Medium, kFont_JetBrainsMono_Medium_size, 20.0f * scale );
+	io.FontDefault = fonts.body;
 }
 }

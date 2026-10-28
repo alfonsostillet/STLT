@@ -320,7 +320,20 @@ else()
     target_sources(stltvj-core PRIVATE src/output/NoLocalSharing.cpp)
 endif()
 
+# The interface fonts (Inter and JetBrains Mono, SIL Open Font License) are compiled into the program.
+set(STLTVJ_FONTS
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts/Inter-Regular.ttf"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts/Inter-SemiBold.ttf"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/fonts/JetBrainsMono-Medium.ttf")
+set(STLTVJ_FONT_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/generated/EmbeddedFonts.cpp")
+add_custom_command(OUTPUT "${STLTVJ_FONT_SOURCE}"
+    COMMAND ${CMAKE_COMMAND} "-DOUTPUT=${STLTVJ_FONT_SOURCE}" "-DFONTS=${STLTVJ_FONTS}" -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedFonts.cmake"
+    DEPENDS ${STLTVJ_FONTS} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedFonts.cmake"
+    COMMENT "Embedding the interface fonts"
+    VERBATIM)
+
 add_executable(stlt-vj WIN32 MACOSX_BUNDLE
+    "${STLTVJ_FONT_SOURCE}"
     src/main.cpp
     src/App.cpp
     src/App.h
@@ -336,6 +349,8 @@ add_executable(stlt-vj WIN32 MACOSX_BUNDLE
     src/ui/Panels.h
     src/ui/Theme.cpp
     src/ui/Theme.h
+    src/ui/Widgets.cpp
+    src/ui/Widgets.h
     src/ui/Workspaces.cpp
     src/ui/Workspaces.h
 )
