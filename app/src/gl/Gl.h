@@ -33,6 +33,7 @@
 	X( PFNGLACTIVETEXTUREPROC, glActiveTexture )                         \
 	X( PFNGLTEXPARAMETERIPROC, glTexParameteri )                         \
 	X( PFNGLTEXIMAGE2DPROC, glTexImage2D )                               \
+	X( PFNGLTEXSUBIMAGE2DPROC, glTexSubImage2D )                         \
 	X( PFNGLCOMPRESSEDTEXIMAGE2DPROC, glCompressedTexImage2D )           \
 	X( PFNGLCOMPRESSEDTEXSUBIMAGE2DPROC, glCompressedTexSubImage2D )     \
 	X( PFNGLPIXELSTOREIPROC, glPixelStorei )                             \

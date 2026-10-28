@@ -74,7 +74,7 @@ int64_t Clip::CurrentFrame() const
 {
 	if( !Loaded() )
 		return 0;
-	return (int64_t)player->Video().FrameAt( time );
+	return (int64_t)player->Source().FrameAt( time );
 }
 
 Composition Composition::MakeDefault()

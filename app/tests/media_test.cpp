@@ -7,6 +7,7 @@
 #include <thread>
 #include <vector>
 #include <hap.h>
+#include "media/FrameSource.h"
 #include "media/HapFrame.h"
 #include "media/MovFile.h"
 #include "media/ThreadPool.h"
@@ -144,6 +145,90 @@ static void TestBadFiles()
 	CHECK( !ProbeHapFrame( junk, sizeof( junk ), 64, 48, layout ) );
 }
 
+static void TestFrameSourceHap()
+{
+	std::string error;
+	std::unique_ptr< FrameSource > source = OpenFrameSource( Fixture( "chunked_hapq.mov" ), error );
+	CHECK( source != nullptr );
+	if( !source )
+		return;
+	CHECK( source->IsHap() );
+	CHECK( source->CodecName() == "HAP Q" );
+	const FrameLayout& layout = source->Layout();
+	CHECK( layout.planeCount == 1 && layout.planes[ 0 ].format == PlaneFormat::Compressed );
+	CHECK( layout.shading == Shading::YCoCg );
+	std::vector< uint8_t > buffer( layout.totalBytes );
+	CHECK( source->Decode( 23, buffer.data() ) );
+	CHECK( source->Decode( 0, buffer.data() ) );
+	CHECK( !source->Decode( 24, buffer.data() ) );
+}
+
+static void TestFrameSourceFfmpeg()
+{
+	std::string error;
+	std::unique_ptr< FrameSource > missing = OpenFrameSource( Fixture( "nope.mp4" ), error );
+	CHECK( !missing && !error.empty() );
+	if( !HasFfmpeg() )
+	{
+		std::printf( "built without FFmpeg: non-HAP tests skipped\n" );
+		return;
+	}
+
+	// H.264, 12 frames at 10 fps, keyframe every 4; frame n is a flat grey with luma 16 + 16 n.
+	std::unique_ptr< FrameSource > movie = OpenFrameSource( Fixture( "ramp_h264.mp4" ), error );
+	CHECK( movie != nullptr );
+	if( movie )
+	{
+		CHECK( !movie->IsHap() && !movie->IsStill() );
+		CHECK( movie->CodecName() == "H.264" );
+		CHECK( movie->FrameCount() == 12 );
+		CHECK( std::fabs( movie->FrameRate() - 10 ) < 1e-6 );
+		CHECK( std::fabs( movie->Duration() - 1.2 ) < 0.05 );
+		CHECK( movie->FrameAt( 0.55 ) == 5 );
+		const FrameLayout& layout = movie->Layout();
+		CHECK( layout.shading == Shading::Yuv && layout.planeCount == 3 );
+		CHECK( layout.planes[ 0 ].width == 64 && layout.planes[ 0 ].height == 48 );
+		CHECK( layout.planes[ 1 ].width == 32 && layout.planes[ 1 ].height == 24 );
+		CHECK( !layout.fullRange );
+		std::vector< uint8_t > buffer( layout.totalBytes );
+		// In order, then jumping around: backwards, across keyframes, to the end and to the start.
+		for( int frame : { 0, 1, 2, 3, 9, 3, 11, 5, 6, 0, 10 } )
+		{
+			bool ok = movie->Decode( (size_t)frame, buffer.data() );
+			CHECK( ok );
+			int expected = 16 + 16 * frame;
+			if( ok && std::abs( buffer[ 0 ] - expected ) > 1 )
+			{
+				std::fprintf( stderr, "frame %d: luma %d, expected %d\n", frame, buffer[ 0 ], expected );
+				++failures;
+			}
+			CHECK( std::abs( buffer[ layout.planes[ 1 ].offset ] - 128 ) <= 1 );
+		}
+	}
+
+	std::unique_ptr< FrameSource > png = OpenFrameSource( Fixture( "still_rgba.png" ), error );
+	CHECK( png != nullptr );
+	if( png )
+	{
+		CHECK( png->IsStill() && png->FrameCount() == 1 && png->Duration() == 0 );
+		CHECK( png->Layout().shading == Shading::Rgba && png->Layout().width == 8 && png->Layout().height == 4 );
+		std::vector< uint8_t > pixels( png->Layout().totalBytes );
+		CHECK( png->Decode( 0, pixels.data() ) );
+		CHECK( pixels[ 0 ] == 255 && pixels[ 1 ] == 0 && pixels[ 2 ] == 0 && std::abs( pixels[ 3 ] - 128 ) <= 1 );
+	}
+
+	std::unique_ptr< FrameSource > jpeg = OpenFrameSource( Fixture( "gray.jpg" ), error );
+	CHECK( jpeg != nullptr );
+	if( jpeg )
+	{
+		CHECK( jpeg->IsStill() && jpeg->CodecName() == "JPEG" );
+		CHECK( jpeg->Layout().shading == Shading::Yuv && jpeg->Layout().fullRange );
+		std::vector< uint8_t > pixels( jpeg->Layout().totalBytes );
+		CHECK( jpeg->Decode( 0, pixels.data() ) );
+		CHECK( std::abs( pixels[ 0 ] - 128 ) <= 2 );
+	}
+}
+
 int main()
 {
 	TestHapDxt1();
@@ -151,6 +236,8 @@ int main()
 	TestChunkedHapQ();
 	TestThreadPool();
 	TestBadFiles();
+	TestFrameSourceHap();
+	TestFrameSourceFfmpeg();
 	if( failures )
 	{
 		std::fprintf( stderr, "%d check(s) failed\n", failures );

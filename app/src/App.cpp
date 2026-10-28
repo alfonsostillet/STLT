@@ -10,6 +10,7 @@
 #include "fx/BuiltinEffects.h"
 #include "gl/Gl.h"
 #include "ui/EffectsUi.h"
+#include "ui/FileDialogs.h"
 #include "ui/Panels.h"
 #include "ui/Theme.h"
 
@@ -263,7 +264,11 @@ void App::LoadClip( int layer, int column, const std::string& path )
 	if( clip.player->Open( path ) )
 	{
 		compositor.MakeThumbnail( *clip.player );
-		SetStatus( "Loaded " + clip.name );
+		const FrameSource& source = clip.player->Source();
+		if( source.IsHap() || source.IsStill() )
+			SetStatus( "Loaded " + clip.name );
+		else
+			SetStatus( "Loaded " + clip.name + " (" + source.CodecName() + ", decoded on the CPU: convert it to HAP for the best performance)" );
 	}
 	else
 	{
@@ -591,6 +596,10 @@ void App::Frame()
 		if( selected->generator || ( selected->Loaded() && selected->player->Active() ) )
 			compositor.RenderClipAlone( *selected, preview, composition.width, composition.height, frame );
 	glFlush(); // makes the new composition visible to the output window's context
+
+	std::string dialogError = PollFileDialogs();
+	if( !dialogError.empty() )
+		SetStatus( "File dialog: " + dialogError + " (Composition > Type a Path works without it)", true );
 
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();

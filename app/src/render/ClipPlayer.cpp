@@ -1,7 +1,7 @@
 #include "ClipPlayer.h"
 #include <hap.h>
 #include <chrono>
-#include "media/ThreadPool.h"
+#include <vector>
 
 namespace stltvj
 {
@@ -29,43 +29,21 @@ bool ClipPlayer::Open( const std::string& path )
 {
 	Deactivate();
 	error.clear();
-	if( !movie.Open( path ) )
-	{
-		error = movie.Error();
+	source = OpenFrameSource( path, error );
+	if( !source )
 		return false;
-	}
-	const VideoTrack& video = movie.Video();
-	if( !IsHapCodec( video.codec ) )
+	layout = source->Layout();
+	for( unsigned i = 0; i < layout.planeCount; ++i )
 	{
-		error = "Codec " + FourccString( video.codec ) + " is not supported: convert the clip to HAP";
-		return false;
-	}
-	std::vector< uint8_t > first;
-	if( !movie.ReadSample( 0, first ) || !ProbeHapFrame( first.data(), video.samples[ 0 ].size, video.width, video.height, layout ) )
-	{
-		error = "The first frame is not valid HAP";
-		return false;
-	}
-	for( unsigned i = 0; i < layout.textureCount; ++i )
-	{
-		unsigned f = layout.formats[ i ];
+		unsigned f = layout.planes[ i ].compressedFormat;
 		bool bptc  = f == HapTextureFormat_RGBA_BPTC_UNORM || f == HapTextureFormat_RGB_BPTC_UNSIGNED_FLOAT || f == HapTextureFormat_RGB_BPTC_SIGNED_FLOAT;
-		if( bptc && !Caps().bptc )
+		if( layout.planes[ i ].format == PlaneFormat::Compressed && bptc && !Caps().bptc )
 		{
-			error = std::string( HapCodecName( video.codec ) ) + " needs BPTC texture support, which this GPU driver lacks";
+			error = source->CodecName() + " needs BPTC texture support, which this GPU driver lacks";
+			source.reset();
 			return false;
 		}
 	}
-	if( layout.textureCount == 2 )
-		shading = Shading::YCoCgAlpha;
-	else if( layout.formats[ 0 ] == HapTextureFormat_YCoCg_DXT5 )
-		shading = Shading::YCoCg;
-	else if( layout.formats[ 0 ] == HapTextureFormat_A_RGTC1 )
-		shading = Shading::AlphaOnly;
-	else if( layout.formats[ 0 ] == HapTextureFormat_RGBA_DXT5 || layout.formats[ 0 ] == HapTextureFormat_RGBA_BPTC_UNORM )
-		shading = Shading::Rgba;
-	else
-		shading = Shading::Rgb;
 	return true;
 }
 
@@ -73,22 +51,38 @@ bool ClipPlayer::Activate()
 {
 	if( Active() )
 		return true;
-	if( !layout.textureCount )
+	if( !source || !layout.planeCount )
 		return false;
 
-	std::vector< uint8_t > zeros( layout.TotalBytes() );
-	for( unsigned i = 0; i < layout.textureCount; ++i )
+	glPixelStorei( GL_UNPACK_ALIGNMENT, 1 );
+	std::vector< uint8_t > zeros( layout.planes[ 0 ].bytes );
+	for( unsigned i = 0; i < layout.planeCount; ++i )
 	{
-		internalFormats[ i ] = GlFormat( layout.formats[ i ] );
+		const Plane& plane = layout.planes[ i ];
 		glGenTextures( 1, &textures[ i ] );
 		glBindTexture( GL_TEXTURE_2D, textures[ i ] );
 		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR );
 		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR );
 		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE );
 		glTexParameteri( GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE );
-		glCompressedTexImage2D( GL_TEXTURE_2D, 0, internalFormats[ i ], layout.paddedWidth, layout.paddedHeight, 0, (GLsizei)layout.bytes[ i ], zeros.data() );
+		switch( plane.format )
+		{
+		case PlaneFormat::Compressed:
+			internalFormats[ i ] = GlFormat( plane.compressedFormat );
+			glCompressedTexImage2D( GL_TEXTURE_2D, 0, internalFormats[ i ], plane.width, plane.height, 0, (GLsizei)plane.bytes, zeros.data() );
+			break;
+		case PlaneFormat::R8:
+			internalFormats[ i ] = GL_R8;
+			glTexImage2D( GL_TEXTURE_2D, 0, GL_R8, plane.width, plane.height, 0, GL_RED, GL_UNSIGNED_BYTE, nullptr );
+			break;
+		case PlaneFormat::RGBA8:
+			internalFormats[ i ] = GL_RGBA8;
+			glTexImage2D( GL_TEXTURE_2D, 0, GL_RGBA8, plane.width, plane.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr );
+			break;
+		}
 	}
 	glBindTexture( GL_TEXTURE_2D, 0 );
+	glPixelStorei( GL_UNPACK_ALIGNMENT, 4 );
 
 	glBindBuffer( GL_PIXEL_UNPACK_BUFFER, 0 );
 	for( Slot& slot : slots )
@@ -127,8 +121,8 @@ void ClipPlayer::Deactivate()
 		slot = Slot{};
 	}
 	glBindBuffer( GL_PIXEL_UNPACK_BUFFER, 0 );
-	glDeleteTextures( 2, textures );
-	textures[ 0 ] = textures[ 1 ] = 0;
+	glDeleteTextures( 3, textures );
+	textures[ 0 ] = textures[ 1 ] = textures[ 2 ] = 0;
 	shownFrame                    = -1;
 }
 
@@ -136,7 +130,7 @@ void ClipPlayer::Deactivate()
 // waits for an upload still reading the previous storage.
 void ClipPlayer::Remap( Slot& slot )
 {
-	GLsizeiptr size = (GLsizeiptr)layout.TotalBytes();
+	GLsizeiptr size = (GLsizeiptr)layout.totalBytes;
 	glBindBuffer( GL_PIXEL_UNPACK_BUFFER, slot.buffer );
 	glBufferData( GL_PIXEL_UNPACK_BUFFER, size, nullptr, GL_STREAM_DRAW );
 	slot.mapped = (uint8_t*)glMapBufferRange( GL_PIXEL_UNPACK_BUFFER, 0, size, GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT );
@@ -148,16 +142,20 @@ void ClipPlayer::Upload( Slot& slot )
 	Clock::time_point start = Clock::now();
 	glBindBuffer( GL_PIXEL_UNPACK_BUFFER, slot.buffer );
 	glUnmapBuffer( GL_PIXEL_UNPACK_BUFFER );
-	slot.mapped   = nullptr;
-	size_t offset = 0;
-	for( unsigned i = 0; i < layout.textureCount; ++i )
+	slot.mapped = nullptr;
+	glPixelStorei( GL_UNPACK_ALIGNMENT, 1 );
+	for( unsigned i = 0; i < layout.planeCount; ++i )
 	{
+		const Plane& plane = layout.planes[ i ];
+		const void* offset = (const void*)plane.offset;
 		glBindTexture( GL_TEXTURE_2D, textures[ i ] );
-		glCompressedTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, layout.paddedWidth, layout.paddedHeight, internalFormats[ i ], (GLsizei)layout.bytes[ i ],
-		                           (const void*)offset );
-		offset += layout.bytes[ i ];
+		if( plane.format == PlaneFormat::Compressed )
+			glCompressedTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, plane.width, plane.height, internalFormats[ i ], (GLsizei)plane.bytes, offset );
+		else
+			glTexSubImage2D( GL_TEXTURE_2D, 0, 0, 0, plane.width, plane.height, plane.format == PlaneFormat::R8 ? GL_RED : GL_RGBA, GL_UNSIGNED_BYTE, offset );
 	}
 	glBindTexture( GL_TEXTURE_2D, 0 );
+	glPixelStorei( GL_UNPACK_ALIGNMENT, 4 );
 	glBindBuffer( GL_PIXEL_UNPACK_BUFFER, 0 );
 	Remap( slot );
 	uploadMs = Smooth( uploadMs, std::chrono::duration< float, std::milli >( Clock::now() - start ).count() );
@@ -212,23 +210,13 @@ bool ClipPlayer::PickWork( int& slotIndex, int64_t& frame ) const
 	return false;
 }
 
-bool ClipPlayer::DecodeInto( int64_t frame, uint8_t* destination, std::vector< uint8_t >& compressed )
+bool ClipPlayer::DecodeInto( int64_t frame, uint8_t* destination )
 {
-	const VideoTrack& video = movie.Video();
-	if( !movie.ReadSample( (size_t)frame, compressed ) )
-		return false;
-	size_t size = video.samples[ (size_t)frame ].size;
-	HapLayout frameLayout;
-	if( !ProbeHapFrame( compressed.data(), size, video.width, video.height, frameLayout ) || frameLayout.textureCount != layout.textureCount
-	    || frameLayout.formats[ 0 ] != layout.formats[ 0 ] || frameLayout.formats[ 1 ] != layout.formats[ 1 ] )
-		return false;
-	void* outputs[ 2 ] = { destination, destination + layout.bytes[ 0 ] };
-	return DecodeHapFrame( compressed.data(), size, frameLayout, outputs, &ThreadPool::Shared() );
+	return source->Decode( (size_t)frame, destination );
 }
 
 void ClipPlayer::DecodeLoop()
 {
-	std::vector< uint8_t > compressed;
 	std::unique_lock< std::mutex > lock( mutex );
 	for( ;; )
 	{
@@ -244,7 +232,7 @@ void ClipPlayer::DecodeLoop()
 		lock.unlock();
 
 		Clock::time_point start = Clock::now();
-		bool ok                 = DecodeInto( frame, destination, compressed );
+		bool ok                 = DecodeInto( frame, destination );
 		decodeMs.store( Smooth( decodeMs.load(), std::chrono::duration< float, std::milli >( Clock::now() - start ).count() ) );
 		decodedCount++;
 
@@ -311,8 +299,7 @@ bool ClipPlayer::ShowNow( int64_t frame )
 	}
 	if( !slot )
 		return false;
-	std::vector< uint8_t > compressed;
-	bool ok = DecodeInto( frame, slot->mapped, compressed );
+	bool ok = DecodeInto( frame, slot->mapped );
 	if( ok )
 		Upload( *slot );
 	{

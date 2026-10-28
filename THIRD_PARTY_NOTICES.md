@@ -328,3 +328,42 @@ CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
 TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.
 ```
+
+## Native File Dialog Extended 1.2.1 — STLT-VJ app
+
+https://github.com/btzy/nativefiledialog-extended
+
+```
+This software is provided 'as-is', without any express or implied
+warranty.  In no event will the authors be held liable for any damages
+arising from the use of this software.
+
+Permission is granted to anyone to use this software for any purpose,
+including commercial applications, and to alter it and redistribute it
+freely, subject to the following restrictions:
+
+1. The origin of this software must not be misrepresented; you must not
+   claim that you wrote the original software. If you use this software
+   in a product, an acknowledgment in the product documentation would be
+   appreciated but is not required.
+2. Altered source versions must be plainly marked as such, and must not be
+   misrepresented as being the original software.
+3. This notice may not be removed or altered from any source distribution.
+```
+
+## FFmpeg — STLT-VJ app
+
+https://ffmpeg.org
+
+STLT-VJ uses FFmpeg's libavformat, libavcodec, libswscale and libavutil to decode files that are not HAP.
+FFmpeg is licensed under the GNU Lesser General Public License version 2.1 or later; some optional parts, enabled in
+some builds, are under the GNU General Public License version 2 or later. The source code is at https://ffmpeg.org/download.html.
+
+- macOS and Linux builds made with `app/scripts/build-ffmpeg.sh` link FFmpeg 7.1.5 statically, configured with decoders
+  only and no GPL parts (LGPL 2.1 or later).
+- Windows builds ship the shared FFmpeg 7.1 "full_build-shared" libraries by gyan.dev
+  (https://github.com/GyanD/codexffmpeg/releases/tag/7.1), which are built with GPL components and are therefore
+  under the GNU General Public License version 3; their source and licence texts are linked from that release.
+- Linux development builds may use the system's FFmpeg packages under their own licence.
+
+STLT-VJ itself is GPL-3.0, compatible with all of the above.

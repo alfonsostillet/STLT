@@ -76,7 +76,7 @@ struct Clip
 	bool Empty() const { return path.empty() && generatorId.empty(); }
 	// Something that can play: a loaded movie or a live generator.
 	bool Playable() const { return Loaded() || generator != nullptr; }
-	double Duration() const { return Loaded() ? player->Video().DurationSeconds() : 0.0; }
+	double Duration() const { return Loaded() ? player->Source().Duration() : 0.0; }
 	// Moves the playhead by `seconds` of composition time.
 	void Advance( double seconds );
 	void Restart();

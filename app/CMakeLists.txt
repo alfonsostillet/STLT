@@ -16,6 +16,8 @@ endif()
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 option(STLTVJ_BUILD_APP "Build the app itself (off: only the media engine, tools and tests)" ON)
+option(STLTVJ_WITH_FFMPEG "Play files that are not HAP (H.264, ProRes, DXV, PNG, JPEG...) through FFmpeg" ON)
+set(FFMPEG_ROOT "" CACHE PATH "FFmpeg install prefix (app/scripts/build-ffmpeg.sh); empty: system FFmpeg, or a download on Windows")
 
 include(FetchContent)
 enable_testing()
@@ -35,6 +37,10 @@ FetchContent_Declare(snappy
 FetchContent_Declare(hap
     GIT_REPOSITORY https://github.com/Vidvox/hap.git
     GIT_TAG d847f6bbd3be88575dd4ef33a877243780e3be76)
+FetchContent_Declare(nfd
+    GIT_REPOSITORY https://github.com/btzy/nativefiledialog-extended.git
+    GIT_TAG v1.2.1
+    GIT_SHALLOW TRUE)
 
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
 set(GLFW_BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -44,12 +50,53 @@ set(GLFW_BUILD_WAYLAND OFF CACHE BOOL "" FORCE) # Linux is a development target 
 set(SNAPPY_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(SNAPPY_BUILD_BENCHMARKS OFF CACHE BOOL "" FORCE)
 set(SNAPPY_INSTALL OFF CACHE BOOL "" FORCE)
+set(NFD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(NFD_INSTALL OFF CACHE BOOL "" FORCE)
 
 # imgui and hap have no CMake project of their own: MakeAvailable only downloads them.
 FetchContent_MakeAvailable(snappy hap)
 if(STLTVJ_BUILD_APP)
-    FetchContent_MakeAvailable(glfw imgui)
+    FetchContent_MakeAvailable(glfw imgui nfd)
 endif()
+
+# FFmpeg decodes everything that is not HAP.
+if(STLTVJ_WITH_FFMPEG)
+    add_library(ffmpeg INTERFACE)
+    if(WIN32)
+        if(NOT FFMPEG_ROOT)
+            # Shared FFmpeg 7.1 build for Windows (GPL, gyan.dev); its DLLs are copied next to the executables.
+            FetchContent_Declare(ffmpeg_windows
+                URL https://github.com/GyanD/codexffmpeg/releases/download/7.1/ffmpeg-7.1-full_build-shared.zip
+                URL_HASH SHA256=fedf38dbdd00fa189da06afb0abba69a19312412e05fa2e8e89b3c06aafebcdc)
+            FetchContent_MakeAvailable(ffmpeg_windows)
+            set(FFMPEG_ROOT "${ffmpeg_windows_SOURCE_DIR}")
+        endif()
+        target_include_directories(ffmpeg INTERFACE "${FFMPEG_ROOT}/include")
+        target_link_libraries(ffmpeg INTERFACE
+            "${FFMPEG_ROOT}/lib/avformat.lib" "${FFMPEG_ROOT}/lib/avcodec.lib" "${FFMPEG_ROOT}/lib/swscale.lib" "${FFMPEG_ROOT}/lib/avutil.lib")
+        file(GLOB FFMPEG_DLLS "${FFMPEG_ROOT}/bin/*.dll")
+    else()
+        find_package(PkgConfig REQUIRED)
+        if(FFMPEG_ROOT)
+            # Our own static build: link its private dependencies too.
+            set(ENV{PKG_CONFIG_PATH} "${FFMPEG_ROOT}/lib/pkgconfig")
+            pkg_check_modules(FFMPEG REQUIRED libavformat libavcodec libswscale libavutil)
+            target_include_directories(ffmpeg INTERFACE ${FFMPEG_STATIC_INCLUDE_DIRS})
+            target_link_directories(ffmpeg INTERFACE ${FFMPEG_STATIC_LIBRARY_DIRS})
+            target_link_libraries(ffmpeg INTERFACE ${FFMPEG_STATIC_LDFLAGS})
+        else()
+            pkg_check_modules(FFMPEG REQUIRED IMPORTED_TARGET libavformat libavcodec libswscale libavutil)
+            target_link_libraries(ffmpeg INTERFACE PkgConfig::FFMPEG)
+        endif()
+    endif()
+endif()
+
+# Copies the FFmpeg DLLs next to an executable on Windows.
+function(stltvj_ffmpeg_runtime target)
+    if(WIN32 AND STLTVJ_WITH_FFMPEG AND FFMPEG_DLLS)
+        add_custom_command(TARGET ${target} POST_BUILD COMMAND ${CMAKE_COMMAND} -E copy_if_different ${FFMPEG_DLLS} $<TARGET_FILE_DIR:${target}>)
+    endif()
+endfunction()
 
 set(THIRD_PARTY "${CMAKE_CURRENT_SOURCE_DIR}/../third_party")
 
@@ -75,10 +122,14 @@ endif()
 
 # The media engine: demuxing, HAP decoding and timing. No OpenGL, so tools and tests can use it headless.
 add_library(stltvj-media STATIC
+    src/media/FfmpegSource.cpp
     src/media/FileReader.cpp
     src/media/FileReader.h
+    src/media/FrameSource.h
     src/media/HapFrame.cpp
     src/media/HapFrame.h
+    src/media/HapSource.cpp
+    src/media/HapSource.h
     src/media/MovFile.cpp
     src/media/MovFile.h
     src/media/ThreadPool.cpp
@@ -90,6 +141,10 @@ find_package(Threads REQUIRED)
 target_link_libraries(stltvj-media PUBLIC Threads::Threads)
 if(WIN32)
     target_compile_definitions(stltvj-media PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+endif()
+if(STLTVJ_WITH_FFMPEG)
+    target_compile_definitions(stltvj-media PUBLIC STLTVJ_WITH_FFMPEG)
+    target_link_libraries(stltvj-media PUBLIC ffmpeg)
 endif()
 
 if(STLTVJ_BUILD_APP)
@@ -142,6 +197,8 @@ add_executable(stlt-vj WIN32 MACOSX_BUNDLE
     src/App.h
     src/ui/EffectsUi.cpp
     src/ui/EffectsUi.h
+    src/ui/FileDialogs.cpp
+    src/ui/FileDialogs.h
     src/ui/Panels.cpp
     src/ui/Panels.h
     src/ui/Theme.cpp
@@ -149,7 +206,8 @@ add_executable(stlt-vj WIN32 MACOSX_BUNDLE
     src/ui/Workspaces.cpp
     src/ui/Workspaces.h
 )
-target_link_libraries(stlt-vj PRIVATE stltvj-core imgui)
+target_link_libraries(stlt-vj PRIVATE stltvj-core imgui nfd)
+stltvj_ffmpeg_runtime(stlt-vj)
 if(WIN32)
     set_target_properties(stlt-vj PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
 endif()
@@ -158,13 +216,16 @@ endif()
 add_executable(fx_test tests/fx_test.cpp)
 target_link_libraries(fx_test PRIVATE stltvj-core)
 add_test(NAME fx_test COMMAND fx_test)
+stltvj_ffmpeg_runtime(fx_test)
 endif()
 
 # Headless tools: decode benchmark and tests for the media engine.
-add_executable(hapbench tools/hapbench.cpp)
-target_link_libraries(hapbench PRIVATE stltvj-media)
+add_executable(decodebench tools/decodebench.cpp)
+target_link_libraries(decodebench PRIVATE stltvj-media)
+stltvj_ffmpeg_runtime(decodebench)
 
 add_executable(media_test tests/media_test.cpp)
 target_link_libraries(media_test PRIVATE stltvj-media)
 target_compile_definitions(media_test PRIVATE FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures")
 add_test(NAME media_test COMMAND media_test)
+stltvj_ffmpeg_runtime(media_test)

@@ -7,7 +7,9 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <map>
 #include "App.h"
+#include "ui/FileDialogs.h"
 #include "ui/Theme.h"
 #include "ui/Workspaces.h"
 
@@ -190,11 +192,31 @@ int ParamWidget( Effect& effect, int i )
 		break;
 	}
 	case ParamKind::Text:
-	case ParamKind::File:
 	{
 		std::string text = effect.Text( i );
-		if( ImGui::InputTextWithHint( "##v", p.kind == ParamKind::File ? "file path" : "", &text ) )
+		if( ImGui::InputText( "##v", &text ) )
 			effect.SetText( i, text );
+		break;
+	}
+	case ParamKind::File:
+	{
+		// A file picked in the dialog is applied the next time this parameter is drawn: the dialog may
+		// finish on another frame, when the effect could already be gone.
+		static std::map< std::pair< const Effect*, int >, std::string > chosen;
+		auto key = std::make_pair( (const Effect*)&effect, i );
+		auto found = chosen.find( key );
+		if( found != chosen.end() )
+		{
+			effect.SetText( i, found->second );
+			chosen.erase( found );
+		}
+		std::string text = effect.Text( i );
+		ImGui::SetNextItemWidth( -ImGui::GetFrameHeight() * 1.6f );
+		if( ImGui::InputTextWithHint( "##v", "file path", &text ) )
+			effect.SetText( i, text );
+		ImGui::SameLine();
+		if( ImGui::Button( "..." ) )
+			ShowFileDialog( FileDialog::OpenAnyFile, text, [ key ]( const std::vector< std::string >& paths ) { chosen[ key ] = paths[ 0 ]; } );
 		break;
 	}
 	case ParamKind::Buffer: ImGui::TextDisabled( "audio input (not available yet)" ); break;
@@ -488,6 +510,9 @@ void DrawEffectsPanel( App& app )
 			app.AddPluginFolder( newFolder );
 			newFolder.clear();
 		}
+		ImGui::SameLine();
+		if( ImGui::Button( "Choose Folder..." ) )
+			ShowFileDialog( FileDialog::PickFolder, app.configDir, [ &app ]( const std::vector< std::string >& paths ) { app.AddPluginFolder( paths[ 0 ] ); } );
 		if( ImGui::Button( "Rescan" ) )
 			app.RescanPlugins();
 		if( !app.registry->Failures().empty() )

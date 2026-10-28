@@ -67,7 +67,7 @@ The working document lives in `%APPDATA%\Stilletchaser` on Windows and `~/Librar
 
 ## STLT-VJ (in development)
 
-[app/](app/README.md) holds STLT-VJ, a live HAP video player with dockable panels that will host these effects and map them onto slices itself.
+[app/](app/README.md) holds STLT-VJ, a live video player with dockable panels: HAP for speed, H.264, ProRes, DXV, images and other formats through FFmpeg, built-in and FFGL effects (these plugins included), with slice mapping to come.
 
 ![STLT-VJ](docs/images/stlt-vj.png)
 

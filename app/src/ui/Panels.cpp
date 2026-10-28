@@ -11,7 +11,9 @@
 #include "App.h"
 #include "Settings.h"
 #include "media/ThreadPool.h"
+#include "media/FrameSource.h"
 #include "ui/EffectsUi.h"
+#include "ui/FileDialogs.h"
 #include "ui/Theme.h"
 
 namespace fs = std::filesystem;
@@ -56,11 +58,9 @@ ImVec2 FitSize( ImVec2 area, float aspect, ImVec2* offset )
 	return size;
 }
 
-bool IsVideoFile( const fs::path& path )
+bool IsMediaFile( const fs::path& path )
 {
-	std::string ext = path.extension().u8string();
-	std::transform( ext.begin(), ext.end(), ext.begin(), []( unsigned char c ) { return (char)std::tolower( c ); } );
-	return ext == ".mov" || ext == ".mp4" || ext == ".avi";
+	return IsMediaExtension( path.extension().u8string() );
 }
 
 bool IsComposition( const fs::path& path )
@@ -199,7 +199,7 @@ const Listing& ListDirectory( const std::string& directory )
 		std::error_code ignored;
 		if( entry.is_directory( ignored ) )
 			listing.folders.push_back( entry.path() );
-		else if( IsVideoFile( entry.path() ) || IsComposition( entry.path() ) )
+		else if( IsMediaFile( entry.path() ) || IsComposition( entry.path() ) )
 			listing.files.push_back( entry.path() );
 	}
 	auto byName = []( const fs::path& a, const fs::path& b ) { return a.filename().u8string() < b.filename().u8string(); };
@@ -218,7 +218,7 @@ void LoadInto( App& app, int layer, int column, const std::vector< std::string >
 			app.OpenComposition( path );
 			return;
 		}
-		if( !IsVideoFile( fs::u8path( path ) ) )
+		if( !IsMediaFile( fs::u8path( path ) ) )
 			continue;
 		app.LoadClip( layer, column++, path );
 	}
@@ -268,7 +268,7 @@ bool IconButton( const char* id, Icon icon, bool active, float size )
 
 void DrawMainMenu( App& app )
 {
-	bool openComposition = false, saveCompositionAs = false, saveWorkspace = false;
+	bool openComposition = false, saveCompositionAs = false, saveWorkspace = false, openPath = false, savePath = false;
 	if( ImGui::BeginMenuBar() )
 	{
 		if( ImGui::BeginMenu( "Composition" ) )
@@ -286,6 +286,17 @@ void DrawMainMenu( App& app )
 			}
 			if( ImGui::MenuItem( "Save As..." ) )
 				saveCompositionAs = true;
+			ImGui::Separator();
+			if( ImGui::MenuItem( "Import Media...", "Ctrl+I" ) )
+				ShowFileDialog( FileDialog::OpenMedia, app.browserDirectory, [ &app ]( const std::vector< std::string >& paths ) { LoadIntoSelected( app, paths ); } );
+			if( ImGui::BeginMenu( "Type a Path" ) )
+			{
+				if( ImGui::MenuItem( "Open Path..." ) )
+					openPath = true;
+				if( ImGui::MenuItem( "Save to Path..." ) )
+					savePath = true;
+				ImGui::EndMenu();
+			}
 			ImGui::Separator();
 			if( ImGui::MenuItem( "Quit" ) )
 				app.quitRequested = true;
@@ -360,6 +371,8 @@ void DrawMainMenu( App& app )
 	ImGuiIO& io = ImGui::GetIO();
 	if( io.KeyCtrl && ImGui::IsKeyPressed( ImGuiKey_O, false ) )
 		openComposition = true;
+	if( io.KeyCtrl && ImGui::IsKeyPressed( ImGuiKey_I, false ) )
+		ShowFileDialog( FileDialog::OpenMedia, app.browserDirectory, [ &app ]( const std::vector< std::string >& paths ) { LoadIntoSelected( app, paths ); } );
 	if( io.KeyCtrl && ImGui::IsKeyPressed( ImGuiKey_S, false ) )
 	{
 		if( app.compositionPath.empty() )
@@ -370,11 +383,21 @@ void DrawMainMenu( App& app )
 
 	static std::string pathInput, workspaceName;
 	if( openComposition )
+		ShowFileDialog( FileDialog::OpenComposition, app.compositionPath.empty() ? app.browserDirectory : app.compositionPath,
+		                [ &app ]( const std::vector< std::string >& paths ) { app.OpenComposition( paths[ 0 ] ); } );
+	if( saveCompositionAs )
+	{
+		std::string suggested = DefaultCompositionPath( app );
+		ShowFileDialog(
+			FileDialog::SaveComposition, suggested, [ &app ]( const std::vector< std::string >& paths ) { app.SaveCompositionTo( paths[ 0 ] ); },
+			fs::u8path( suggested ).filename().u8string() );
+	}
+	if( openPath )
 	{
 		pathInput = app.compositionPath.empty() ? app.browserDirectory : app.compositionPath;
 		ImGui::OpenPopup( "Open Composition" );
 	}
-	if( saveCompositionAs )
+	if( savePath )
 	{
 		pathInput = DefaultCompositionPath( app );
 		ImGui::OpenPopup( "Save Composition" );
@@ -725,6 +748,9 @@ void DrawClipGrid( App& app )
 				app.Select( l, c );
 				if( ImGui::MenuItem( "Launch", nullptr, false, clip.Playable() ) )
 					app.Launch( l, c );
+				if( ImGui::MenuItem( "Load Media..." ) )
+					ShowFileDialog( FileDialog::OpenMedia, app.browserDirectory,
+					                [ &app, l, c ]( const std::vector< std::string >& paths ) { LoadInto( app, l, c, paths ); } );
 				if( ImGui::MenuItem( "Remove Clip", nullptr, false, !clip.Empty() ) )
 					app.RemoveClip( l, c );
 				ImGui::EndPopup();
@@ -803,7 +829,7 @@ void DrawPreviewMonitor( App& app )
 			bool live = clip->player->Active() && clip->player->HasFrame();
 			FboImage( live ? app.preview.Texture() : clip->player->Thumbnail().Texture(), size );
 			ImGui::SetCursorPosX( Ui( 6 ) );
-			ImGui::TextDisabled( "Preview - %s - %dx%d%s", clip->name.c_str(), clip->player->Video().width, clip->player->Video().height,
+			ImGui::TextDisabled( "Preview - %s - %dx%d%s", clip->name.c_str(), clip->player->Width(), clip->player->Height(),
 			                     live ? "" : " (thumbnail)" );
 		}
 		else
@@ -958,12 +984,17 @@ void DrawClipPanel( App& app )
 	}
 	else
 	{
-		const VideoTrack& video = clip->player->Video();
-		ImGui::TextDisabled( "%s  %dx%d  %.2f fps  %zu frames  %d chunk%s", HapCodecName( video.codec ), video.width, video.height, video.FrameRate(),
-		                     clip->player->FrameCount(), clip->player->Layout().chunks[ 0 ], clip->player->Layout().chunks[ 0 ] == 1 ? "" : "s" );
+		const FrameSource& source = clip->player->Source();
+		if( source.IsStill() )
+			ImGui::TextDisabled( "%s  %dx%d  still image", source.CodecName().c_str(), clip->player->Width(), clip->player->Height() );
+		else
+			ImGui::TextDisabled( "%s  %dx%d  %.2f fps  %zu frames  %s", source.CodecName().c_str(), clip->player->Width(), clip->player->Height(),
+			                     source.FrameRate(), source.FrameCount(), source.Details().c_str() );
+		if( !source.IsHap() && !source.IsStill() )
+			ImGui::TextColored( ImVec4( 0.95f, 0.7f, 0.3f, 1 ), "Not HAP: decoded on the CPU. Convert to HAP for the best performance." );
 	}
 
-	if( clip->Loaded() && ImGui::CollapsingHeader( "Transport", ImGuiTreeNodeFlags_DefaultOpen ) )
+	if( clip->Loaded() && !clip->player->Source().IsStill() && ImGui::CollapsingHeader( "Transport", ImGuiTreeNodeFlags_DefaultOpen ) )
 	{
 		if( IconButton( "##reverse", Icon::Reverse, clip->direction < 0 ) )
 			clip->direction = -1;
@@ -1063,6 +1094,9 @@ void DrawFilesPanel( App& app )
 	ImGui::SameLine();
 	if( ImGui::Button( "Home" ) )
 		app.browserDirectory = HomeDirectory();
+	ImGui::SameLine();
+	if( ImGui::Button( "Browse..." ) )
+		ShowFileDialog( FileDialog::PickFolder, app.browserDirectory, [ &app ]( const std::vector< std::string >& paths ) { app.browserDirectory = paths[ 0 ]; } );
 	ImGui::SameLine();
 	ImGui::SetNextItemWidth( -FLT_MIN );
 	std::string edit = app.browserDirectory;
@@ -1182,7 +1216,7 @@ void DrawPerformancePanel( App& app )
 			ImGui::TableNextColumn();
 			ImGui::TextUnformatted( clip.name.c_str() );
 			ImGui::TableNextColumn();
-			ImGui::Text( "%s %dx%d", HapCodecName( clip.player->Video().codec ), clip.player->Video().width, clip.player->Video().height );
+			ImGui::Text( "%s %dx%d", clip.player->Source().CodecName().c_str(), clip.player->Width(), clip.player->Height() );
 			ImGui::TableNextColumn();
 			ImGui::Text( "%.2f", stats.decodeMs );
 			ImGui::TableNextColumn();

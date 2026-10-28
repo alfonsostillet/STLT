@@ -7,11 +7,14 @@ namespace stltvj
 {
 namespace
 {
-// Shading values match ClipPlayer::Shading.
+// Shading values match stltvj::Shading.
 const char* kClipFragment = R"(
 uniform sampler2D uTex0;
 uniform sampler2D uTex1;
+uniform sampler2D uTex2;
 uniform int uShading;
+uniform int uBt709;
+uniform int uFullRange;
 uniform float uOpacity;
 in vec2 vUv;
 out vec4 fragColor;
@@ -27,11 +30,29 @@ vec3 YCoCgToRgb( vec4 c )
 	return vec3( y + co - cg, y + cg, y - co - cg );
 }
 
+// Planar YUV (H.264 and most video) to RGB, with the levels and matrix the file declares.
+vec3 YuvToRgb( float y, float u, float v )
+{
+	u -= 0.5;
+	v -= 0.5;
+	if( uFullRange == 0 )
+	{
+		y = ( y - 16.0 / 255.0 ) * ( 255.0 / 219.0 );
+		u *= 255.0 / 224.0;
+		v *= 255.0 / 224.0;
+	}
+	if( uBt709 != 0 )
+		return vec3( y + 1.5748 * v, y - 0.1873 * u - 0.4681 * v, y + 1.8556 * u );
+	return vec3( y + 1.402 * v, y - 0.344136 * u - 0.714136 * v, y + 1.772 * u );
+}
+
 void main()
 {
 	vec4 c = texture( uTex0, vUv );
 	vec4 rgba;
-	if( uShading == 0 )
+	if( uShading == 5 )
+		rgba = vec4( YuvToRgb( c.r, texture( uTex1, vUv ).r, texture( uTex2, vUv ).r ), 1.0 );
+	else if( uShading == 0 )
 		rgba = vec4( c.rgb, 1.0 );
 	else if( uShading == 1 )
 		rgba = c;
@@ -157,6 +178,7 @@ bool Compositor::Init( std::string& error )
 	clipProgram.Use();
 	glUniform1i( clipProgram.Uniform( "uTex0" ), 0 );
 	glUniform1i( clipProgram.Uniform( "uTex1" ), 1 );
+	glUniform1i( clipProgram.Uniform( "uTex2" ), 2 );
 	blendProgram.Use();
 	glUniform1i( blendProgram.Uniform( "uBase" ), 0 );
 	glUniform1i( blendProgram.Uniform( "uLayer" ), 1 );
@@ -198,6 +220,10 @@ void Compositor::DrawClip( ClipPlayer& player, const float transform[ 9 ], float
 	SetTexRect( clipProgram, 0, 0, player.UMax(), player.VMax() ); // HAP rows run top to bottom
 	glUniform1i( clipProgram.Uniform( "uShading" ), (int)player.GetShading() );
 	glUniform1f( clipProgram.Uniform( "uOpacity" ), opacity );
+	glUniform1i( clipProgram.Uniform( "uBt709" ), player.Layout().bt709 ? 1 : 0 );
+	glUniform1i( clipProgram.Uniform( "uFullRange" ), player.Layout().fullRange ? 1 : 0 );
+	glActiveTexture( GL_TEXTURE2 );
+	glBindTexture( GL_TEXTURE_2D, player.Texture( 2 ) );
 	glActiveTexture( GL_TEXTURE1 );
 	glBindTexture( GL_TEXTURE_2D, player.Texture( 1 ) );
 	glActiveTexture( GL_TEXTURE0 );
@@ -279,7 +305,7 @@ Fbo* Compositor::RenderClipSource( Clip& clip, int compWidth, int compHeight, co
 	if( !effects || !clip.Loaded() || !clip.player->HasFrame() )
 		return nullptr;
 	ClipPlayer& player = *clip.player;
-	Pair& t            = Targets( player.Video().width, player.Video().height );
+	Pair& t            = Targets( player.Width(), player.Height() );
 	t.a.Bind();
 	glClearColor( 0, 0, 0, 0 );
 	glClear( GL_COLOR_BUFFER_BIT );
@@ -314,7 +340,7 @@ void Compositor::DrawClipInto( Clip& clip, Fbo& target, const FrameInfo& frame, 
 	else if( clip.Loaded() && clip.player->HasFrame() )
 	{
 		ClipPlayer& player = *clip.player;
-		float w = (float)player.Video().width, h = (float)player.Video().height;
+		float w = (float)player.Width(), h = (float)player.Height();
 		if( forceFit )
 			PlaceClip( transform, w, h, W, H, FitMode::Fit, 1, 0, 0, 0 );
 		else
@@ -401,7 +427,7 @@ void Compositor::MakeThumbnail( ClipPlayer& player )
 		glClearColor( 0, 0, 0, 1 );
 		glClear( GL_COLOR_BUFFER_BIT );
 		float transform[ 9 ];
-		PlaceClip( transform, (float)player.Video().width, (float)player.Video().height, 160, 90, FitMode::Fit, 1, 0, 0, 0 );
+		PlaceClip( transform, (float)player.Width(), (float)player.Height(), 160, 90, FitMode::Fit, 1, 0, 0, 0 );
 		DrawClip( player, transform, 1.0f );
 		glBindFramebuffer( GL_FRAMEBUFFER, 0 );
 	}

@@ -7,33 +7,24 @@
 #include <thread>
 #include <vector>
 #include "gl/Gl.h"
-#include "media/HapFrame.h"
-#include "media/MovFile.h"
+#include "media/FrameSource.h"
 #include "render/Fbo.h"
 
 namespace stltvj
 {
-// Plays one HAP movie into GPU textures.
+// Plays one movie or image into GPU textures.
 //
 // The pipeline keeps the GL thread free of decoding work:
-//   decoder thread : reads the compressed frame (positional read, OS read-ahead) and Snappy-decompresses its chunks
-//                    on the shared thread pool straight into a mapped pixel buffer (no extra copy)
-//   GL thread      : unmaps that buffer and lets glCompressedTexSubImage2D copy it to the texture by DMA,
-//                    then orphans and remaps the buffer for the next frame
-// The GPU receives the DXT/BC blocks as they are: the frame is never expanded to RGBA on the CPU.
+//   decoder thread : decodes the frame straight into a mapped pixel buffer (no extra copy). For HAP that is a
+//                    positional read plus Snappy decompression of the chunks on the shared thread pool; for other
+//                    formats FFmpeg decodes and the Y, U and V planes are copied as they are
+//   GL thread      : unmaps that buffer and lets glCompressedTexSubImage2D / glTexSubImage2D copy it to the
+//                    textures by DMA, then orphans and remaps the buffer for the next frame
+// HAP reaches the GPU as DXT/BC blocks and YUV as planes: neither is expanded to RGBA on the CPU.
 // A few slots let the decoder run ahead of the playhead in the play direction.
 class ClipPlayer
 {
 public:
-	enum class Shading
-	{
-		Rgb,        // HAP (DXT1), HAP HDR
-		Rgba,       // HAP Alpha (DXT5), HAP R (BC7)
-		YCoCg,      // HAP Q
-		YCoCgAlpha, // HAP Q Alpha: YCoCg colour + RGTC1 alpha
-		AlphaOnly,  // HAP Alpha-Only (RGTC1)
-	};
-
 	struct Stats
 	{
 		float decodeMs   = 0; // read + decompress, smoothed
@@ -47,12 +38,14 @@ public:
 	ClipPlayer( const ClipPlayer& ) = delete;
 	ClipPlayer& operator=( const ClipPlayer& ) = delete;
 
-	// Parses the movie and checks the first frame. Cheap: no GPU memory or thread until Activate().
+	// Opens the file and checks the first frame. Cheap: no GPU memory or thread until Activate().
 	bool Open( const std::string& path );
 	const std::string& Error() const { return error; }
-	const VideoTrack& Video() const { return movie.Video(); }
-	const HapLayout& Layout() const { return layout; }
-	size_t FrameCount() const { return movie.Video().samples.size(); }
+	const FrameSource& Source() const { return *source; }
+	const FrameLayout& Layout() const { return layout; }
+	size_t FrameCount() const { return source ? source->FrameCount() : 0; }
+	int Width() const { return layout.width; }
+	int Height() const { return layout.height; }
 
 	// GL thread. Allocates the textures and pixel buffers and starts the decoder; Deactivate frees them again.
 	bool Activate();
@@ -68,10 +61,10 @@ public:
 	bool HasFrame() const { return shownFrame >= 0; }
 	int64_t ShownFrame() const { return shownFrame; }
 	GLuint Texture( int index ) const { return textures[ index ]; }
-	Shading GetShading() const { return shading; }
-	// The part of the padded texture holding the picture.
-	float UMax() const { return layout.paddedWidth ? (float)Video().width / layout.paddedWidth : 1.0f; }
-	float VMax() const { return layout.paddedHeight ? (float)Video().height / layout.paddedHeight : 1.0f; }
+	Shading GetShading() const { return layout.shading; }
+	// The part of the (block-padded) texture holding the picture.
+	float UMax() const { return layout.planes[ 0 ].width ? (float)layout.width / layout.planes[ 0 ].width : 1.0f; }
+	float VMax() const { return layout.planes[ 0 ].height ? (float)layout.height / layout.planes[ 0 ].height : 1.0f; }
 
 	Stats GetStats() const;
 	Fbo& Thumbnail() { return thumbnail; }
@@ -97,17 +90,16 @@ private:
 	bool PickWork( int& slot, int64_t& frame ) const;
 	bool InWindow( int64_t frame ) const;
 	int64_t Wrap( int64_t frame ) const;
-	bool DecodeInto( int64_t frame, uint8_t* destination, std::vector< uint8_t >& compressed );
+	bool DecodeInto( int64_t frame, uint8_t* destination );
 	void Upload( Slot& slot );
 	void Remap( Slot& slot );
 
-	MovFile movie;
-	HapLayout layout;
-	Shading shading = Shading::Rgb;
+	std::unique_ptr< FrameSource > source;
+	FrameLayout layout;
 	std::string error;
 
-	GLuint textures[ 2 ] = {};
-	GLenum internalFormats[ 2 ] = {};
+	GLuint textures[ 3 ] = {};
+	GLenum internalFormats[ 3 ] = {};
 	Slot slots[ kSlots ];
 	int64_t shownFrame = -1;
 	int64_t lastWanted = -1;
