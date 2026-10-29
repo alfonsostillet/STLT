@@ -36,6 +36,17 @@ enum class PlayMode
 };
 const char* PlayModeName( PlayMode mode );
 
+// How a clip answers its trigger (a click on its picture, its key, MIDI pad or OSC message), as in Resolume:
+// Normal starts it; Toggle starts it, or stops it when it plays; Piano plays it only while held.
+enum class TriggerStyle
+{
+	Normal,
+	Toggle,
+	Piano,
+	Count
+};
+const char* TriggerStyleName( TriggerStyle style );
+
 // How a playing clip gives way to the next one launched on its layer.
 enum class TransitionMode
 {
@@ -101,6 +112,8 @@ struct Clip
 	float speed       = 1.0f;
 	int direction     = 1; // +1, -1, or 0 for paused
 	PlayMode playMode = PlayMode::Loop;
+	TriggerStyle trigger = TriggerStyle::Normal;
+	bool ignoreColumn    = false; // launching its column leaves it (and its layer) alone
 	float opacity     = 1.0f;
 	FitMode fit       = FitMode::Fit;
 	float positionX   = 0.0f; // composition pixels from centre

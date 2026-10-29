@@ -349,6 +349,18 @@ static void TestDecks()
 	CHECK( c.DeckCount() == 1 && c.deck == 0 && c.layers[ 0 ].active < 0 );
 	CHECK( c.layers[ 1 ].activeDeck == 0 && c.ActiveClip( 1 ) && c.ActiveClip( 1 )->path == "b.mov" );
 
+	// Trigger style and ignore column are saved with the clip.
+	Composition t = Composition::MakeDefault();
+	t.layers[ 0 ].clips[ 0 ].path         = "p.mov";
+	t.layers[ 0 ].clips[ 0 ].trigger      = TriggerStyle::Piano;
+	t.layers[ 0 ].clips[ 0 ].ignoreColumn = true;
+	t.layers[ 1 ].clips[ 0 ].path         = "t.mov";
+	t.layers[ 1 ].clips[ 0 ].trigger      = TriggerStyle::Toggle;
+	Composition tl;
+	CHECK( LoadComposition( SaveComposition( t ), tl, error ) );
+	CHECK( tl.layers[ 0 ].clips[ 0 ].trigger == TriggerStyle::Piano && tl.layers[ 0 ].clips[ 0 ].ignoreColumn );
+	CHECK( tl.layers[ 1 ].clips[ 0 ].trigger == TriggerStyle::Toggle && !tl.layers[ 1 ].clips[ 0 ].ignoreColumn );
+
 	// A composition from before decks: its clips become deck 1.
 	const char* old = R"({"format":"stlt-vj-composition","columns":["A","B"],"layers":[{"name":"L","clips":[null,{"path":"x.mov"}]}]})";
 	Composition legacy;

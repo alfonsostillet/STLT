@@ -67,6 +67,9 @@ public:
 	void LoadClip( int layer, int column, const std::string& path );
 	void RemoveClip( int layer, int column );
 	void MoveClip( int fromLayer, int fromColumn, int toLayer, int toColumn );
+	// A clip's trigger pressed (`down`) or released: a click on its picture, its key, MIDI pad or OSC message. What
+	// it does depends on the clip's trigger style: Normal launches, Toggle launches or stops, Piano plays while held.
+	void TriggerClip( int row, int column, bool down );
 	// Decks: pages of clips over the same layers. What plays keeps playing when another deck is shown.
 	void ShowDeck( int deck );
 	void AddDeck(); // a new empty deck, shown
@@ -225,6 +228,7 @@ private:
 	std::vector< std::pair< int, std::string > > keysHeld; // mapped keys down (ImGuiKey), to release them
 	double lastRemoteConfigure = -1e9;
 	std::map< int, float > lastMidiValues; // by note or controller: buttons act on the press
+	std::map< std::string, float > lastOscValues; // by address: a 0 after a press is a release (Piano clips)
 	// Takes a composition back to an earlier state, keeping the players, generators and effects that are still
 	// there (playback goes on) and opening the rest.
 	void RestoreComposition( const std::string& text );

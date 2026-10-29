@@ -614,6 +614,45 @@ void App::Launch( int row, int column, bool now, int onLayer )
 	clip.player->Update( clip.CurrentFrame(), clip.PlayDirection() );
 }
 
+void App::TriggerClip( int row, int column, bool down )
+{
+	Clip* clip = composition.ClipAt( row, column );
+	if( !clip )
+		return;
+	TriggerStyle style = clip->Playable() ? clip->trigger : TriggerStyle::Normal;
+	bool on            = false; // playing, or waiting for its beat
+	for( const QueuedLaunch& q : queuedLaunches )
+		on |= q.layer >= 0 && q.row == row && q.column == column;
+	for( const Layer& layer : composition.layers )
+		on |= layer.Plays( composition.deck, row, column );
+	auto stop = [ & ]() {
+		queuedLaunches.erase( std::remove_if( queuedLaunches.begin(), queuedLaunches.end(),
+		                                      [ & ]( const QueuedLaunch& q ) { return q.layer >= 0 && q.row == row && q.column == column; } ),
+		                      queuedLaunches.end() );
+		StopCell( row, column );
+	};
+	switch( style )
+	{
+	case TriggerStyle::Normal:
+		if( down )
+			Launch( row, column );
+		break;
+	case TriggerStyle::Toggle:
+		if( down && on )
+			stop();
+		else if( down )
+			Launch( row, column );
+		break;
+	case TriggerStyle::Piano:
+		if( down )
+			Launch( row, column );
+		else
+			stop();
+		break;
+	default: break;
+	}
+}
+
 void App::LaunchColumn( int column, bool now )
 {
 	if( !now && composition.quantize != LaunchQuantize::Now )
@@ -627,6 +666,8 @@ void App::LaunchColumn( int column, bool now )
 	for( int layer = 0; layer < (int)composition.layers.size(); ++layer )
 	{
 		Layer& l = composition.layers[ layer ];
+		if( column < (int)l.clips.size() && l.clips[ column ].ignoreColumn )
+			continue; // left alone, and so is its layer
 		if( column < (int)l.clips.size() && l.clips[ column ].Playable() )
 			Launch( layer, column, true, layer );
 		else
@@ -1052,7 +1093,11 @@ void App::PollRemote()
 			if( has )
 				std::snprintf( value, sizeof( value ), " %.3g", e.values[ 0 ] );
 			lastControl = "OSC " + e.address + value;
-			if( !ApplyControl( e.address, has, has ? e.values[ 0 ] : 1.0f ) )
+			// Every value above 0 presses, as before; a 0 after one releases.
+			float v        = has ? e.values[ 0 ] : 1.0f;
+			float previous = v <= 0 ? lastOscValues[ e.address ] : 0.0f;
+			lastOscValues[ e.address ] = v;
+			if( !ApplyControl( e.address, has, v, false, previous ) )
 				lastControl += "  (not an STLT-VJ address)";
 			continue;
 		}
@@ -1171,8 +1216,11 @@ bool App::ApplyControl( const std::string& address, bool hasValue, float value, 
 	switch( t.kind )
 	{
 	case Kind::ClipConnect:
+		// A release (key up, note off, value back to 0) matters to Piano clips.
 		if( press && layerOk && columnOk )
-			Launch( t.layer, t.column );
+			TriggerClip( t.layer, t.column, true );
+		else if( hasValue && value <= 0 && previous > 0 && layerOk && columnOk )
+			TriggerClip( t.layer, t.column, false );
 		return layerOk && columnOk;
 	case Kind::ColumnConnect:
 		if( press && columnOk )

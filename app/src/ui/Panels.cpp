@@ -1008,6 +1008,7 @@ void DrawClipGrid( App& app )
 	};
 	static PickBox box;
 	static CellRef moveTarget{ -1, -1 }; // the cell under the dragged clips, last frame
+	static CellRef pianoHeld{ -1, -1 };  // a Piano clip held down with the mouse
 	const ImGuiIO& io     = ImGui::GetIO();
 	bool insertPressed    = app.moveMode && !io.WantTextInput && ImGui::IsKeyPressed( ImGuiKey_Insert, false );
 	bool insertHandled    = false;
@@ -1370,6 +1371,18 @@ void DrawClipGrid( App& app )
 					draw->AddRectFilled( b0, ImVec2( b0.x + bw, b0.y + bh ), IM_COL32( 0, 0, 0, 170 ), bh / 2 );
 					draw->AddText( Fonts().bold, ImGui::GetFontSize() * 0.8f, ImVec2( b0.x + Ui( 4 ), b0.y + Ui( 1 ) ), theme::Accent, "FX" );
 				}
+				if( clip.trigger != TriggerStyle::Normal || clip.ignoreColumn )
+				{
+					// How it triggers, in the picture's bottom left corner.
+					std::string badge = clip.trigger == TriggerStyle::Toggle ? "TOGGLE" : clip.trigger == TriggerStyle::Piano ? "PIANO" : "";
+					if( clip.ignoreColumn )
+						badge += badge.empty() ? "NO COL" : " - NO COL";
+					float size = ImGui::GetFontSize() * 0.7f;
+					ImVec2 t   = Fonts().bold->CalcTextSizeA( size, FLT_MAX, 0, badge.c_str() );
+					ImVec2 b0( min.x + Ui( 4 ), thumbMax.y - t.y - Ui( 8 ) );
+					draw->AddRectFilled( b0, ImVec2( b0.x + t.x + Ui( 8 ), b0.y + t.y + Ui( 3 ) ), IM_COL32( 0, 0, 0, 170 ), Ui( 3 ) );
+					draw->AddText( Fonts().bold, size, ImVec2( b0.x + Ui( 4 ), b0.y + Ui( 1.5f ) ), IM_COL32( 255, 205, 110, 255 ), badge.c_str() );
+				}
 				ImU32 labelColour = !clip.Playable() ? theme::Error : playing ? theme::Accent : theme::Text;
 				draw->PushClipRect( ImVec2( min.x, thumbMax.y ), ImVec2( max.x - Ui( 6 ), max.y ), true );
 				draw->AddText( ImVec2( min.x + Ui( 7 ), thumbMax.y + ( labelH - ImGui::GetTextLineHeight() ) / 2 ), labelColour, clip.name.c_str() );
@@ -1397,7 +1410,10 @@ void DrawClipGrid( App& app )
 				else if( hovered && ImGui::GetIO().KeyAlt )
 					ImGui::SetTooltip( "%s", clip.path.c_str() );
 				else if( hovered && ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) )
-					ImGui::SetTooltip( "%s", overName ? "Click the name: preview and edit, without launching" : "Click the picture: launch" );
+					ImGui::SetTooltip( "%s", overName                                ? "Click the name: preview and edit, without launching"
+					                         : clip.trigger == TriggerStyle::Toggle ? "Click the picture: launch, or stop when it plays (Toggle)"
+					                         : clip.trigger == TriggerStyle::Piano  ? "Hold the picture: plays while held (Piano)"
+					                                                                : "Click the picture: launch" );
 			}
 			if( playing )
 				draw->AddRect( ImVec2( min.x - Ui( 1 ), min.y - Ui( 1 ) ), ImVec2( max.x + Ui( 1 ), max.y + Ui( 1 ) ), theme::Accent, round + Ui( 1 ), 0, Ui( 2 ) );
@@ -1454,6 +1470,13 @@ void DrawClipGrid( App& app )
 					nextMoveTarget = { l, c };
 			}
 
+			// A Piano clip plays from the press on its picture until the button is let go (anywhere).
+			bool piano = clip.Playable() && clip.trigger == TriggerStyle::Piano;
+			if( piano && !app.moveMode && ImGui::IsItemActivated() && io.MousePos.y < min.y + thumbH )
+			{
+				app.TriggerClip( l, c, true );
+				pianoHeld = { l, c };
+			}
 			if( clicked && app.moveMode )
 			{
 				if( !clip.Empty() )
@@ -1463,8 +1486,8 @@ void DrawClipGrid( App& app )
 			{
 				if( clip.Empty() || ImGui::GetIO().MouseClickedPos[ ImGuiMouseButton_Left ].y >= min.y + thumbH )
 					app.Select( l, c );
-				else
-					app.Launch( l, c );
+				else if( !piano )
+					app.TriggerClip( l, c, true );
 			}
 			if( !clip.Empty() && ImGui::BeginDragDropSource() )
 			{
@@ -1542,6 +1565,11 @@ void DrawClipGrid( App& app )
 		ImGui::PopID();
 	}
 
+	if( pianoHeld.layer >= 0 && !ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+	{
+		app.TriggerClip( pianoHeld.layer, pianoHeld.column, false );
+		pianoHeld = { -1, -1 };
+	}
 	if( app.moveMode )
 	{
 		moveTarget = nextMoveTarget;
@@ -2093,6 +2121,23 @@ void DrawClipPanel( App& app )
 		ImGui::EndDisabled();
 		if( ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenDisabled ) && !app.learning )
 			ImGui::SetTooltip( anyCue ? "Delete all the cues of this clip" : "No cues to delete" );
+	}
+
+	// How its trigger (click, key, MIDI pad, OSC) acts, and whether column launches take it: for every clip, still
+	// images and sources too.
+	if( BeginParams( "##trigger" ) )
+	{
+		ParamLabel( "Trigger" );
+		ImGui::SetNextItemWidth( Ui( 110 ) );
+		EnumCombo( "##trigger", &clip->trigger, TriggerStyleName );
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "Normal: a press launches it.\nToggle: a press launches it, the next one stops it.\nPiano: it plays while the key, pad or "
+			                   "mouse button is held, and stops when let go." );
+		ImGui::SameLine();
+		ImGui::Checkbox( "Ignore column", &clip->ignoreColumn );
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "Launching its column leaves this clip (and its layer) alone: it plays only when launched itself." );
+		ImGui::EndTable();
 	}
 
 	// Settings that can follow the beat: while one moves its slider shows where it is and takes no edits.

@@ -18,6 +18,12 @@ const char* PlayModeName( PlayMode mode )
 	return names[ std::clamp( (int)mode, 0, (int)PlayMode::Count - 1 ) ];
 }
 
+const char* TriggerStyleName( TriggerStyle style )
+{
+	static const char* names[] = { "Normal", "Toggle", "Piano" };
+	return names[ std::clamp( (int)style, 0, (int)TriggerStyle::Count - 1 ) ];
+}
+
 const char* FitModeName( FitMode mode )
 {
 	static const char* names[] = { "Fit", "Fill", "Stretch", "Native" };
@@ -478,6 +484,10 @@ static nlohmann::json SaveClip( const Clip& clip )
 	k[ "speed" ]     = clip.speed;
 	k[ "direction" ] = clip.direction;
 	k[ "playMode" ]  = PlayModeName( clip.playMode );
+	if( clip.trigger != TriggerStyle::Normal )
+		k[ "trigger" ] = TriggerStyleName( clip.trigger );
+	if( clip.ignoreColumn )
+		k[ "ignoreColumn" ] = true;
 	k[ "opacity" ]   = clip.opacity;
 	k[ "fit" ]       = FitModeName( clip.fit );
 	k[ "position" ]  = { clip.positionX, clip.positionY };
@@ -604,6 +614,8 @@ static Clip LoadClip( const nlohmann::json& k )
 		clip.direction = std::clamp( k.value( "direction", 1 ), -1, 1 );
 		clip.playMode  = k.value( "playMode", "" ) == "Play Once" ? PlayMode::Once // the name before Play Once & Clear
 		                                                         : ByName( k.value( "playMode", json() ), PlayModeName, PlayMode::Loop );
+		clip.trigger      = ByName( k.value( "trigger", json() ), TriggerStyleName, TriggerStyle::Normal );
+		clip.ignoreColumn = k.value( "ignoreColumn", false );
 		clip.opacity   = k.value( "opacity", 1.0f );
 		clip.fit       = ByName( k.value( "fit", json() ), FitModeName, FitMode::Fit );
 		if( k.contains( "position" ) && k[ "position" ].is_array() && k[ "position" ].size() == 2 )
