@@ -1,3 +1,0 @@
-[submodule "third_party/ffgl"]
-	path = third_party/ffgl
-	url = https://github.com/resolume/ffgl.git

@@ -1,11 +1,9 @@
 name: STLT-VJ app
 
-# Builds and tests the app on every push or pull request that touches it.
+# Builds and tests the app on every push and pull request.
 on:
   push:
-    paths: ['app/**', '.github/workflows/app.yml']
   pull_request:
-    paths: ['app/**', '.github/workflows/app.yml']
   workflow_dispatch:
 
 jobs:

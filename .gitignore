@@ -1,8 +1,4 @@
 # Dependencies and build output
-node_modules/
-editor/release/
-plugin/build/
-plugin/dist/
 app/build/
 
 # Local tools and settings

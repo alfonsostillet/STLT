@@ -1,6 +1,6 @@
 # Third-party notices
 
-STLT-CHASER is Copyright © 2026 STILLET and licensed under the GNU General Public License v3.0 (see LICENSE). It includes or links the following third-party software, each under its own license, all compatible with the GPL-3.0.
+STLT-VJ is Copyright © 2026 STILLET and licensed under the GNU General Public License v3.0 (see LICENSE). It includes or links the following third-party software, each under its own license, all compatible with the GPL-3.0.
 
 ## FFGL SDK (Resolume / FreeFrame) — plugins
 
