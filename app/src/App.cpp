@@ -18,6 +18,7 @@
 #include "ui/EffectsUi.h"
 #include "ui/FileDialogs.h"
 #include "ui/Panels.h"
+#include "ui/TimelineUi.h"
 #include "ui/Theme.h"
 
 namespace fs = std::filesystem;
@@ -152,6 +153,13 @@ bool App::Init( const LaunchOptions& launch )
 	iniPath        = ( fs::u8path( configDir ) / "layout.ini" ).u8string();
 	io.IniFilename = options.fresh ? nullptr : iniPath.c_str();
 	workspaces.Install( &panels, ( fs::u8path( configDir ) / "workspaces" ).u8string() );
+	// The view in use when the app last closed: its layout is the one saved.
+	std::string viewText;
+	if( !options.fresh && ReadTextFile( ( fs::u8path( configDir ) / "view.txt" ).u8string(), viewText ) && viewText.rfind( "arrangement", 0 ) == 0 )
+	{
+		view = View::Arrangement;
+		workspaces.SetView( 1 );
+	}
 
 	float scaleX = 1, scaleY = 1;
 	glfwGetWindowContentScale( window, &scaleX, &scaleY );
@@ -1016,6 +1024,46 @@ void App::RestoreComposition( const std::string& text )
 		layer.activeDeck = kept ? cell.deck : 0;
 		layer.solo      = composition.layers[ l ].solo;
 	}
+	// The timeline: its playhead goes on, and the clips still there keep their players, sounds and effects.
+	{
+		Timeline& was = composition.timeline;
+		Timeline& now = fresh.timeline;
+		now.position  = was.position;
+		now.playing   = was.playing;
+		now.black     = was.black;
+		std::vector< const Clip* > used;
+		auto free     = [ & ]( const Clip& c ) { return std::find( used.begin(), used.end(), &c ) == used.end(); };
+		for( int t = 0; t < (int)now.tracks.size(); ++t )
+		{
+			if( t < (int)was.tracks.size() )
+				ReuseEffects( now.tracks[ t ].effects, &was.tracks[ t ].effects );
+			for( int i = 0; i < (int)now.tracks[ t ].clips.size(); ++i )
+			{
+				Clip& clip = now.tracks[ t ].clips[ i ].clip;
+				Clip* old  = nullptr;
+				auto fits  = [ & ]( Clip& c ) { return c.path == clip.path && c.generatorId == clip.generatorId && free( c ); };
+				if( t < (int)was.tracks.size() && i < (int)was.tracks[ t ].clips.size() && fits( was.tracks[ t ].clips[ i ].clip ) )
+					old = &was.tracks[ t ].clips[ i ].clip;
+				for( TimelineTrack& track : was.tracks )
+					for( TimelineClip& c : track.clips )
+						if( !old && fits( c.clip ) )
+							old = &c.clip;
+				if( !old )
+					continue;
+				used.push_back( old );
+				clip.player             = std::move( old->player );
+				clip.audio              = std::move( old->audio );
+				clip.generatorThumbnail = std::move( old->generatorThumbnail );
+				if( old->generator )
+				{
+					clip.generator = std::move( old->generator );
+					ClearAnimations( *clip.generator );
+					LoadEffectState( *clip.generator, clip.generatorState );
+				}
+				ReuseEffects( clip.effects, &old->effects );
+			}
+		}
+	}
 	fresh.beat           = composition.beat;
 	fresh.paused         = composition.paused;
 	fresh.selectedLayer  = std::clamp( composition.selectedLayer, 0, std::max( (int)fresh.layers.size() - 1, 0 ) );
@@ -1333,6 +1381,26 @@ bool App::ApplyControl( const std::string& address, bool hasValue, float value, 
 		if( press && columnOk )
 			LaunchColumn( t.column );
 		return columnOk;
+	case Kind::TimelineCue:
+		if( press )
+			TimelineCue( t.slot );
+		return t.slot < (int)composition.timeline.blocks.size();
+	case Kind::TimelineNextCue:
+	case Kind::TimelinePrevCue:
+		if( press )
+			TimelineNextCue( t.kind == Kind::TimelineNextCue ? 1 : -1 );
+		return true;
+	case Kind::TimelinePlay:
+	{
+		bool playing = composition.timeline.playing;
+		flip( playing );
+		TimelinePlay( playing );
+		return true;
+	}
+	case Kind::TimelineStop:
+		if( press )
+			TimelineStop();
+		return true;
 	case Kind::DeckSelect:
 		if( press && t.slot < composition.DeckCount() )
 			ShowDeck( t.slot );
@@ -1782,6 +1850,27 @@ void App::TapTempo()
 
 void App::UpdateAudio()
 {
+	if( view == View::Arrangement )
+	{
+		// The timeline's clips under the playhead (video tracks' sound and audio tracks) while it plays.
+		Timeline& timeline = composition.timeline;
+		bool anySolo       = std::any_of( timeline.tracks.begin(), timeline.tracks.end(), []( const TimelineTrack& t ) { return t.solo; } );
+		std::vector< std::shared_ptr< AudioVoice > > voices;
+		for( TimelineTrack& track : timeline.tracks )
+		{
+			int index = track.ClipAt( timeline.position );
+			if( index < 0 )
+				continue;
+			Clip& clip = track.clips[ index ].clip;
+			if( !clip.audio )
+				continue;
+			bool audible = timeline.playing && !timeline.black && !composition.bypass && !track.mute && ( !anySolo || track.solo );
+			clip.audio->Follow( track.clips[ index ].MediaTime( timeline.position ), std::max( 0.0f, clip.speed ), audible ? clip.volume * track.volume : 0.0f );
+			voices.push_back( clip.audio );
+		}
+		audio.SetVoices( std::move( voices ), composition.audioVolume );
+		return;
+	}
 	// Each playing clip's sound follows its playhead; bypassed layers, layers others solo over and a paused
 	// composition are silent.
 	bool anySolo = std::any_of( composition.layers.begin(), composition.layers.end(), []( const Layer& l ) { return l.solo; } );
@@ -1807,6 +1896,163 @@ void App::UpdateAudio()
 		}
 	}
 	audio.SetVoices( std::move( voices ), composition.audioVolume );
+}
+
+void App::SetView( View v )
+{
+	if( view == v )
+		return;
+	view = v;
+	workspaces.SwitchView( v == View::Arrangement ? 1 : 0 );
+	// A first visit: two video tracks and an audio track to start with.
+	Timeline& t = composition.timeline;
+	if( v == View::Arrangement && t.tracks.empty() )
+		for( auto [ name, audioTrack ] : { std::pair{ "Video 1", false }, std::pair{ "Video 2", false }, std::pair{ "Audio 1", true } } )
+		{
+			TimelineTrack track;
+			track.name  = name;
+			track.audio = audioTrack;
+			t.tracks.push_back( std::move( track ) );
+		}
+	if( !options.fresh )
+		WriteTextFile( ( fs::u8path( configDir ) / "view.txt" ).u8string(), v == View::Arrangement ? "arrangement" : "session" );
+	SetStatus( v == View::Arrangement ? "Arrangement: the timeline is on the output" : "Session: the deck is on the output" );
+}
+
+void App::TimelinePlay( bool play )
+{
+	Timeline& t = composition.timeline;
+	if( play && t.position >= t.Length() )
+		t.Locate( 0 );
+	t.playing = play;
+	if( play )
+		t.black = false;
+}
+
+void App::TimelineStop()
+{
+	// As in Ableton: the first Stop stops where it is, the second goes back to the start.
+	Timeline& t = composition.timeline;
+	if( t.playing )
+		t.playing = false;
+	else
+		t.Locate( 0 );
+}
+
+void App::TimelineCue( int block )
+{
+	Timeline& t = composition.timeline;
+	if( block < 0 || block >= (int)t.blocks.size() )
+		return;
+	t.Cue( block );
+	SetStatus( "Cue " + std::to_string( block + 1 ) + ( t.blocks[ block ].name.empty() ? "" : ": " + t.blocks[ block ].name ) );
+}
+
+void App::TimelineNextCue( int step )
+{
+	Timeline& t = composition.timeline;
+	if( t.blocks.empty() )
+		return;
+	int at = t.BlockAt( t.position ), target = -1;
+	if( at >= 0 )
+		target = at + step;
+	else if( step > 0 )
+	{
+		for( int i = 0; i < (int)t.blocks.size() && target < 0; ++i )
+			if( t.blocks[ i ].start > t.position )
+				target = i;
+	}
+	else
+		for( int i = (int)t.blocks.size() - 1; i >= 0 && target < 0; --i )
+			if( t.blocks[ i ].start < t.position )
+				target = i;
+	if( target >= 0 && target < (int)t.blocks.size() )
+		TimelineCue( target );
+}
+
+void App::PrepareTimelineClip( TimelineClip& tc )
+{
+	if( tc.prepared )
+		return;
+	tc.prepared = true;
+	Clip& clip  = tc.clip;
+	registry->Restore( clip.effects );
+	if( clip.IsGenerator() && !clip.generator )
+	{
+		clip.generator = registry->Create( clip.generatorId );
+		if( clip.generator )
+		{
+			LoadEffectState( *clip.generator, clip.generatorState );
+			compositor.MakeGeneratorThumbnail( clip, frame );
+		}
+	}
+	if( !clip.path.empty() && !clip.player )
+	{
+		// A movie or still; a sound alone has no picture but plays on audio tracks.
+		clip.player = std::make_unique< ClipPlayer >();
+		if( clip.player->Open( clip.path ) )
+			compositor.MakeThumbnail( *clip.player );
+		if( !clip.audio )
+			clip.audio = AudioVoice::Open( clip.path, audio.SampleRate() );
+	}
+}
+
+int App::AddTimelineClip( int track, double start, Clip clip )
+{
+	Timeline& t = composition.timeline;
+	if( track < 0 || track >= (int)t.tracks.size() || clip.Empty() )
+		return -1;
+	TimelineClip placed;
+	placed.clip  = std::move( clip );
+	placed.start = std::max( 0.0, start );
+	PrepareTimelineClip( placed );
+	// As long as its media (between in and out, at its speed); stills and sources: four bars.
+	double duration = placed.MediaDuration();
+	double out      = placed.clip.outPoint >= 0 ? placed.clip.outPoint : duration;
+	double length   = duration > 0 && out > placed.clip.inPoint ? ( out - placed.clip.inPoint ) / std::max( 0.01f, placed.clip.speed ) : 0;
+	if( length <= 0 || ( placed.clip.Loaded() && placed.clip.player->Source().IsStill() ) )
+		length = t.SecondsPerBar() * 4;
+	placed.length = length;
+	std::string name = placed.clip.name;
+	int index        = t.Place( track, std::move( placed ) );
+	SetStatus( "Placed " + name + " on " + t.tracks[ track ].name + " at " + t.BarsBeats( start ) );
+	return index;
+}
+
+int App::AddTimelineFile( int track, double start, const std::string& path )
+{
+	Clip clip;
+	clip.path = path;
+	clip.name = fs::u8path( path ).stem().u8string();
+	return AddTimelineClip( track, start, std::move( clip ) );
+}
+
+void App::UpdateTimeline( double dt )
+{
+	Timeline& t = composition.timeline;
+	t.Advance( dt );
+	// The clips under the playhead play; those about to start get their first frame ready; the others rest.
+	const double ahead = 1.5;
+	bool shown         = view == View::Arrangement || t.playing;
+	for( TimelineTrack& track : t.tracks )
+		for( TimelineClip& tc : track.clips )
+		{
+			PrepareTimelineClip( tc );
+			Clip& clip = tc.clip;
+			if( !clip.Loaded() || track.audio )
+				continue;
+			bool now  = shown && !t.black && t.position >= tc.start && t.position < tc.End();
+			bool soon = t.playing && tc.start > t.position && tc.start - t.position < ahead;
+			if( now || soon )
+			{
+				if( !clip.player->Active() && !clip.player->Activate() )
+					continue;
+				clip.time = tc.MediaTime( now ? t.position : tc.start );
+				clip.player->Update( clip.CurrentFrame(), now && t.playing ? 1 : 0 );
+			}
+			else if( clip.player->Active() )
+				clip.player->Deactivate();
+		}
 }
 
 void App::UpdatePlayback( double dt )
@@ -1907,6 +2153,7 @@ void App::Frame()
 
 	PollRemote();
 	UpdatePlayback( dt );
+	UpdateTimeline( dt );
 	UpdateAudio();
 	if( !composition.paused )
 		composition.beat += dt * composition.speed * composition.bpm / 60.0;
@@ -1915,7 +2162,7 @@ void App::Frame()
 	frame.delta = dt;
 	frame.bpm   = composition.bpm;
 	frame.beat  = composition.beat;
-	compositor.Render( composition, frame );
+	compositor.Render( composition, frame, view == View::Arrangement );
 	UpdateQuickOutput();
 	bool advancedLive = outputMode == OutputMode::Advanced;
 	bool quickLive    = outputMode == OutputMode::Window || outputMode == OutputMode::Fullscreen;
@@ -2041,6 +2288,8 @@ void App::DrawUi()
 		PollKeyboard();
 
 	BeginMappable( *this );
+	if( panels.timeline )
+		DrawTimelinePanel( *this ); // before the deck: a file dropped on it is not for the deck
 	if( panels.layers )
 		DrawLayersPanel( *this );
 	if( panels.clips )

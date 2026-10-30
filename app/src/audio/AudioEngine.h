@@ -29,6 +29,8 @@ public:
 	double Playhead() const;
 	// Seconds decoded ahead of it.
 	double Buffered() const;
+	// Length of the sound.
+	double Duration() const { return decoder.Duration(); }
 
 private:
 	AudioVoice() = default;

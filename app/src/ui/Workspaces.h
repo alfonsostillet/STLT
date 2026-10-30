@@ -9,6 +9,7 @@ namespace stltvj
 struct PanelVisibility
 {
 	bool layers             = true;
+	bool timeline           = false; // the Arrangement view's main panel
 	bool clips              = true;
 	bool compositionMonitor = true;
 	bool previewMonitor     = true;
@@ -27,6 +28,7 @@ struct PanelVisibility
 namespace panel
 {
 constexpr const char* Layers             = "Layers"; // the layers' headers, beside the clips
+constexpr const char* Timeline           = "Timeline";
 constexpr const char* Clips              = "Clips";
 constexpr const char* CompositionMonitor = "Composition Monitor";
 constexpr const char* PreviewMonitor     = "Preview Monitor";
@@ -58,6 +60,10 @@ public:
 
 	// Call before ImGui::NewFrame: applies a requested workspace.
 	void ApplyPending();
+	// Session (0) and Arrangement (1) keep a layout each: switching keeps the one in use and brings back the
+	// other's (its default the first time). SetView only says which one is in use (at start).
+	void SwitchView( int view );
+	void SetView( int v ) { view = v; }
 	// Call inside the frame with the main dock space: lays out the default workspace when needed.
 	void BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size );
 
@@ -67,7 +73,9 @@ private:
 	std::string directory;
 	std::string current = "Default";
 	std::string pending;
+	std::string pendingText; // a view's layout to load
 	bool pendingDefault = false;
+	int view            = 0;
 	bool buildDefault   = false;
 };
 }

@@ -27,6 +27,7 @@ struct Flag
 };
 const Flag kFlags[] = {
 	{ "Layers", &PanelVisibility::layers },
+	{ "Timeline", &PanelVisibility::timeline },
 	{ "Clips", &PanelVisibility::clips },
 	{ "CompositionMonitor", &PanelVisibility::compositionMonitor },
 	{ "PreviewMonitor", &PanelVisibility::previewMonitor },
@@ -131,13 +132,42 @@ void Workspaces::RequestDefault()
 	pendingDefault = true;
 }
 
+void Workspaces::SwitchView( int v )
+{
+	if( v == view )
+		return;
+	// The layout in use is kept, on disk too; the other view's comes back.
+	size_t size      = 0;
+	const char* text = ImGui::SaveIniSettingsToMemory( &size );
+	WriteTextFile( ( fs::u8path( directory ) / ( view == 1 ? "arrangement.view" : "session.view" ) ).u8string(), std::string( text, size ) );
+	view = v;
+	std::string saved;
+	if( ReadTextFile( ( fs::u8path( directory ) / ( view == 1 ? "arrangement.view" : "session.view" ) ).u8string(), saved ) && !saved.empty() )
+		pendingText = saved;
+	else
+		pendingDefault = true;
+}
+
 void Workspaces::ApplyPending()
 {
+	if( !pendingText.empty() )
+	{
+		ImGui::ClearIniSettings();
+		ImGui::LoadIniSettingsFromMemory( pendingText.c_str(), pendingText.size() );
+		pendingText.clear();
+	}
 	if( pendingDefault )
 	{
 		pendingDefault = false;
 		ImGui::ClearIniSettings();
-		*visibility  = PanelVisibility{};
+		*visibility = PanelVisibility{};
+		if( view == 1 )
+		{
+			// The Arrangement view: the timeline, and the deck's clips beside to drag onto it.
+			visibility->timeline       = true;
+			visibility->layers         = false;
+			visibility->previewMonitor = false;
+		}
 		buildDefault = true;
 		current      = "Default";
 	}
@@ -168,7 +198,7 @@ void Workspaces::BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size )
 		// Before the Layers panel the layers' headers were part of Clips: it goes to Clips' left.
 		ImGuiWindowSettings* clips = ImGui::FindWindowSettingsByID( ImHashStr( panel::Clips ) );
 		ImGuiDockNode* deck        = clips && clips->DockId ? ImGui::DockBuilderGetNode( clips->DockId ) : nullptr;
-		if( deck && !ImGui::FindWindowSettingsByID( ImHashStr( panel::Layers ) ) && !ImGui::FindWindowByName( panel::Layers ) )
+		if( view == 0 && deck && !ImGui::FindWindowSettingsByID( ImHashStr( panel::Layers ) ) && !ImGui::FindWindowByName( panel::Layers ) )
 		{
 			ImGuiID left, right;
 			float width = std::max( deck->Size.x, 1.0f );
@@ -185,6 +215,22 @@ void Workspaces::BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size )
 	ImGui::DockBuilderAddNode( dockspace, ImGuiDockNodeFlags_DockSpace );
 	ImGui::DockBuilderSetNodeSize( dockspace, size );
 
+	if( view == 1 )
+	{
+		// Arrangement: the timeline across the top; the deck's clips (to drag onto it), the output and the panels
+		// below.
+		ImGuiID top, bottom, clipsNode, rest, monitor, browser;
+		ImGui::DockBuilderSplitNode( dockspace, ImGuiDir_Up, 0.56f, &top, &bottom );
+		ImGui::DockBuilderSplitNode( bottom, ImGuiDir_Left, 0.42f, &clipsNode, &rest );
+		ImGui::DockBuilderSplitNode( rest, ImGuiDir_Left, 0.42f, &monitor, &browser );
+		ImGui::DockBuilderDockWindow( panel::Timeline, top );
+		ImGui::DockBuilderDockWindow( panel::Clips, clipsNode );
+		ImGui::DockBuilderDockWindow( panel::CompositionMonitor, monitor );
+		for( const char* name : { panel::Files, panel::Effects, panel::Output, panel::Control, panel::Clip, panel::Composition, panel::Layer, panel::Performance } )
+			ImGui::DockBuilderDockWindow( name, browser );
+		ImGui::DockBuilderFinish( dockspace );
+		return;
+	}
 	// Deck on top; monitors, composition/layer, clip and browser side by side below, as in a classic VJ layout.
 	ImGuiID top, bottom;
 	ImGui::DockBuilderSplitNode( dockspace, ImGuiDir_Up, 0.42f, &top, &bottom );

@@ -186,6 +186,7 @@ if(STLTVJ_BUILD_APP)
 add_library(stltvj-core STATIC
     src/Composition.cpp
     src/Composition.h
+    src/Timeline.cpp
     src/History.cpp
     src/History.h
     src/Settings.cpp
@@ -349,6 +350,8 @@ add_executable(stlt-vj WIN32 MACOSX_BUNDLE
     src/ui/Panels.h
     src/ui/Theme.cpp
     src/ui/Theme.h
+    src/ui/TimelineUi.cpp
+    src/ui/TimelineUi.h
     src/ui/Widgets.cpp
     src/ui/Widgets.h
     src/ui/Workspaces.cpp

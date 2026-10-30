@@ -368,6 +368,80 @@ static void TestDecks()
 	CHECK( legacy.DeckCount() == 1 && legacy.ColumnCount() == 2 && legacy.layers[ 0 ].clips[ 1 ].path == "x.mov" );
 }
 
+// The timeline: blocks end as asked (on, loop, hold, black), cues start them, clips overwrite what they cover,
+// split in two, map timeline time to media time, and everything is saved.
+static void TestTimeline()
+{
+	Timeline t;
+	t.bpm = 120; // 0.5 s a beat, 2 s a bar
+	t.tracks.resize( 1 );
+	TimelineClip a;
+	a.clip.path = "a.mov";
+	a.start     = 0;
+	a.length    = 10;
+	t.Place( 0, std::move( a ) );
+	t.blocks.push_back( { "One", 0, 4, BlockEnd::Next, 0 } );
+	t.blocks.push_back( { "Two", 4, 6, BlockEnd::Loop, 1 } );
+	t.blocks.push_back( { "Three", 6, 8, BlockEnd::Hold, 2 } );
+	t.blocks.push_back( { "Four", 8, 10, BlockEnd::Black, 3 } );
+	CHECK( Near( t.Length(), 10 ) && t.BlockAt( 4.5 ) == 1 && t.BlockAt( 11 ) == -1 );
+
+	// Next: plays on into block Two, which loops.
+	t.Cue( 0 );
+	CHECK( t.playing && Near( t.position, 0 ) );
+	t.Advance( 4.5 );
+	CHECK( t.playing && Near( t.position, 4.5 ) );
+	t.Advance( 2.0 ); // 6.5 would leave Two: back to 4.5
+	CHECK( t.playing && Near( t.position, 4.5 ) );
+	// Three holds at its end; Four ends in black.
+	t.Cue( 2 );
+	t.Advance( 3 );
+	CHECK( !t.playing && !t.black && t.position < 8 && t.position > 7.99 );
+	t.Cue( 3 );
+	CHECK( t.playing && !t.black && Near( t.position, 8 ) );
+	t.Advance( 2.5 );
+	CHECK( !t.playing && t.black );
+	t.Locate( 1 );
+	CHECK( !t.black && Near( t.position, 1 ) );
+
+	// Overwrite: a clip in the middle of another cuts it in two; one over a head moves it on.
+	TimelineClip b;
+	b.clip.path = "b.mov";
+	b.start     = 3;
+	b.length    = 2;
+	t.Place( 0, std::move( b ) );
+	std::vector< TimelineClip >& clips = t.tracks[ 0 ].clips;
+	CHECK( clips.size() == 3 && clips[ 0 ].clip.path == "a.mov" && Near( clips[ 0 ].End(), 3 ) );
+	CHECK( clips[ 1 ].clip.path == "b.mov" && clips[ 2 ].clip.path == "a.mov" && Near( clips[ 2 ].start, 5 ) && Near( clips[ 2 ].clip.inPoint, 5 ) );
+	CHECK( t.tracks[ 0 ].ClipAt( 4 ) == 1 && t.tracks[ 0 ].ClipAt( 5.5 ) == 2 && t.tracks[ 0 ].ClipAt( 12 ) == -1 );
+	CHECK( t.Split( 0, 2, 7 ) && clips.size() == 4 && Near( clips[ 3 ].start, 7 ) && Near( clips[ 3 ].clip.inPoint, 7 ) );
+	CHECK( !t.Split( 0, 0, 5 ) );
+
+	// Media time: from the in point at the clip's speed (no player here: no wrapping).
+	TimelineClip m;
+	m.start         = 10;
+	m.clip.inPoint  = 2;
+	m.clip.speed    = 2;
+	CHECK( Near( m.MediaTime( 11 ), 4 ) && Near( m.MediaTime( 9 ), 2 ) );
+
+	CHECK( t.Timecode( 3661.5 ) == "01:01:01:12" && t.BarsBeats( 0 ) == "1.1" && t.BarsBeats( 2.6 ) == "2.2" );
+
+	// Saved with the composition, blocks sorted.
+	Composition c = Composition::MakeDefault();
+	c.timeline    = std::move( t );
+	c.timeline.tracks.push_back( TimelineTrack{} );
+	c.timeline.tracks[ 1 ].audio = true;
+	std::swap( c.timeline.blocks[ 0 ], c.timeline.blocks[ 3 ] );
+	Composition loaded;
+	std::string error;
+	CHECK( LoadComposition( SaveComposition( c ), loaded, error ) );
+	const Timeline& l = loaded.timeline;
+	CHECK( l.tracks.size() == 2 && l.tracks[ 0 ].clips.size() == 4 && l.tracks[ 1 ].audio );
+	CHECK( l.blocks.size() == 4 && l.blocks[ 0 ].name == "One" && l.blocks[ 3 ].endAction == BlockEnd::Black );
+	CHECK( Near( l.tracks[ 0 ].clips[ 2 ].clip.inPoint, 5 ) && Near( l.tracks[ 0 ].clips[ 1 ].length, 2 ) );
+	CHECK( !l.playing && Near( l.position, 0 ) );
+}
+
 int main()
 {
 	TestRange();
@@ -376,6 +450,7 @@ int main()
 	TestSaving();
 	TestLayersAndRows();
 	TestDecks();
+	TestTimeline();
 	TestFrameClock();
 	TestEvenFrames();
 	if( failures )

@@ -408,7 +408,7 @@ void Compositor::DrawClipInto( Clip& clip, Fbo& target, const FrameInfo& frame, 
 	glBindFramebuffer( GL_FRAMEBUFFER, 0 );
 }
 
-void Compositor::Render( Composition& composition, const FrameInfo& frame )
+void Compositor::Render( Composition& composition, const FrameInfo& frame, bool timelineView )
 {
 	int W = composition.width, H = composition.height;
 	if( !layerTarget.Ensure( W, H ) || !layerScratch.Ensure( W, H ) || !mix[ 0 ].Ensure( W, H ) || !mix[ 1 ].Ensure( W, H ) || !final.Ensure( W, H ) )
@@ -420,31 +420,63 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame )
 	glClearColor( 0, 0, 0, 1 );
 	glClear( GL_COLOR_BUFFER_BIT );
 
-	bool anySolo = std::any_of( composition.layers.begin(), composition.layers.end(), []( const Layer& l ) { return l.solo; } );
+	// What is drawn, bottom first: the deck's layers (Session view) or the timeline's video tracks (Arrangement).
+	struct Source
+	{
+		Clip* clip;
+		Clip* outgoing; // fading out (a layer's transition)
+		float progress;
+		TransitionMode transition;
+		float opacity;
+		BlendMode blend;
+		EffectChain* effects;
+	};
+	std::vector< Source > sources;
+	auto ready = []( const Clip& clip ) { return clip.generator || ( clip.Loaded() && clip.player->HasFrame() ); };
+	if( timelineView )
+	{
+		Timeline& timeline = composition.timeline;
+		bool anySolo       = std::any_of( timeline.tracks.begin(), timeline.tracks.end(), []( const TimelineTrack& t ) { return t.solo && !t.audio; } );
+		for( TimelineTrack& track : timeline.tracks )
+		{
+			if( track.audio || track.mute || ( anySolo && !track.solo ) || timeline.black || track.opacity <= 0 )
+				continue;
+			int index = track.ClipAt( timeline.position );
+			if( index >= 0 && ready( track.clips[ index ].clip ) )
+				sources.push_back( { &track.clips[ index ].clip, nullptr, 1, TransitionMode::Fade, track.opacity, track.blend, &track.effects } );
+		}
+	}
+	else
+	{
+		bool anySolo = std::any_of( composition.layers.begin(), composition.layers.end(), []( const Layer& l ) { return l.solo; } );
+		for( int index = 0; index < (int)composition.layers.size(); ++index )
+		{
+			Layer& layer  = composition.layers[ index ];
+			float opacity = layer.ShownOpacity( frame.beat ) * layer.master * layer.CrossfadeGain( composition.crossfader );
+			Clip* playing = composition.ActiveClip( index );
+			if( layer.bypass || ( anySolo && !layer.solo ) || !playing || opacity <= 0 )
+				continue;
+			// The clip may sit in another row (a layer based launch).
+			Clip* outgoing = layer.transitionProgress < 1 ? composition.OutgoingClip( index ) : nullptr;
+			if( outgoing && !ready( *outgoing ) )
+				outgoing = nullptr;
+			if( !ready( *playing ) && !outgoing )
+				continue;
+			sources.push_back( { playing, outgoing, layer.transitionProgress, layer.transition, opacity, layer.blend, &layer.effects } );
+		}
+	}
+
 	float identity[ 9 ];
 	Identity( identity );
-	auto ready = []( const Clip& clip ) { return clip.generator || ( clip.Loaded() && clip.player->HasFrame() ); };
-	for( int index = 0; index < (int)composition.layers.size(); ++index )
+	for( Source& source : sources )
 	{
-		Layer& layer  = composition.layers[ index ];
-		float opacity = layer.ShownOpacity( frame.beat ) * layer.master * layer.CrossfadeGain( composition.crossfader );
-		Clip* playing = composition.ActiveClip( index );
-		if( layer.bypass || ( anySolo && !layer.solo ) || !playing || opacity <= 0 )
-			continue;
-		// The clip may sit in another row (a layer based launch).
-		Clip& clip     = *playing;
-		Clip* outgoing = layer.transitionProgress < 1 ? composition.OutgoingClip( index ) : nullptr;
-		if( outgoing && !ready( *outgoing ) )
-			outgoing = nullptr;
-		if( !ready( clip ) && !outgoing )
-			continue;
-
-		if( outgoing )
+		Clip& clip = *source.clip;
+		if( source.outgoing )
 		{
 			// A transition: both clips, mixed into the layer.
 			if( !transitionFrom.Ensure( W, H ) || !transitionTo.Ensure( W, H ) )
 				continue;
-			DrawClipInto( *outgoing, transitionFrom, frame, W, H, false );
+			DrawClipInto( *source.outgoing, transitionFrom, frame, W, H, false );
 			if( ready( clip ) )
 				DrawClipInto( clip, transitionTo, frame, W, H, false );
 			else
@@ -458,8 +490,8 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame )
 			transitionProgram.Use();
 			glUniformMatrix3fv( transitionProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
 			SetTexRect( transitionProgram, 0, 1, 1, 0 );
-			glUniform1i( transitionProgram.Uniform( "uMode" ), (int)layer.transition );
-			glUniform1f( transitionProgram.Uniform( "uProgress" ), layer.transitionProgress );
+			glUniform1i( transitionProgram.Uniform( "uMode" ), (int)source.transition );
+			glUniform1f( transitionProgram.Uniform( "uProgress" ), source.progress );
 			glActiveTexture( GL_TEXTURE1 );
 			glBindTexture( GL_TEXTURE_2D, transitionTo.Texture() );
 			glActiveTexture( GL_TEXTURE0 );
@@ -469,15 +501,15 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame )
 		}
 		else
 			DrawClipInto( clip, layerTarget, frame, W, H, false );
-		Fbo* layerResult = ApplyChain( layer.effects, &layerTarget, &layerScratch, frame );
+		Fbo* layerResult = ApplyChain( *source.effects, &layerTarget, &layerScratch, frame );
 
 		mix[ 1 - current ].Bind();
 		glBindVertexArray( vao );
 		blendProgram.Use();
 		glUniformMatrix3fv( blendProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
 		SetTexRect( blendProgram, 0, 1, 1, 0 );
-		glUniform1i( blendProgram.Uniform( "uMode" ), (int)layer.blend );
-		glUniform1f( blendProgram.Uniform( "uOpacity" ), opacity );
+		glUniform1i( blendProgram.Uniform( "uMode" ), (int)source.blend );
+		glUniform1f( blendProgram.Uniform( "uOpacity" ), source.opacity );
 		glActiveTexture( GL_TEXTURE1 );
 		glBindTexture( GL_TEXTURE_2D, layerResult->Texture() );
 		glActiveTexture( GL_TEXTURE0 );

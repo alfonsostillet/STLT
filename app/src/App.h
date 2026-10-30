@@ -67,6 +67,25 @@ public:
 	void LoadClip( int layer, int column, const std::string& path );
 	void RemoveClip( int layer, int column );
 	void MoveClip( int fromLayer, int fromColumn, int toLayer, int toColumn );
+	// The two views, as in Ableton: Session (the deck of clips to launch) and Arrangement (the timeline). The
+	// output shows the one in use.
+	enum class View
+	{
+		Session,
+		Arrangement
+	};
+	View view = View::Session;
+	void SetView( View v );
+	// The timeline: clips placed in time on tracks (see Timeline). Its playhead runs in either view.
+	void TimelinePlay( bool play );
+	void TimelineStop(); // stops and goes back to the start
+	void TimelineCue( int block );
+	void TimelineNextCue( int step );
+	// A new timeline clip from a deck clip, a file or a source, at `start` on `track` (overwriting what it covers).
+	int AddTimelineClip( int track, double start, Clip clip );
+	int AddTimelineFile( int track, double start, const std::string& path );
+	void UpdateTimeline( double dt );
+	void PrepareTimelineClip( TimelineClip& clip );
 	// A clip's trigger pressed (`down`) or released: a click on its picture, its key, MIDI pad or OSC message. What
 	// it does depends on the clip's trigger style: Normal launches, Toggle launches or stops, Piano plays while held.
 	void TriggerClip( int row, int column, bool down );

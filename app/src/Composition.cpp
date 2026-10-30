@@ -519,6 +519,8 @@ static nlohmann::json SaveClip( const Clip& clip )
 	return k;
 }
 
+static nlohmann::json SaveTimeline( const Timeline& t );
+
 std::string SaveComposition( const Composition& c, bool withShownDeck )
 {
 	using nlohmann::json;
@@ -579,6 +581,7 @@ std::string SaveComposition( const Composition& c, bool withShownDeck )
 		decks.push_back( k );
 	}
 	root[ "decks" ] = decks;
+	root[ "timeline" ] = SaveTimeline( c.timeline );
 	if( withShownDeck )
 		root[ "deck" ] = c.deck;
 	return root.dump( 2 );
@@ -638,6 +641,101 @@ static Clip LoadClip( const nlohmann::json& k )
 					clip.animations[ p ] = LoadAnimation( k[ "animations" ][ ClipPropertyName( (ClipProperty)p ) ] );
 	}
 	return clip;
+}
+
+Clip CopyClip( const Clip& clip )
+{
+	return LoadClip( SaveClip( clip ) );
+}
+
+// The timeline: tempo, tracks with their clips (placed in time), and blocks.
+static nlohmann::json SaveTimeline( const Timeline& t )
+{
+	using nlohmann::json;
+	json root;
+	root[ "bpm" ]         = t.bpm;
+	root[ "beatsPerBar" ] = t.beatsPerBar;
+	root[ "fps" ]         = t.fps;
+	json tracks           = json::array();
+	for( const TimelineTrack& track : t.tracks )
+	{
+		json k;
+		k[ "name" ]    = track.name;
+		k[ "audio" ]   = track.audio;
+		k[ "opacity" ] = track.opacity;
+		k[ "volume" ]  = track.volume;
+		k[ "blend" ]   = BlendModeName( track.blend );
+		k[ "mute" ]    = track.mute;
+		k[ "solo" ]    = track.solo;
+		k[ "effects" ] = SaveChain( track.effects );
+		json clips     = json::array();
+		for( const TimelineClip& clip : track.clips )
+			clips.push_back( { { "start", clip.start }, { "length", clip.length }, { "clip", SaveClip( clip.clip ) } } );
+		k[ "clips" ] = clips;
+		tracks.push_back( k );
+	}
+	root[ "tracks" ] = tracks;
+	json blocks      = json::array();
+	for( const TimelineBlock& block : t.blocks )
+		blocks.push_back( { { "name", block.name }, { "start", block.start }, { "end", block.end }, { "endAction", BlockEndName( block.endAction ) }, { "colour", block.colour } } );
+	root[ "blocks" ] = blocks;
+	return root;
+}
+
+static Timeline LoadTimeline( const nlohmann::json& root )
+{
+	using nlohmann::json;
+	Timeline t;
+	if( !root.is_object() )
+		return t;
+	t.bpm         = std::clamp( root.value( "bpm", 120.0 ), 20.0, 500.0 );
+	t.beatsPerBar = std::clamp( root.value( "beatsPerBar", 4 ), 1, 32 );
+	t.fps         = std::clamp( root.value( "fps", 25.0 ), 1.0, 120.0 );
+	if( root.contains( "tracks" ) && root[ "tracks" ].is_array() )
+		for( const json& k : root[ "tracks" ] )
+		{
+			if( !k.is_object() )
+				continue;
+			TimelineTrack track;
+			track.name    = k.value( "name", "Track " + std::to_string( t.tracks.size() + 1 ) );
+			track.audio   = k.value( "audio", false );
+			track.opacity = std::clamp( k.value( "opacity", 1.0f ), 0.0f, 1.0f );
+			track.volume  = std::clamp( k.value( "volume", 1.0f ), 0.0f, 1.0f );
+			track.blend   = ByName( k.value( "blend", json() ), BlendModeName, BlendMode::Alpha );
+			track.mute    = k.value( "mute", false );
+			track.solo    = k.value( "solo", false );
+			if( k.contains( "effects" ) )
+				track.effects = LoadChain( k[ "effects" ] );
+			if( k.contains( "clips" ) && k[ "clips" ].is_array() )
+				for( const json& c : k[ "clips" ] )
+				{
+					if( !c.is_object() || !c.contains( "clip" ) )
+						continue;
+					TimelineClip clip;
+					clip.clip   = LoadClip( c[ "clip" ] );
+					clip.start  = std::max( 0.0, c.value( "start", 0.0 ) );
+					clip.length = std::max( 0.01, c.value( "length", 1.0 ) );
+					if( !clip.clip.Empty() )
+						track.clips.push_back( std::move( clip ) );
+				}
+			std::stable_sort( track.clips.begin(), track.clips.end(), []( const TimelineClip& a, const TimelineClip& b ) { return a.start < b.start; } );
+			t.tracks.push_back( std::move( track ) );
+		}
+	if( root.contains( "blocks" ) && root[ "blocks" ].is_array() )
+		for( const json& k : root[ "blocks" ] )
+		{
+			if( !k.is_object() )
+				continue;
+			TimelineBlock block;
+			block.name      = k.value( "name", "" );
+			block.start     = std::max( 0.0, k.value( "start", 0.0 ) );
+			block.end       = std::max( block.start + 0.01, k.value( "end", block.start + 8 ) );
+			block.endAction = ByName( k.value( "endAction", json() ), BlockEndName, BlockEnd::Next );
+			block.colour    = k.value( "colour", 0 );
+			t.blocks.push_back( block );
+		}
+	t.SortBlocks();
+	return t;
 }
 
 bool LoadComposition( const std::string& text, Composition& out, std::string& error )
@@ -733,6 +831,8 @@ bool LoadComposition( const std::string& text, Composition& out, std::string& er
 	if( c.columns.empty() )
 		for( int i = 0; i < 9; ++i )
 			c.columns.push_back( "Column " + std::to_string( i + 1 ) );
+	if( root.contains( "timeline" ) )
+		c.timeline = LoadTimeline( root[ "timeline" ] );
 	size_t widest = c.columns.size();
 	for( const Layer& layer : c.layers )
 		widest = std::max( widest, layer.clips.size() );

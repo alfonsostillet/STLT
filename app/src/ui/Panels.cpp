@@ -423,6 +423,7 @@ void DrawMainMenu( App& app )
 		if( ImGui::BeginMenu( "View" ) )
 		{
 			PanelVisibility& p = app.panels;
+			ImGui::MenuItem( panel::Timeline, nullptr, &p.timeline );
 			ImGui::MenuItem( panel::Layers, nullptr, &p.layers );
 			ImGui::MenuItem( panel::Clips, nullptr, &p.clips );
 			ImGui::MenuItem( panel::CompositionMonitor, nullptr, &p.compositionMonitor );
@@ -616,8 +617,18 @@ void DrawToolbar( App& app )
 	// mapping or in the Advanced Output editor (its arrows move points), nor when the user mapped the key.
 	const ImGuiIO& io = ImGui::GetIO();
 	bool plainKeys    = !io.WantTextInput && !io.KeyCtrl && !io.KeyShift && !io.KeyAlt && !app.learning;
+	// Arrangement: Space plays and stops the timeline, Left and Right go to the previous and next cue; Tab swaps the
+	// views.
+	bool arrangement = app.view == App::View::Arrangement;
+	if( plainKeys && ImGui::IsKeyPressed( ImGuiKey_Tab, false ) )
+		app.SetView( arrangement ? App::View::Session : App::View::Arrangement );
 	if( plainKeys && ImGui::IsKeyPressed( ImGuiKey_Space, false ) )
-		comp.paused = !comp.paused;
+	{
+		if( arrangement )
+			app.TimelinePlay( !app.composition.timeline.playing );
+		else
+			comp.paused = !comp.paused;
+	}
 	auto builtIn = [ & ]( ImGuiKey key ) {
 		if( !plainKeys || app.panels.advancedOutput || !ImGui::IsKeyPressed( key, false ) )
 			return false;
@@ -626,7 +637,13 @@ void DrawToolbar( App& app )
 				return false;
 		return true;
 	};
-	if( app.moveMode )
+	if( arrangement )
+	{
+		for( auto [ key, step ] : { std::pair{ ImGuiKey_RightArrow, 1 }, std::pair{ ImGuiKey_LeftArrow, -1 } } )
+			if( plainKeys && !app.panels.advancedOutput && ImGui::IsKeyPressed( key, false ) )
+				app.TimelineNextCue( step );
+	}
+	else if( app.moveMode )
 	{
 		// In Move mode the arrows move the picked clips by one cell.
 		for( auto [ key, rows, columns ] : { std::tuple{ ImGuiKey_RightArrow, 0, 1 }, std::tuple{ ImGuiKey_LeftArrow, 0, -1 }, std::tuple{ ImGuiKey_UpArrow, 1, 0 },
@@ -757,7 +774,41 @@ void DrawToolbar( App& app )
 	ImGui::PopFont();
 	float chipPad   = Ui( 10 );
 	float chipWidth = ImGui::CalcTextSize( output.c_str() ).x + chipPad * 2 + Ui( 14 );
-	ImGui::SameLine( ImGui::GetWindowWidth() - chipWidth - rateWidth - Ui( 34 ) );
+	float viewH     = ImGui::GetFrameHeight();
+	float viewW     = viewH * 1.4f;
+	ImGui::SameLine( ImGui::GetWindowWidth() - chipWidth - rateWidth - Ui( 34 ) - viewW * 2 - Ui( 16 ) );
+	{
+		// The two views, as in Ableton: Session (three upright lines: the deck) and Arrangement (three lying lines:
+		// the timeline). Tab switches.
+		for( int v = 0; v < 2; ++v )
+		{
+			if( v > 0 )
+				ImGui::SameLine( 0, Ui( 2 ) );
+			ImVec2 p      = ImGui::GetCursorScreenPos();
+			bool on       = ( v == 1 ) == ( app.view == App::View::Arrangement );
+			bool clicked  = ImGui::InvisibleButton( v == 0 ? "##sessionView" : "##arrangementView", ImVec2( viewW, viewH ) );
+			bool hovered  = ImGui::IsItemHovered();
+			ImDrawList* d = ImGui::GetWindowDrawList();
+			d->AddRectFilled( p, ImVec2( p.x + viewW, p.y + viewH ), on ? theme::Accent : hovered ? theme::RaisedHover : theme::Raised, Ui( 4 ),
+			                  v == 0 ? ImDrawFlags_RoundCornersLeft : ImDrawFlags_RoundCornersRight );
+			ImU32 ink = on ? theme::OnAccent : hovered ? theme::Text : theme::TextDim;
+			ImVec2 c( p.x + viewW / 2, p.y + viewH / 2 );
+			float r = viewH * 0.27f;
+			for( int i = -1; i <= 1; ++i )
+			{
+				float o = i * r * 0.85f;
+				if( v == 0 )
+					d->AddLine( ImVec2( c.x + o, c.y - r ), ImVec2( c.x + o, c.y + r ), ink, Ui( 2 ) );
+				else
+					d->AddLine( ImVec2( c.x - r * 1.2f, c.y + o ), ImVec2( c.x + r * 1.2f, c.y + o ), ink, Ui( 2 ) );
+			}
+			if( hovered )
+				ImGui::SetTooltip( v == 0 ? "Session: the deck of clips to launch (Tab)" : "Arrangement: the timeline of the show (Tab)" );
+			if( clicked )
+				app.SetView( v == 0 ? App::View::Session : App::View::Arrangement );
+		}
+	}
+	ImGui::SameLine( 0, Ui( 16 ) );
 	{
 		// A chip: a dot (lit when something is on show) and the mode.
 		ImVec2 p      = ImGui::GetCursorScreenPos();

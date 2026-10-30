@@ -25,7 +25,8 @@ public:
 	void Shutdown();
 
 	// Main context. Renders the whole composition; the result is CompositionTexture().
-	void Render( Composition& composition, const FrameInfo& frame );
+	// `timelineView`: the timeline's video tracks at its playhead instead of the deck's layers.
+	void Render( Composition& composition, const FrameInfo& frame, bool timelineView = false );
 	GLuint CompositionTexture() const { return final.Texture(); }
 
 	// Main context. Draws one clip with its effects on black, fitted to the target (preview monitor).

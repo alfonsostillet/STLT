@@ -1,4 +1,5 @@
 #pragma once
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <vector>
@@ -213,6 +214,96 @@ struct Layer
 	double TransitionSeconds( double bpm ) const;
 };
 
+// ---- The timeline (the Arrangement view): clips placed in time on tracks, as in a (much simpler) editing
+// program, and blocks ("songs") that cues start and that end by going on, looping, holding or going to black.
+
+enum class BlockEnd
+{
+	Next,  // plays on into what follows
+	Loop,  // starts the block again
+	Hold,  // stops on its last frame
+	Black, // stops, and the output goes black
+	Count
+};
+const char* BlockEndName( BlockEnd end );
+
+struct TimelineClip
+{
+	Clip clip;          // the media and its settings; clip.inPoint is where it starts in the media
+	double start  = 0;  // seconds on the timeline
+	double length = 4;  // seconds on the timeline
+	bool prepared = false; // runtime: its player, sound and effects were set up
+	double End() const { return start + length; }
+	// The media's length (a movie, or a sound alone); 0: unknown or endless (a source).
+	double MediaDuration() const;
+	// The media time shown at timeline time `t`: from the in point on, at the clip's speed; past the media's end
+	// (or out point) it starts again with the Loop play mode, and otherwise holds the last frame.
+	double MediaTime( double t ) const;
+};
+
+struct TimelineTrack
+{
+	std::string name;
+	bool audio      = false; // an audio track: its clips only sound
+	float opacity   = 1.0f;
+	float volume    = 1.0f;
+	BlendMode blend = BlendMode::Alpha;
+	bool mute       = false;
+	bool solo       = false;
+	EffectChain effects;
+	std::vector< TimelineClip > clips; // in time order, not overlapping
+	// The clip playing at `t` (-1: none).
+	int ClipAt( double t ) const;
+};
+
+struct TimelineBlock
+{
+	std::string name;
+	double start       = 0;
+	double end         = 8;
+	BlockEnd endAction = BlockEnd::Next;
+	int colour         = 0; // index into a palette
+};
+
+struct Timeline
+{
+	double bpm      = 120; // the show's tempo and metre, for the ruler and the snap
+	int beatsPerBar = 4;
+	double fps      = 25; // the timecode's frames per second
+	std::vector< TimelineTrack > tracks; // index 0 is the bottom track
+	std::vector< TimelineBlock > blocks; // in time order: cue N starts block N
+
+	// Runtime, not saved: the playhead, whether it runs, and whether a block ended in black.
+	double position = 0;
+	bool playing    = false;
+	bool black      = false;
+
+	double SecondsPerBeat() const { return 60.0 / std::max( bpm, 1.0 ); }
+	double SecondsPerBar() const { return SecondsPerBeat() * std::max( beatsPerBar, 1 ); }
+	double Length() const; // the end of the last clip or block
+	int BlockAt( double t ) const; // the block holding `t` (-1: none)
+	// Moves the playhead on by `seconds` of playing, carrying out the end action of a block it leaves.
+	void Advance( double seconds );
+	// Cue N: block N from its start, playing.
+	void Cue( int block );
+	// The playhead to `t` (playing or not); a black ending is over.
+	void Locate( double t );
+	void SortBlocks();
+	// Puts a clip on a track, overwriting what it covers there (as an editor's overwrite): those clips are cut
+	// short, moved on or removed; one it lands in the middle of is cut in two (the second half a copy). Returns its
+	// index on the track.
+	int Place( int track, TimelineClip clip );
+	// Cuts the clip at `t` in two (false if `t` is not inside it).
+	bool Split( int track, int index, double t );
+	// "HH:MM:SS:FF" and "bar.beat" of `t`.
+	std::string Timecode( double t ) const;
+	std::string BarsBeats( double t ) const;
+};
+
+// A copy of a clip's media and settings (effects and source state included), without player or sound: the
+// caller sets those up.
+Clip CopyClip( const Clip& clip );
+
 // A deck, as in Resolume: a page of clips, with its own columns, over the same layers. The deck on show keeps its
 // clips in the layers and the composition's columns; the others keep theirs here, one row per layer.
 struct Deck
@@ -250,6 +341,7 @@ struct Composition
 	EffectChain effects;
 	std::vector< Deck > decks = FirstDeck();
 	int deck = 0; // the deck on show
+	Timeline timeline; // the Arrangement view
 
 	int selectedLayer  = 0;  // the layer the Layer panel shows (and layer based launches go to)
 	int selectedRow    = 0;  // the selected clip: its row and column

@@ -134,6 +134,11 @@ static void TestLayerHeaderAddresses()
 	CHECK( ParseControlAddress( "/composition/selectnextdeck", t ) && t.kind == Kind::NextDeck );
 	CHECK( ParseControlAddress( "/composition/selectprevdeck", t ) && t.kind == Kind::PrevDeck );
 	CHECK( !ParseControlAddress( "/composition/decks/0/select", t ) );
+	CHECK( ParseControlAddress( "/timeline/cue/3", t ) && t.kind == Kind::TimelineCue && t.slot == 2 && t.IsButton() );
+	CHECK( ParseControlAddress( "/timeline/play", t ) && t.kind == Kind::TimelinePlay && t.IsSwitch() );
+	CHECK( ParseControlAddress( "/timeline/nextcue", t ) && t.kind == Kind::TimelineNextCue );
+	CHECK( ParseControlAddress( "/timeline/stop", t ) && t.kind == Kind::TimelineStop );
+	CHECK( !ParseControlAddress( "/timeline/cue/0", t ) && !ParseControlAddress( "/timeline/rewind", t ) );
 	CHECK( ParseControlAddress( "/composition/connectprevcolumn", t ) && t.kind == Kind::PrevColumn );
 	CHECK( ParseControlAddress( "/composition/crossfader/phase", t ) && t.kind == Kind::Crossfader );
 	CHECK( ParseControlAddress( "/composition/bypassed", t ) && t.kind == Kind::CompositionBypass && t.IsSwitch() );

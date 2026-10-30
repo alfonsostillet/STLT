@@ -66,6 +66,11 @@ struct ControlTarget
 		DeckSelect, // slot: the deck
 		NextDeck,
 		PrevDeck,
+		TimelineCue, // slot: the cue (block)
+		TimelineNextCue,
+		TimelinePrevCue,
+		TimelinePlay, // a switch: play / stop
+		TimelineStop,
 		Crossfader,
 		CompositionBypass,
 		AudioVolume,
