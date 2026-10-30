@@ -155,6 +155,9 @@ void Workspaces::ApplyPending()
 		ImGui::ClearIniSettings();
 		ImGui::LoadIniSettingsFromMemory( pendingText.c_str(), pendingText.size() );
 		pendingText.clear();
+		// In Arrangement the timeline's inspector holds a clip's settings: the deck's Clip and Layer panels rest.
+		if( view == 1 )
+			visibility->clip = visibility->layer = false;
 	}
 	if( pendingDefault )
 	{
@@ -167,6 +170,8 @@ void Workspaces::ApplyPending()
 			visibility->timeline       = true;
 			visibility->layers         = false;
 			visibility->previewMonitor = false;
+			visibility->clip           = false;
+			visibility->layer          = false;
 		}
 		buildDefault = true;
 		current      = "Default";
@@ -226,7 +231,7 @@ void Workspaces::BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size )
 		ImGui::DockBuilderDockWindow( panel::Timeline, top );
 		ImGui::DockBuilderDockWindow( panel::Clips, clipsNode );
 		ImGui::DockBuilderDockWindow( panel::CompositionMonitor, monitor );
-		for( const char* name : { panel::Files, panel::Effects, panel::Output, panel::Control, panel::Clip, panel::Composition, panel::Layer, panel::Performance } )
+		for( const char* name : { panel::Effects, panel::Files, panel::Output, panel::Control, panel::Composition, panel::Performance } )
 			ImGui::DockBuilderDockWindow( name, browser );
 		ImGui::DockBuilderFinish( dockspace );
 		return;

@@ -227,13 +227,49 @@ enum class BlockEnd
 };
 const char* BlockEndName( BlockEnd end );
 
+// The properties of a timeline clip that keyframes animate.
+enum class KeyProperty
+{
+	Opacity,   // 0..1
+	PositionX, // pixels from the centre
+	PositionY,
+	Scale,    // 1: its fitted size
+	Rotation, // degrees
+	Volume,   // 0..1
+	Count
+};
+const char* KeyPropertyName( KeyProperty property );
+
+struct Keyframe
+{
+	double time = 0; // seconds from the clip's start
+	float value = 0;
+};
+
 struct TimelineClip
 {
 	Clip clip;          // the media and its settings; clip.inPoint is where it starts in the media
 	double start  = 0;  // seconds on the timeline
 	double length = 4;  // seconds on the timeline
+	BlendMode blend = BlendMode::Alpha; // how it lies over the tracks under it
+	std::vector< Keyframe > keys[ (int)KeyProperty::Count ]; // in time order; none: the property holds its value
 	bool prepared = false; // runtime: its player, sound and effects were set up
 	double End() const { return start + length; }
+	// The clip's own value of a property (its opacity, position...), the one keyframes override.
+	float& Field( KeyProperty property );
+	float Field( KeyProperty property ) const { return const_cast< TimelineClip* >( this )->Field( property ); }
+	bool Animated( KeyProperty property ) const { return !keys[ (int)property ].empty(); }
+	// The value at `local` seconds from the clip's start: between keyframes it moves in a straight line, before the
+	// first and after the last it holds them; without keyframes it is the field.
+	float Evaluate( KeyProperty property, double local ) const;
+	// Puts a keyframe at `local` (replacing one within a millisecond); removes the one there.
+	void SetKey( KeyProperty property, double local, float value );
+	bool RemoveKey( KeyProperty property, double local );
+	int KeyAt( KeyProperty property, double local ) const; // -1: none within a millisecond
+	// Every keyframe moves by `-seconds` (the clip's start moved on by that much while its content stays put).
+	void ShiftKeys( double seconds );
+	// Sets the animated fields to their values at timeline time `t`.
+	void Apply( double t );
 	// The media's length (a movie, or a sound alone); 0: unknown or endless (a source).
 	double MediaDuration() const;
 	// The media time shown at timeline time `t`: from the in point on, at the clip's speed; past the media's end

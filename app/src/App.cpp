@@ -2021,6 +2021,9 @@ int App::AddTimelineClip( int track, double start, Clip clip )
 	TimelineClip placed;
 	placed.clip  = std::move( clip );
 	placed.start = std::max( 0.0, start );
+	// On the timeline keyframes move things, not the deck's beat animations.
+	for( Animation& animation : placed.clip.animations )
+		animation.mode = AnimMode::Off;
 	PrepareTimelineClip( placed );
 	// As long as its media (between in and out, at its speed); stills and sources: four bars.
 	double duration = placed.MediaDuration();
@@ -2071,6 +2074,7 @@ void App::UpdateTimeline( double dt )
 		for( TimelineClip& tc : track.clips )
 		{
 			PrepareTimelineClip( tc );
+			tc.Apply( t.position ); // keyframed opacity, position, scale, rotation, volume
 			Clip& clip = tc.clip;
 			if( !clip.Loaded() || track.audio )
 				continue;

@@ -670,7 +670,21 @@ static nlohmann::json SaveTimeline( const Timeline& t )
 		k[ "effects" ] = SaveChain( track.effects );
 		json clips     = json::array();
 		for( const TimelineClip& clip : track.clips )
-			clips.push_back( { { "start", clip.start }, { "length", clip.length }, { "clip", SaveClip( clip.clip ) } } );
+		{
+			json c = { { "start", clip.start }, { "length", clip.length }, { "blend", BlendModeName( clip.blend ) }, { "clip", SaveClip( clip.clip ) } };
+			json keys = json::object();
+			for( int p = 0; p < (int)KeyProperty::Count; ++p )
+				if( !clip.keys[ p ].empty() )
+				{
+					json list = json::array();
+					for( const Keyframe& k : clip.keys[ p ] )
+						list.push_back( { k.time, k.value } );
+					keys[ KeyPropertyName( (KeyProperty)p ) ] = list;
+				}
+			if( !keys.empty() )
+				c[ "keys" ] = keys;
+			clips.push_back( c );
+		}
 		k[ "clips" ] = clips;
 		tracks.push_back( k );
 	}
@@ -715,6 +729,18 @@ static Timeline LoadTimeline( const nlohmann::json& root )
 					clip.clip   = LoadClip( c[ "clip" ] );
 					clip.start  = std::max( 0.0, c.value( "start", 0.0 ) );
 					clip.length = std::max( 0.01, c.value( "length", 1.0 ) );
+					clip.blend  = ByName( c.value( "blend", json() ), BlendModeName, BlendMode::Alpha );
+					if( c.contains( "keys" ) && c[ "keys" ].is_object() )
+						for( int p = 0; p < (int)KeyProperty::Count; ++p )
+						{
+							const char* name = KeyPropertyName( (KeyProperty)p );
+							if( !c[ "keys" ].contains( name ) || !c[ "keys" ][ name ].is_array() )
+								continue;
+							for( const json& k : c[ "keys" ][ name ] )
+								if( k.is_array() && k.size() == 2 && k[ 0 ].is_number() && k[ 1 ].is_number() )
+									clip.keys[ p ].push_back( { k[ 0 ].get< double >(), k[ 1 ].get< float >() } );
+							std::stable_sort( clip.keys[ p ].begin(), clip.keys[ p ].end(), []( const Keyframe& a, const Keyframe& b ) { return a.time < b.time; } );
+						}
 					if( !clip.clip.Empty() )
 						track.clips.push_back( std::move( clip ) );
 				}

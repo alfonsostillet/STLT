@@ -11,6 +11,89 @@ const char* BlockEndName( BlockEnd end )
 	return names[ std::clamp( (int)end, 0, (int)BlockEnd::Count - 1 ) ];
 }
 
+const char* KeyPropertyName( KeyProperty property )
+{
+	static const char* names[] = { "opacity", "positionX", "positionY", "scale", "rotation", "volume" };
+	return names[ std::clamp( (int)property, 0, (int)KeyProperty::Count - 1 ) ];
+}
+
+float& TimelineClip::Field( KeyProperty property )
+{
+	switch( property )
+	{
+	case KeyProperty::Opacity: return clip.opacity;
+	case KeyProperty::PositionX: return clip.positionX;
+	case KeyProperty::PositionY: return clip.positionY;
+	case KeyProperty::Scale: return clip.scale;
+	case KeyProperty::Rotation: return clip.rotation;
+	default: return clip.volume;
+	}
+}
+
+float TimelineClip::Evaluate( KeyProperty property, double local ) const
+{
+	const std::vector< Keyframe >& k = keys[ (int)property ];
+	if( k.empty() )
+		return Field( property );
+	if( local <= k.front().time )
+		return k.front().value;
+	if( local >= k.back().time )
+		return k.back().value;
+	for( size_t i = 1; i < k.size(); ++i )
+		if( local < k[ i ].time )
+		{
+			double span = k[ i ].time - k[ i - 1 ].time;
+			double f    = span > 0 ? ( local - k[ i - 1 ].time ) / span : 1.0;
+			return (float)( k[ i - 1 ].value + ( k[ i ].value - k[ i - 1 ].value ) * f );
+		}
+	return k.back().value;
+}
+
+int TimelineClip::KeyAt( KeyProperty property, double local ) const
+{
+	const std::vector< Keyframe >& k = keys[ (int)property ];
+	for( int i = 0; i < (int)k.size(); ++i )
+		if( std::fabs( k[ i ].time - local ) < 1e-3 )
+			return i;
+	return -1;
+}
+
+void TimelineClip::SetKey( KeyProperty property, double local, float value )
+{
+	std::vector< Keyframe >& k = keys[ (int)property ];
+	int at                     = KeyAt( property, local );
+	if( at >= 0 )
+	{
+		k[ at ].value = value;
+		return;
+	}
+	k.push_back( { local, value } );
+	std::stable_sort( k.begin(), k.end(), []( const Keyframe& a, const Keyframe& b ) { return a.time < b.time; } );
+}
+
+bool TimelineClip::RemoveKey( KeyProperty property, double local )
+{
+	int at = KeyAt( property, local );
+	if( at < 0 )
+		return false;
+	keys[ (int)property ].erase( keys[ (int)property ].begin() + at );
+	return true;
+}
+
+void TimelineClip::ShiftKeys( double seconds )
+{
+	for( std::vector< Keyframe >& k : keys )
+		for( Keyframe& key : k )
+			key.time -= seconds;
+}
+
+void TimelineClip::Apply( double t )
+{
+	for( int p = 0; p < (int)KeyProperty::Count; ++p )
+		if( !keys[ p ].empty() )
+			Field( (KeyProperty)p ) = Evaluate( (KeyProperty)p, t - start );
+}
+
 double TimelineClip::MediaDuration() const
 {
 	if( clip.Loaded() )
@@ -135,6 +218,10 @@ int Timeline::Place( int track, TimelineClip placed )
 			tail.clip   = CopyClip( c.clip );
 			tail.start  = e;
 			tail.length = c.End() - e;
+			tail.blend  = c.blend;
+			for( int p = 0; p < (int)KeyProperty::Count; ++p )
+				tail.keys[ p ] = c.keys[ p ];
+			tail.ShiftKeys( e - c.start );
 			tail.clip.inPoint += ( e - c.start ) * std::max( 0.0f, c.clip.speed );
 			c.length = s - c.start;
 			kept.push_back( std::move( c ) );
@@ -147,8 +234,9 @@ int Timeline::Place( int track, TimelineClip placed )
 		}
 		else if( c.End() > e )
 		{
-			// Its start is covered: it starts later, and further into its media.
+			// Its start is covered: it starts later, and further into its media (and its keyframes stay where they were in time).
 			c.clip.inPoint += ( e - c.start ) * std::max( 0.0f, c.clip.speed );
+			c.ShiftKeys( e - c.start );
 			c.length = c.End() - e;
 			c.start  = e;
 			kept.push_back( std::move( c ) );
@@ -176,6 +264,10 @@ bool Timeline::Split( int track, int index, double t )
 	tail.clip   = CopyClip( c.clip );
 	tail.start  = t;
 	tail.length = c.End() - t;
+	tail.blend  = c.blend;
+	for( int p = 0; p < (int)KeyProperty::Count; ++p )
+		tail.keys[ p ] = c.keys[ p ];
+	tail.ShiftKeys( t - c.start );
 	tail.clip.inPoint += ( t - c.start ) * std::max( 0.0f, c.clip.speed );
 	c.length = t - c.start;
 	clips.insert( clips.begin() + index + 1, std::move( tail ) );

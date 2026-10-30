@@ -8,6 +8,7 @@
 #include <cstdio>
 #include "App.h"
 #include "ui/ControlUi.h"
+#include "ui/EffectsUi.h"
 #include "ui/Panels.h"
 #include "ui/Theme.h"
 #include "ui/Widgets.h"
@@ -73,6 +74,7 @@ struct State
 	int dragTrack = -1, dragIndex = -1;
 	double grab = 0; // where in the clip or block it was grabbed (seconds from its start)
 	double origStart = 0, origLength = 0, origIn = 0;
+	std::vector< Keyframe > origKeys[ (int)KeyProperty::Count ]; // a clip's keyframes when a trim began
 	bool copy       = false;
 	int targetTrack = -1;
 	double targetStart = 0;
@@ -114,6 +116,9 @@ void Duplicate( App& app, int track, int index, double at = -1 )
 	copy.clip   = CopyClip( from.clip );
 	copy.start  = at >= 0 ? at : from.End();
 	copy.length = from.length;
+	copy.blend  = from.blend;
+	for( int p = 0; p < (int)KeyProperty::Count; ++p )
+		copy.keys[ p ] = from.keys[ p ];
 	int placed  = t.Place( track, std::move( copy ) );
 	SelectClip( track, placed );
 }
@@ -603,9 +608,48 @@ void Lanes( App& app, float height )
 				bool atIn = mx - a.x < edge && b.x - a.x > edge * 3, atOut = b.x - mx < edge && b.x - a.x > edge * 3;
 				if( hovered && ( atIn || atOut ) && state.drag == Drag::None )
 					ImGui::SetMouseCursor( ImGuiMouseCursor_ResizeEW );
-				if( ImGui::IsItemActivated() )
+				// Its keyframes: diamonds along the bottom (a click on one puts the playhead there).
+				std::vector< double > keyTimes;
+				for( const std::vector< Keyframe >& list : tc.keys )
+					for( const Keyframe& key : list )
+						if( key.time >= 0 && key.time <= tc.length && std::find_if( keyTimes.begin(), keyTimes.end(), [ & ]( double t0 ) { return std::fabs( t0 - key.time ) < 1e-3; } ) == keyTimes.end() )
+							keyTimes.push_back( key.time );
+				float keyY  = b.y - Ui( 6 );
+				int keyHit  = -1;
+				draw->PushClipRect( ImVec2( laneLeft, laneTop ), ImVec2( viewRight, viewBottom ), true );
+				for( int n = 0; n < (int)keyTimes.size(); ++n )
+				{
+					float kx = X( tc.start + keyTimes[ n ] );
+					if( kx < laneLeft || kx > viewRight )
+						continue;
+					bool here = std::fabs( t.position - ( tc.start + keyTimes[ n ] ) ) < 1e-3;
+					float r   = Ui( 4 );
+					draw->AddQuadFilled( ImVec2( kx, keyY - r ), ImVec2( kx + r, keyY ), ImVec2( kx, keyY + r ), ImVec2( kx - r, keyY ), here ? theme::Accent : IM_COL32( 245, 200, 90, 255 ) );
+					draw->AddQuad( ImVec2( kx, keyY - r ), ImVec2( kx + r, keyY ), ImVec2( kx, keyY + r ), ImVec2( kx - r, keyY ), IM_COL32( 0, 0, 0, 200 ) );
+					if( std::fabs( io.MousePos.x - kx ) < Ui( 5 ) && std::fabs( io.MousePos.y - keyY ) < Ui( 6 ) )
+						keyHit = n;
+				}
+				draw->PopClipRect();
+				if( !tc.clip.effects.empty() && !track.audio )
+				{
+					// An FX badge at the top right.
+					float bx = std::min( b.x, viewRight ) - Ui( 22 );
+					if( bx > a.x + Ui( 30 ) )
+					{
+						draw->AddRectFilled( ImVec2( bx, a.y + Ui( 2 ) ), ImVec2( bx + Ui( 19 ), a.y + Ui( 13 ) ), IM_COL32( 0, 0, 0, 170 ), Ui( 3 ) );
+						draw->AddText( Fonts().bold, ImGui::GetFontSize() * 0.7f, ImVec2( bx + Ui( 3 ), a.y + Ui( 2 ) ), theme::Accent, "FX" );
+					}
+				}
+				if( ImGui::IsItemActivated() && keyHit >= 0 )
 				{
 					SelectClip( k, i );
+					t.Locate( tc.start + keyTimes[ keyHit ] );
+				}
+				else if( ImGui::IsItemActivated() )
+				{
+					SelectClip( k, i );
+					for( int p = 0; p < (int)KeyProperty::Count; ++p )
+						state.origKeys[ p ] = tc.keys[ p ];
 					state.drag       = atIn ? Drag::TrimIn : atOut ? Drag::TrimOut : Drag::Move;
 					state.dragTrack  = k;
 					state.dragIndex  = i;
@@ -617,7 +661,17 @@ void Lanes( App& app, float height )
 					state.targetTrack = k;
 					state.targetStart = tc.start;
 				}
-				if( hovered && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
+				if( ImGui::BeginDragDropTarget() )
+				{
+					// An effect from the Effects panel: on this clip.
+					if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kEffectPayload ) )
+					{
+						app.AddEffect( tc.clip.effects, (const char*)payload->Data );
+						SelectClip( k, i );
+					}
+					ImGui::EndDragDropTarget();
+				}
+				if( hovered && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) && keyHit < 0 )
 					t.Locate( tc.start );
 				if( hovered && state.drag == Drag::None && ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) && !app.learning )
 					ImGui::SetTooltip( "%s\n%s - %s (%.2f s)\nDrag: move (Alt: copy, Shift: off the grid); edges: trim\nDouble-click: playhead here; "
@@ -672,6 +726,10 @@ void Lanes( App& app, float height )
 				tc.start        = start;
 				tc.length       = end - start;
 				tc.clip.inPoint = std::max( 0.0, state.origIn + ( start - state.origStart ) * speed );
+				// The keyframes stay at their moments in time.
+				for( int p = 0; p < (int)KeyProperty::Count; ++p )
+					tc.keys[ p ] = state.origKeys[ p ];
+				tc.ShiftKeys( start - state.origStart );
 			}
 			else if( state.drag == Drag::TrimOut )
 			{
@@ -709,6 +767,9 @@ void Lanes( App& app, float height )
 				{
 					moved.clip   = CopyClip( from[ state.dragIndex ].clip );
 					moved.length = from[ state.dragIndex ].length;
+					moved.blend  = from[ state.dragIndex ].blend;
+					for( int p = 0; p < (int)KeyProperty::Count; ++p )
+						moved.keys[ p ] = from[ state.dragIndex ].keys[ p ];
 				}
 				else
 				{
@@ -964,13 +1025,86 @@ void Lanes( App& app, float height )
 
 // ---- the inspector: the selected clip or block
 
+// A keyframe button: a diamond, filled on a keyframe, outlined when the property moves, dim when it does not.
+// Returns whether it was clicked.
+bool KeyButton( const char* id, bool onKey, bool animated, bool enabled, const char* tip )
+{
+	float size = ImGui::GetFrameHeight();
+	ImVec2 p   = ImGui::GetCursorScreenPos();
+	ImGui::BeginDisabled( !enabled );
+	bool clicked = ImGui::InvisibleButton( id, ImVec2( size, size ) );
+	ImGui::EndDisabled();
+	bool hovered = ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenDisabled );
+	ImDrawList* draw = ImGui::GetWindowDrawList();
+	ImVec2 c( p.x + size / 2, p.y + size / 2 );
+	float r   = size * 0.28f;
+	ImU32 ink = !enabled ? IM_COL32( 255, 255, 255, 40 ) : onKey ? IM_COL32( 245, 200, 90, 255 ) : animated ? theme::Accent : hovered ? theme::Text : theme::TextDim;
+	ImVec2 q[ 4 ] = { ImVec2( c.x, c.y - r ), ImVec2( c.x + r, c.y ), ImVec2( c.x, c.y + r ), ImVec2( c.x - r, c.y ) };
+	if( onKey )
+		draw->AddQuadFilled( q[ 0 ], q[ 1 ], q[ 2 ], q[ 3 ], ink );
+	else
+		draw->AddQuad( q[ 0 ], q[ 1 ], q[ 2 ], q[ 3 ], ink, Ui( 1.5f ) );
+	if( hovered )
+		ImGui::SetTooltip( "%s", tip );
+	return clicked && enabled;
+}
+
+// One property of the selected clip: its keyframe button and its slider. With keyframes, an edit sets the keyframe
+// at the playhead (making one if there is none), as in an editing program; without, it sets the value.
+void PropertyRow( App& app, TimelineClip& tc, KeyProperty property, const char* label, float min, float max, const char* format, float shown, float reset )
+{
+	Timeline& t     = app.composition.timeline;
+	double local    = t.position - tc.start;
+	bool inside     = local >= -1e-6 && local <= tc.length + 1e-6;
+	bool animated   = tc.Animated( property );
+	bool onKey      = inside && tc.KeyAt( property, local ) >= 0;
+	float value     = animated ? tc.Evaluate( property, local ) : tc.Field( property );
+	ImGui::PushID( (int)property );
+	const char* tip = !inside   ? "Move the playhead over the clip to set keyframes"
+	                  : onKey   ? "Remove the keyframe at the playhead"
+	                  : animated ? "Add a keyframe at the playhead"
+	                             : "Animate: a keyframe at the playhead (then move the playhead and change the value)";
+	if( KeyButton( "##key", onKey, animated, inside, tip ) )
+	{
+		if( onKey )
+			tc.RemoveKey( property, local );
+		else
+			tc.SetKey( property, local, value );
+		tc.Apply( t.position );
+	}
+	ImGui::SameLine( 0, Ui( 2 ) );
+	ImGui::AlignTextToFramePadding();
+	ImGui::TextUnformatted( label );
+	ImGui::SameLine( Ui( 104 ) );
+	ImGui::SetNextItemWidth( -FLT_MIN );
+	ImGui::BeginDisabled( animated && !inside );
+	float edited = value * shown;
+	bool changed = FilledSlider( "##value", &edited, min * shown, max * shown, format );
+	float plain  = edited / shown;
+	if( ImGui::IsItemHovered() && ( ImGui::IsMouseClicked( ImGuiMouseButton_Right ) || ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) ) )
+	{
+		plain   = reset; // back to its default
+		changed = true;
+	}
+	ImGui::EndDisabled();
+	if( changed )
+	{
+		if( animated )
+			tc.SetKey( property, local, plain );
+		else
+			tc.Field( property ) = plain;
+		tc.Apply( t.position );
+	}
+	ImGui::PopID();
+}
+
 void Inspector( App& app )
 {
 	Timeline& t = app.composition.timeline;
 	auto row    = [ & ]( const char* label ) {
 		ImGui::AlignTextToFramePadding();
 		ImGui::TextDisabled( "%s", label );
-		ImGui::SameLine( Ui( 70 ) );
+		ImGui::SameLine( Ui( 104 ) );
 		ImGui::SetNextItemWidth( -FLT_MIN );
 	};
 	auto timeField = [ & ]( const char* id, double& value, double min ) {
@@ -985,56 +1119,124 @@ void Inspector( App& app )
 	if( TimelineClip* tc = SelectedClip( t ) )
 	{
 		TimelineTrack& track = t.tracks[ state.track ];
-		ImGui::SeparatorText( "Clip" );
-		row( "Name" );
-		ImGui::InputText( "##name", &tc->clip.name );
-		row( "Start" );
-		double start = tc->start;
-		if( timeField( "##start", start, 0 ) )
+		ImGui::PushFont( Fonts().bold );
+		ImGui::TextUnformatted( tc->clip.name.c_str() );
+		ImGui::PopFont();
+		ImGui::TextDisabled( "%s", tc->clip.path.empty() ? tc->clip.generatorId.c_str() : tc->clip.path.c_str() );
+		if( !tc->clip.Loaded() && !tc->clip.generator && !tc->clip.audio )
+			ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( theme::Error ), "Media not found or not supported" );
+
+		if( ImGui::CollapsingHeader( "Clip", ImGuiTreeNodeFlags_DefaultOpen ) )
 		{
-			// Moved by typing: it lands like a drag (overwriting what it covers).
-			TimelineClip moved = std::move( track.clips[ state.clip ] );
-			track.clips.erase( track.clips.begin() + state.clip );
-			moved.start = start;
-			state.clip  = t.Place( state.track, std::move( moved ) );
-			tc          = SelectedClip( t );
-			if( !tc )
-				return;
+			row( "Name" );
+			ImGui::InputText( "##name", &tc->clip.name );
+			row( "Start" );
+			double start = tc->start;
+			if( timeField( "##start", start, 0 ) )
+			{
+				// Moved by typing: it lands like a drag (overwriting what it covers).
+				TimelineClip moved = std::move( track.clips[ state.clip ] );
+				track.clips.erase( track.clips.begin() + state.clip );
+				moved.start = start;
+				state.clip  = t.Place( state.track, std::move( moved ) );
+				tc          = SelectedClip( t );
+				if( !tc )
+					return;
+			}
+			ImGui::TextDisabled( "%*s%s   %s", (int)( Ui( 104 ) / ImGui::CalcTextSize( " " ).x ), "", t.BarsBeats( tc->start ).c_str(), t.Timecode( tc->start ).c_str() );
+			row( "Length" );
+			double length = tc->length;
+			if( timeField( "##length", length, 0.05 ) )
+			{
+				double limit = state.clip + 1 < (int)track.clips.size() ? track.clips[ state.clip + 1 ].start - tc->start : 1e12;
+				tc->length   = std::min( length, limit );
+			}
+			row( "Media in" );
+			timeField( "##in", tc->clip.inPoint, 0 );
+			row( "Speed" );
+			FilledSlider( "##speed", &tc->clip.speed, 0.0f, 4.0f, "%.2fx" );
+			ResetValue( &tc->clip.speed, 1.0f );
+			row( "Past its end" );
+			int mode = tc->clip.playMode == PlayMode::Loop ? 0 : 1;
+			if( ImGui::Combo( "##pastEnd", &mode, "Loop the media\0Hold the last frame\0" ) )
+				tc->clip.playMode = mode == 0 ? PlayMode::Loop : PlayMode::Once;
 		}
-		ImGui::TextDisabled( "        %s   %s", t.BarsBeats( tc->start ).c_str(), t.Timecode( tc->start ).c_str() );
-		row( "Length" );
-		double length = tc->length;
-		if( timeField( "##length", length, 0.05 ) )
+
+		if( !track.audio && ImGui::CollapsingHeader( "Video", ImGuiTreeNodeFlags_DefaultOpen ) )
 		{
-			double limit = state.clip + 1 < (int)track.clips.size() ? track.clips[ state.clip + 1 ].start - tc->start : 1e12;
-			tc->length   = std::min( length, limit );
+			row( "Blend" );
+			if( ImGui::BeginCombo( "##blend", BlendModeName( tc->blend ), ImGuiComboFlags_HeightLarge ) )
+			{
+				for( int b = 0; b < (int)BlendMode::Count; ++b )
+					if( ImGui::Selectable( BlendModeName( (BlendMode)b ), (int)tc->blend == b ) )
+						tc->blend = (BlendMode)b;
+				ImGui::EndCombo();
+			}
+			if( !tc->clip.generator )
+			{
+				row( "Fit" );
+				if( ImGui::BeginCombo( "##fit", FitModeName( tc->clip.fit ) ) )
+				{
+					for( int f = 0; f < (int)FitMode::Count; ++f )
+						if( ImGui::Selectable( FitModeName( (FitMode)f ), (int)tc->clip.fit == f ) )
+							tc->clip.fit = (FitMode)f;
+					ImGui::EndCombo();
+				}
+			}
+			float W = (float)app.composition.width, H = (float)app.composition.height;
+			PropertyRow( app, *tc, KeyProperty::Opacity, "Opacity", 0, 1, "%.0f %%", 100, 1 );
+			PropertyRow( app, *tc, KeyProperty::Scale, "Scale", 0, 4, "%.1f %%", 100, 1 );
+			PropertyRow( app, *tc, KeyProperty::PositionX, "Position X", -W, W, "%.0f px", 1, 0 );
+			PropertyRow( app, *tc, KeyProperty::PositionY, "Position Y", -H, H, "%.0f px", 1, 0 );
+			PropertyRow( app, *tc, KeyProperty::Rotation, "Rotation", -360, 360, "%.1f deg", 1, 0 );
 		}
-		ImGui::TextDisabled( "        %.2f bars", tc->length / t.SecondsPerBar() );
-		row( "Media in" );
-		timeField( "##in", tc->clip.inPoint, 0 );
-		row( "Speed" );
-		FilledSlider( "##speed", &tc->clip.speed, 0.0f, 4.0f, "%.2fx" );
-		ResetValue( &tc->clip.speed, 1.0f );
-		row( "Past end" );
-		int mode = tc->clip.playMode == PlayMode::Loop ? 0 : 1;
-		if( ImGui::Combo( "##pastEnd", &mode, "Loop the media\0Hold the last frame\0" ) )
-			tc->clip.playMode = mode == 0 ? PlayMode::Loop : PlayMode::Once;
-		if( !track.audio )
+		if( tc->clip.audio && ImGui::CollapsingHeader( "Sound", ImGuiTreeNodeFlags_DefaultOpen ) )
+			PropertyRow( app, *tc, KeyProperty::Volume, "Volume", 0, 1, "%.0f %%", 100, 1 );
+
+		if( ImGui::CollapsingHeader( "Keyframes", ImGuiTreeNodeFlags_DefaultOpen ) )
 		{
-			row( "Opacity" );
-			float percent = tc->clip.opacity * 100;
-			if( FilledSlider( "##opacity", &percent, 0, 100, "%.0f %%" ) )
-				tc->clip.opacity = percent / 100;
-			ResetValue( &tc->clip.opacity, 1.0f );
+			// To the previous and next keyframe of any property, and removing them all.
+			std::vector< double > times;
+			for( const std::vector< Keyframe >& list : tc->keys )
+				for( const Keyframe& key : list )
+					times.push_back( tc->start + key.time );
+			std::sort( times.begin(), times.end() );
+			double before = -1, after = -1;
+			for( double time : times )
+			{
+				if( time < t.position - 1e-3 )
+					before = time;
+				if( time > t.position + 1e-3 && after < 0 )
+					after = time;
+			}
+			float third = ( ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2 ) / 3;
+			ImGui::BeginDisabled( before < 0 );
+			if( ImGui::Button( "< Previous", ImVec2( third, 0 ) ) )
+				t.Locate( before );
+			ImGui::EndDisabled();
+			ImGui::SameLine();
+			ImGui::BeginDisabled( after < 0 );
+			if( ImGui::Button( "Next >", ImVec2( third, 0 ) ) )
+				t.Locate( after );
+			ImGui::EndDisabled();
+			ImGui::SameLine();
+			ImGui::BeginDisabled( times.empty() );
+			if( ImGui::Button( "Clear All", ImVec2( third, 0 ) ) )
+				for( std::vector< Keyframe >& list : tc->keys )
+					list.clear();
+			ImGui::EndDisabled();
+			ImGui::PushTextWrapPos( 0 );
+			ImGui::TextDisabled( "Press a diamond to set a keyframe at the playhead; move the playhead and change the value for the next. "
+			                     "In between the values move in a straight line." );
+			ImGui::PopTextWrapPos();
 		}
-		if( tc->clip.audio )
+
+		if( !track.audio && ImGui::CollapsingHeader( "Effects", ImGuiTreeNodeFlags_DefaultOpen ) )
 		{
-			row( "Volume" );
-			float percent = tc->clip.volume * 100;
-			if( FilledSlider( "##volume", &percent, 0, 100, "%.0f %%" ) )
-				tc->clip.volume = percent / 100;
-			ResetValue( &tc->clip.volume, 1.0f );
+			ImGui::TextDisabled( "Each effect's Mix is how much of it shows." );
+			DrawEffectChain( app, tc->clip.effects, "timelineFx" );
 		}
+
 		ImGui::Spacing();
 		float half = ( ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x ) / 2;
 		if( ImGui::Button( "Duplicate", ImVec2( half, 0 ) ) )
@@ -1044,9 +1246,6 @@ void Inspector( App& app )
 			DeleteSelection( app );
 		if( ImGui::Button( "Split at Playhead", ImVec2( -FLT_MIN, 0 ) ) )
 			SplitAtPlayhead( app );
-		ImGui::TextDisabled( "%s", tc->clip.path.empty() ? tc->clip.generatorId.c_str() : tc->clip.path.c_str() );
-		if( !tc->clip.Loaded() && !tc->clip.generator && !tc->clip.audio )
-			ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( theme::Error ), "Media not found or not supported" );
 		return;
 	}
 	if( state.block >= 0 && state.block < (int)t.blocks.size() )
@@ -1085,8 +1284,9 @@ void Inspector( App& app )
 	ImGui::TextDisabled( "Select a clip or a block." );
 	ImGui::Spacing();
 	ImGui::PushTextWrapPos( 0 );
-	ImGui::TextDisabled( "Drag clips from the Clips panel, or files from Files or the desktop, onto a track. Blocks are the songs: a cue starts "
-	                     "each one, and its end action says what follows: Next, Loop, Hold or Black." );
+	ImGui::TextDisabled( "Drag clips from the Clips panel, or files from Files or the desktop, onto a track. Select a clip for its blend, "
+	                     "opacity, size, position, rotation and volume, with keyframes, and its effects (drop them from the Effects panel onto "
+	                     "the clip). Blocks are the songs: a cue starts each one, and its end action says what follows: Next, Loop, Hold or Black." );
 	ImGui::PopTextWrapPos();
 }
 }
@@ -1120,7 +1320,7 @@ void DrawTimelinePanel( App& app )
 			SplitAtPlayhead( app );
 	}
 
-	float inspectorW = Ui( 250 );
+	float inspectorW = Ui( 330 );
 	float height     = ImGui::GetContentRegionAvail().y;
 	ImGui::BeginChild( "##main", ImVec2( ImGui::GetContentRegionAvail().x - inspectorW - ImGui::GetStyle().ItemSpacing.x, height ) );
 	Lanes( app, height );

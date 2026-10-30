@@ -605,22 +605,25 @@ void DrawToolbar( App& app )
 	ImGui::SetCursorPos( ImVec2( style.WindowPadding.x + Ui( 4 ), ImGui::GetCursorPosY() + Ui( 6 ) ) );
 	ImGui::BeginGroup();
 
-	// Transport.
-	if( IconButton( "##play", comp.paused ? Icon::Play : Icon::Pause, comp.paused ) )
-		comp.paused = !comp.paused;
-	if( ImGui::IsItemHovered() )
-		ImGui::SetTooltip( comp.paused ? "Resume (Space)" : "Pause everything (Space)" );
-	MapTarget( app, "/composition/pause" );
-	ImGui::SameLine( 0, Ui( 4 ) );
-	if( IconButton( "##stop", Icon::Stop ) )
+	if( app.view != App::View::Arrangement )
 	{
-		for( int l = 0; l < (int)comp.layers.size(); ++l )
-			app.ClearLayer( l );
-		comp.activeColumn = -1;
+		// Transport.
+		if( IconButton( "##play", comp.paused ? Icon::Play : Icon::Pause, comp.paused ) )
+			comp.paused = !comp.paused;
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( comp.paused ? "Resume (Space)" : "Pause everything (Space)" );
+		MapTarget( app, "/composition/pause" );
+		ImGui::SameLine( 0, Ui( 4 ) );
+		if( IconButton( "##stop", Icon::Stop ) )
+		{
+			for( int l = 0; l < (int)comp.layers.size(); ++l )
+				app.ClearLayer( l );
+			comp.activeColumn = -1;
+		}
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "Clear every layer" );
+		MapTarget( app, "/composition/stop" );
 	}
-	if( ImGui::IsItemHovered() )
-		ImGui::SetTooltip( "Clear every layer" );
-	MapTarget( app, "/composition/stop" );
 	// Space alone pauses (with a modifier it is free for the user's shortcuts). The arrows: left and right launch the
 	// previous and next clip on the selected layer, up and down select the layer above or below. Not while typing,
 	// mapping or in the Advanced Output editor (its arrows move points), nor when the user mapped the key.
@@ -672,86 +675,96 @@ void DrawToolbar( App& app )
 			comp.selectedLayer = std::max( comp.selectedLayer - 1, 0 );
 	}
 
-	// Tempo: the BPM in figures that do not jump about, halve, double, tap, resync, and the beats of the bar.
-	ToolbarDivider();
-	ToolbarCaption( "BPM" );
-	float bpm = (float)comp.bpm;
-	ImGui::PushFont( Fonts().mono );
-	ImGui::SetNextItemWidth( Ui( 72 ) );
-	if( ImGui::DragFloat( "##bpm", &bpm, 0.1f, 20.0f, 500.0f, "%.2f" ) )
-		comp.bpm = bpm;
-	ImGui::PopFont();
-	if( ImGui::IsItemHovered() && !ImGui::IsItemActive() )
-		ImGui::SetTooltip( "Drag, or double-click to type" );
-	MapTarget( app, "/composition/tempocontroller/tempo" );
-	ImGui::SameLine( 0, Ui( 4 ) );
-	if( ImGui::Button( "/2" ) )
-		comp.bpm = std::max( 20.0, comp.bpm / 2 );
-	ImGui::SameLine( 0, Ui( 4 ) );
-	if( ImGui::Button( "x2" ) )
-		comp.bpm = std::min( 500.0, comp.bpm * 2 );
-	ImGui::SameLine( 0, Ui( 4 ) );
-	ImGui::PushStyleColor( ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4( theme::AccentDim ) );
-	ImGui::PushStyleColor( ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4( IM_COL32( 52, 140, 119, 255 ) ) );
-	ImGui::PushStyleColor( ImGuiCol_ButtonActive, ImGui::ColorConvertU32ToFloat4( theme::Accent ) );
-	ImGui::PushFont( Fonts().bold );
-	if( ImGui::Button( " TAP " ) )
-		app.TapTempo();
-	ImGui::PopFont();
-	ImGui::PopStyleColor( 3 );
-	MapTarget( app, "/composition/tempocontroller/tempotap" );
-	ImGui::SameLine( 0, Ui( 4 ) );
-	if( ImGui::Button( "Resync" ) )
-		app.ResyncBeat();
-	if( ImGui::IsItemHovered() )
-		ImGui::SetTooltip( "Start the beat over: the next beat begins now" );
-	MapTarget( app, "/composition/tempocontroller/resync" );
+	// The deck's tempo, launch and speed: Session only (the timeline has its own in its panel).
+	if( !arrangement )
 	{
-		// The four beats of the bar, the current one lit and fading towards the next.
-		ImGui::SameLine( 0, Ui( 10 ) );
-		ImVec2 p     = ImGui::GetCursorScreenPos();
-		float h      = ImGui::GetFrameHeight();
-		float radius = Ui( 3.5f );
-		double beat  = std::max( comp.beat, 0.0 );
-		int current  = (int)std::fmod( std::floor( beat ), 4.0 );
-		float glow   = (float)( 1.0 - ( beat - std::floor( beat ) ) );
-		for( int i = 0; i < 4; ++i )
+		// Tempo: the BPM in figures that do not jump about, halve, double, tap, resync, and the beats of the bar.
+		ToolbarDivider();
+		ToolbarCaption( "BPM" );
+		float bpm = (float)comp.bpm;
+		ImGui::PushFont( Fonts().mono );
+		ImGui::SetNextItemWidth( Ui( 72 ) );
+		if( ImGui::DragFloat( "##bpm", &bpm, 0.1f, 20.0f, 500.0f, "%.2f" ) )
+			comp.bpm = bpm;
+		ImGui::PopFont();
+		if( ImGui::IsItemHovered() && !ImGui::IsItemActive() )
+			ImGui::SetTooltip( "Drag, or double-click to type" );
+		MapTarget( app, "/composition/tempocontroller/tempo" );
+		ImGui::SameLine( 0, Ui( 4 ) );
+		if( ImGui::Button( "/2" ) )
+			comp.bpm = std::max( 20.0, comp.bpm / 2 );
+		ImGui::SameLine( 0, Ui( 4 ) );
+		if( ImGui::Button( "x2" ) )
+			comp.bpm = std::min( 500.0, comp.bpm * 2 );
+		ImGui::SameLine( 0, Ui( 4 ) );
+		ImGui::PushStyleColor( ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4( theme::AccentDim ) );
+		ImGui::PushStyleColor( ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4( IM_COL32( 52, 140, 119, 255 ) ) );
+		ImGui::PushStyleColor( ImGuiCol_ButtonActive, ImGui::ColorConvertU32ToFloat4( theme::Accent ) );
+		ImGui::PushFont( Fonts().bold );
+		if( ImGui::Button( " TAP " ) )
+			app.TapTempo();
+		ImGui::PopFont();
+		ImGui::PopStyleColor( 3 );
+		MapTarget( app, "/composition/tempocontroller/tempotap" );
+		ImGui::SameLine( 0, Ui( 4 ) );
+		if( ImGui::Button( "Resync" ) )
+			app.ResyncBeat();
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "Start the beat over: the next beat begins now" );
+		MapTarget( app, "/composition/tempocontroller/resync" );
 		{
-			ImVec2 c( p.x + radius + i * radius * 3.2f, p.y + h / 2 );
-			ImU32 colour = theme::Raised;
-			if( i == current )
+			// The four beats of the bar, the current one lit and fading towards the next.
+			ImGui::SameLine( 0, Ui( 10 ) );
+			ImVec2 p     = ImGui::GetCursorScreenPos();
+			float h      = ImGui::GetFrameHeight();
+			float radius = Ui( 3.5f );
+			double beat  = std::max( comp.beat, 0.0 );
+			int current  = (int)std::fmod( std::floor( beat ), 4.0 );
+			float glow   = (float)( 1.0 - ( beat - std::floor( beat ) ) );
+			for( int i = 0; i < 4; ++i )
 			{
-				ImVec4 from = ImGui::ColorConvertU32ToFloat4( theme::AccentDim ), to = ImGui::ColorConvertU32ToFloat4( theme::Accent );
-				float t     = glow * glow;
-				colour      = ImGui::GetColorU32( ImVec4( from.x + ( to.x - from.x ) * t, from.y + ( to.y - from.y ) * t, from.z + ( to.z - from.z ) * t, 1 ) );
+				ImVec2 c( p.x + radius + i * radius * 3.2f, p.y + h / 2 );
+				ImU32 colour = theme::Raised;
+				if( i == current )
+				{
+					ImVec4 from = ImGui::ColorConvertU32ToFloat4( theme::AccentDim ), to = ImGui::ColorConvertU32ToFloat4( theme::Accent );
+					float t     = glow * glow;
+					colour      = ImGui::GetColorU32( ImVec4( from.x + ( to.x - from.x ) * t, from.y + ( to.y - from.y ) * t, from.z + ( to.z - from.z ) * t, 1 ) );
+				}
+				ImGui::GetWindowDrawList()->AddCircleFilled( c, i == 0 ? radius * 1.15f : radius, colour );
 			}
-			ImGui::GetWindowDrawList()->AddCircleFilled( c, i == 0 ? radius * 1.15f : radius, colour );
+			ImGui::Dummy( ImVec2( radius * 2 + radius * 3.2f * 3, h ) );
 		}
-		ImGui::Dummy( ImVec2( radius * 2 + radius * 3.2f * 3, h ) );
+
+		// When launched clips start: at once, on the next beat or on the next bar.
+		ToolbarDivider();
+		ToolbarCaption( "Launch" );
+		ImGui::SetNextItemWidth( Ui( 74 ) );
+		EnumCombo( "##quantize", &comp.quantize, LaunchQuantizeName );
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "When a launched clip or column starts: now, on the next beat, or on the next bar (4 beats)" );
+		// Where a launched clip plays: the layer of its row, or the selected layer whatever its row (layer based).
+		ImGui::SameLine( 0, Ui( 10 ) );
+		ToolbarCaption( "Clips to" );
+		ImGui::SetNextItemWidth( Ui( 128 ) );
+		EnumCombo( "##target", &comp.target, ClipTargetName );
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "Own Layer: a clip plays on the layer of its row.\nSelected Layer: select a layer (click its header), then any clip, from any row, plays there." );
+
+		// Speed.
+		ToolbarDivider();
+		ToolbarCaption( "Speed" );
+		ImGui::SetNextItemWidth( Ui( 110 ) );
+		FilledSlider( "##speed", &comp.speed, 0.0f, 4.0f, "%.2fx" );
+		ResetValue( &comp.speed, 1.0f );
+		MapTarget( app, "/composition/speed" );
 	}
 
-	// When launched clips start: at once, on the next beat or on the next bar.
-	ToolbarDivider();
-	ToolbarCaption( "Launch" );
-	ImGui::SetNextItemWidth( Ui( 74 ) );
-	EnumCombo( "##quantize", &comp.quantize, LaunchQuantizeName );
-	if( ImGui::IsItemHovered() )
-		ImGui::SetTooltip( "When a launched clip or column starts: now, on the next beat, or on the next bar (4 beats)" );
-	// Where a launched clip plays: the layer of its row, or the selected layer whatever its row (layer based).
-	ImGui::SameLine( 0, Ui( 10 ) );
-	ToolbarCaption( "Clips to" );
-	ImGui::SetNextItemWidth( Ui( 128 ) );
-	EnumCombo( "##target", &comp.target, ClipTargetName );
-	if( ImGui::IsItemHovered() )
-		ImGui::SetTooltip( "Own Layer: a clip plays on the layer of its row.\nSelected Layer: select a layer (click its header), then any clip, from any row, plays there." );
-
-	// Speed.
-	ToolbarDivider();
-	ToolbarCaption( "Speed" );
-	ImGui::SetNextItemWidth( Ui( 110 ) );
-	FilledSlider( "##speed", &comp.speed, 0.0f, 4.0f, "%.2fx" );
-	ResetValue( &comp.speed, 1.0f );
-	MapTarget( app, "/composition/speed" );
+	if( arrangement )
+	{
+		// Arrangement: the timeline's transport and tempo are in its panel; the bar keeps its height.
+		ImGui::Dummy( ImVec2( 1, ImGui::GetFrameHeight() ) );
+	}
 
 	// Right side: what the outputs show, and the frame rate.
 	float fps = 0;

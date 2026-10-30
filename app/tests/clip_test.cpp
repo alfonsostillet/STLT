@@ -442,6 +442,60 @@ static void TestTimeline()
 	CHECK( !l.playing && Near( l.position, 0 ) );
 }
 
+// Keyframes: straight lines between them, held before the first and after the last; they stay put in time when
+// a clip is split, trimmed by an overwrite or saved.
+static void TestKeyframes()
+{
+	TimelineClip c;
+	c.clip.path = "k.mov";
+	c.start     = 10;
+	c.length    = 10;
+	c.clip.opacity = 0.7f;
+	CHECK( Near( c.Evaluate( KeyProperty::Opacity, 3 ), 0.7 ) && !c.Animated( KeyProperty::Opacity ) );
+	c.SetKey( KeyProperty::Opacity, 2, 0.0f );
+	c.SetKey( KeyProperty::Opacity, 6, 1.0f );
+	c.SetKey( KeyProperty::Opacity, 4, 0.2f ); // in the middle, kept in order
+	CHECK( c.keys[ 0 ].size() == 3 && Near( c.keys[ 0 ][ 1 ].time, 4 ) );
+	CHECK( Near( c.Evaluate( KeyProperty::Opacity, 0 ), 0 ) && Near( c.Evaluate( KeyProperty::Opacity, 3 ), 0.1, 1e-5 ) );
+	CHECK( Near( c.Evaluate( KeyProperty::Opacity, 5 ), 0.6, 1e-5 ) && Near( c.Evaluate( KeyProperty::Opacity, 9 ), 1 ) );
+	c.SetKey( KeyProperty::Opacity, 4.0005, 0.5f ); // replaces the one there
+	CHECK( c.keys[ 0 ].size() == 3 && Near( c.keys[ 0 ][ 1 ].value, 0.5, 1e-6 ) );
+	c.SetKey( KeyProperty::Scale, 0, 1.0f );
+	c.SetKey( KeyProperty::Scale, 10, 2.0f );
+	c.Apply( 15 ); // timeline time: 5 s into the clip
+	CHECK( Near( c.clip.scale, 1.5, 1e-5 ) && Near( c.clip.opacity, 0.75, 1e-5 ) && Near( c.clip.rotation, 0 ) );
+	CHECK( c.RemoveKey( KeyProperty::Opacity, 4 ) && !c.RemoveKey( KeyProperty::Opacity, 4 ) && c.keys[ 0 ].size() == 2 );
+
+	// Split: the tail's keyframes are the same moments in time.
+	Timeline t;
+	t.tracks.resize( 1 );
+	t.Place( 0, std::move( c ) );
+	CHECK( t.Split( 0, 0, 14 ) );
+	TimelineClip& head = t.tracks[ 0 ].clips[ 0 ];
+	TimelineClip& tail = t.tracks[ 0 ].clips[ 1 ];
+	CHECK( Near( tail.start, 14 ) && tail.keys[ (int)KeyProperty::Scale ].size() == 2 && Near( tail.keys[ (int)KeyProperty::Scale ][ 1 ].time, 6 ) );
+	CHECK( Near( tail.Evaluate( KeyProperty::Scale, 1 ), head.Evaluate( KeyProperty::Scale, 5 ), 1e-5 ) );
+	// An overwrite over the tail's start: what is left starts later and its keyframes stay put in time.
+	TimelineClip over;
+	over.clip.path = "o.mov";
+	over.start     = 13;
+	over.length    = 3;
+	over.blend     = BlendMode::Add;
+	t.Place( 0, std::move( over ) );
+	TimelineClip& rest = t.tracks[ 0 ].clips.back();
+	CHECK( Near( rest.start, 16 ) && Near( rest.Evaluate( KeyProperty::Scale, 0 ), 1.6, 1e-5 ) );
+
+	// Saved.
+	Composition comp = Composition::MakeDefault();
+	comp.timeline    = std::move( t );
+	Composition loaded;
+	std::string error;
+	CHECK( LoadComposition( SaveComposition( comp ), loaded, error ) );
+	const std::vector< TimelineClip >& clips = loaded.timeline.tracks[ 0 ].clips;
+	CHECK( clips.size() == 3 && clips[ 1 ].blend == BlendMode::Add && clips[ 0 ].keys[ 0 ].size() == 2 );
+	CHECK( Near( clips[ 2 ].Evaluate( KeyProperty::Scale, 0 ), 1.6, 1e-5 ) );
+}
+
 int main()
 {
 	TestRange();
@@ -451,6 +505,7 @@ int main()
 	TestLayersAndRows();
 	TestDecks();
 	TestTimeline();
+	TestKeyframes();
 	TestFrameClock();
 	TestEvenFrames();
 	if( failures )

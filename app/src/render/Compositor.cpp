@@ -441,9 +441,10 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame, bool 
 		{
 			if( track.audio || track.mute || ( anySolo && !track.solo ) || timeline.black || track.opacity <= 0 )
 				continue;
+			// The clip's own blend; its opacity and transform (keyframed) are its fields.
 			int index = track.ClipAt( timeline.position );
 			if( index >= 0 && ready( track.clips[ index ].clip ) )
-				sources.push_back( { &track.clips[ index ].clip, nullptr, 1, TransitionMode::Fade, track.opacity, track.blend, &track.effects } );
+				sources.push_back( { &track.clips[ index ].clip, nullptr, 1, TransitionMode::Fade, track.opacity, track.clips[ index ].blend, &track.effects } );
 		}
 	}
 	else
