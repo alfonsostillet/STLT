@@ -189,6 +189,8 @@ add_library(stltvj-core STATIC
     src/Timeline.cpp
     src/Preferences.cpp
     src/Preferences.h
+    src/chaser/Chaser.cpp
+    src/chaser/Chaser.h
     src/History.cpp
     src/History.h
     src/Settings.cpp
@@ -342,6 +344,8 @@ add_executable(stlt-vj WIN32 MACOSX_BUNDLE
     src/App.h
     src/ui/AdvancedOutputUi.cpp
     src/ui/AdvancedOutputUi.h
+    src/ui/ChaserUi.cpp
+    src/ui/ChaserUi.h
     src/ui/ControlUi.cpp
     src/ui/ControlUi.h
     src/ui/EffectsUi.cpp

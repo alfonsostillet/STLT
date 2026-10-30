@@ -102,7 +102,7 @@ void ApplyTheme( float scale )
 	c[ ImGuiCol_ScrollbarGrabActive ]       = Color( theme::Accent, 0.7f );
 	c[ ImGuiCol_CheckMark ]                 = Color( theme::Accent );
 	c[ ImGuiCol_SliderGrab ]                = Color( theme::Accent );
-	c[ ImGuiCol_SliderGrabActive ]          = Rgb( 160, 240, 220 );
+	c[ ImGuiCol_SliderGrabActive ]          = Rgb( 196, 220, 242 );
 	c[ ImGuiCol_Button ]                    = Color( theme::Raised );
 	c[ ImGuiCol_ButtonHovered ]             = Color( theme::RaisedHover );
 	c[ ImGuiCol_ButtonActive ]              = Color( theme::AccentDim );

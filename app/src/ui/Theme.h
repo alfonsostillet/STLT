@@ -4,7 +4,8 @@
 namespace stltvj
 {
 // The look: dark surfaces in a few steps of depth (the deepest behind everything, panels above, controls above
-// those), one teal accent for whatever is live or selected, and text that keeps at least 4.5:1 contrast.
+// those), one powder-blue accent for whatever is live or selected (STLT-VJ's own, apart from other VJ software's
+// greens), and text that keeps at least 4.5:1 contrast.
 namespace theme
 {
 // Surfaces, deepest first.
@@ -15,10 +16,12 @@ constexpr ImU32 Raised      = IM_COL32( 30, 33, 39, 255 );   // controls
 constexpr ImU32 RaisedHover = IM_COL32( 39, 43, 50, 255 );
 constexpr ImU32 Line        = IM_COL32( 255, 255, 255, 18 ); // hairlines and borders
 
-constexpr ImU32 Accent      = IM_COL32( 102, 225, 192, 255 );
-constexpr ImU32 AccentDim   = IM_COL32( 40, 110, 94, 255 );
-constexpr ImU32 AccentFill  = IM_COL32( 102, 225, 192, 64 ); // slider fills, selections
-constexpr ImU32 OnAccent    = IM_COL32( 8, 20, 17, 255 );    // text and icons on the accent
+constexpr ImU32 Accent      = IM_COL32( 150, 190, 228, 255 ); // powder blue
+constexpr ImU32 AccentDim   = IM_COL32( 52, 84, 118, 255 );
+constexpr ImU32 AccentFill  = IM_COL32( 150, 190, 228, 64 ); // slider fills, selections
+constexpr ImU32 OnAccent    = IM_COL32( 10, 18, 30, 255 );   // text and icons on the accent
+constexpr ImU32 AccentHover = IM_COL32( 74, 112, 152, 255 ); // between the dim and the full accent
+constexpr ImU32 LiveStrip   = IM_COL32( 26, 40, 58, 255 );   // the name strip of a clip on show
 constexpr ImU32 Selected    = IM_COL32( 230, 233, 238, 255 );
 constexpr ImU32 CellEmpty   = IM_COL32( 22, 24, 29, 255 );
 constexpr ImU32 CellBorder  = IM_COL32( 255, 255, 255, 14 );

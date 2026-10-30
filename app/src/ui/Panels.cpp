@@ -285,12 +285,18 @@ static void DrawOutputModeItems( App& app )
 		ImGui::EndMenu();
 	}
 	// As Resolume's "Advanced...": shows the Advanced Output setup and opens its editor; chosen again, back to the
-	// mode before.
+	// mode before. Under it the chaser, which plays on the Advanced Output's slices.
+	ImGui::Separator();
 	if( ImGui::MenuItem( "Advanced...", nullptr, app.outputMode == OutputMode::Advanced ) )
 		app.ToggleAdvancedOutput();
 	if( ImGui::IsItemHovered() )
 		ImGui::SetTooltip( app.outputMode == OutputMode::Advanced ? "Advanced is on: choose it again to go back to the output before it"
 		                                                          : "Screens with slices, warps and masks: opens the Advanced Output editor (Ctrl+Shift+A)" );
+	if( ImGui::MenuItem( "Chaser...", nullptr, app.chaser.enabled ) )
+		app.ToggleChaser();
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( app.chaser.enabled ? "The chaser is on: choose it again to turn it off (every slice shows)"
+		                                      : "STLT-CHASER: the Advanced Output's slices light step by step, to the beat; opens its editor" );
 }
 
 static void SetBpmSync( Clip& clip, bool on, double bpm );
@@ -536,6 +542,7 @@ void DrawMainMenu( App& app )
 		{
 			PanelVisibility& p = app.panels;
 			ImGui::MenuItem( panel::Timeline, nullptr, &p.timeline );
+			ImGui::MenuItem( panel::Chaser, nullptr, &p.chaser );
 			ImGui::MenuItem( panel::Layers, nullptr, &p.layers );
 			ImGui::MenuItem( panel::Clips, nullptr, &p.clips );
 			ImGui::MenuItem( panel::CompositionMonitor, nullptr, &p.compositionMonitor );
@@ -813,7 +820,7 @@ void DrawToolbar( App& app )
 			comp.bpm = std::min( 500.0, comp.bpm * 2 );
 		ImGui::SameLine( 0, Ui( 4 ) );
 		ImGui::PushStyleColor( ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4( theme::AccentDim ) );
-		ImGui::PushStyleColor( ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4( IM_COL32( 52, 140, 119, 255 ) ) );
+		ImGui::PushStyleColor( ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4( theme::AccentHover ) );
 		ImGui::PushStyleColor( ImGuiCol_ButtonActive, ImGui::ColorConvertU32ToFloat4( theme::Accent ) );
 		ImGui::PushFont( Fonts().bold );
 		if( ImGui::Button( " TAP " ) )
@@ -1613,7 +1620,7 @@ static void DrawDeck( App& app, bool layersPart )
 					}
 					else
 						draw->AddRectFilled( min, thumbMax, IM_COL32( 70, 30, 34, 255 ), round, ImDrawFlags_RoundCornersTop );
-					ImU32 strip = playing ? IM_COL32( 22, 52, 46, 255 ) : hovered && overName ? theme::RaisedHover : selected ? IM_COL32( 50, 56, 66, 255 ) : theme::Raised;
+					ImU32 strip = playing ? theme::LiveStrip : hovered && overName ? theme::RaisedHover : selected ? IM_COL32( 50, 56, 66, 255 ) : theme::Raised;
 					draw->AddRectFilled( ImVec2( min.x, thumbMax.y ), max, strip, round, ImDrawFlags_RoundCornersBottom );
 					if( !clip.effects.empty() )
 					{
@@ -2547,7 +2554,7 @@ void DrawFilesPanel( App& app )
 		std::string name = file.filename().u8string();
 		bool composition = IsComposition( file );
 		if( composition )
-			ImGui::PushStyleColor( ImGuiCol_Text, ImVec4( 0.4f, 0.88f, 0.75f, 1 ) );
+			ImGui::PushStyleColor( ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4( theme::Accent ) );
 		if( ImGui::Selectable( name.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick ) && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
 		{
 			if( composition )

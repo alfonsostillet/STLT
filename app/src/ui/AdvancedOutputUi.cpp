@@ -642,7 +642,7 @@ void DrawCanvas( App& app, Screen& screen )
 		draw->AddText( ImVec2( c.x - text.x / 2, c.y - text.y / 2 ), colour, s.name.c_str() );
 	}
 	const ImU32 white = IM_COL32( 255, 255, 255, 255 ), black = IM_COL32( 0, 0, 0, 200 ), amber = IM_COL32( 255, 200, 80, 255 );
-	const ImU32 lattice = IM_COL32( 102, 225, 192, 110 );
+	const ImU32 lattice = ( theme::Accent & 0x00FFFFFF ) | 0x6E000000;
 	float radius        = Ui( 4.5f );
 	if( selected >= 0 )
 	{

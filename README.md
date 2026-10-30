@@ -1,10 +1,10 @@
 # STLT-VJ
 
-A live video player for VJs, built around HAP: a clip deck with layers, columns and decks, beat-synced effects and animations, FFGL plugins, keyboard, MIDI and OSC control, and an Advanced Output with slices, warps, masks and soft edges.
+A live video player for VJs, built around HAP: a clip deck with layers, columns and decks, beat-synced effects and animations, FFGL plugins, keyboard, MIDI and OSC control, and an Advanced Output with slices, warps, masks and soft edges, with a built-in chaser that lights the slices step by step to the beat.
 
 ![STLT-VJ: the clip deck on top, monitors, composition, clip and performance panels below](docs/images/stlt-vj.png)
 
-> 🇮🇹 STLT-VJ è un programma per VJ: griglia di clip con layer, colonne e deck, effetti e animazioni a tempo di BPM, plugin FFGL, comandi da tastiera, MIDI e OSC, e un Advanced Output con slice, warp, maschere e soft edge. La guida completa è in [app/README.md](app/README.md).
+> 🇮🇹 STLT-VJ è un programma per VJ: griglia di clip con layer, colonne e deck, effetti e animazioni a tempo di BPM, plugin FFGL, comandi da tastiera, MIDI e OSC, e un Advanced Output con slice, warp, maschere e soft edge, con il chaser integrato che accende le slice a tempo. La guida completa è in [app/README.md](app/README.md).
 
 Everything about the program (features, shortcuts, building) is in **[app/README.md](app/README.md)**. The source is in [app/](app/).
 

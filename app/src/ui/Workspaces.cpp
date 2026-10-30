@@ -28,6 +28,7 @@ struct Flag
 const Flag kFlags[] = {
 	{ "Layers", &PanelVisibility::layers },
 	{ "Timeline", &PanelVisibility::timeline },
+	{ "Chaser", &PanelVisibility::chaser },
 	{ "Clips", &PanelVisibility::clips },
 	{ "CompositionMonitor", &PanelVisibility::compositionMonitor },
 	{ "PreviewMonitor", &PanelVisibility::previewMonitor },

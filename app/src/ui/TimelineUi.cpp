@@ -32,7 +32,7 @@ struct CellRef
 };
 
 // Block colours: strong enough to tell songs apart from across the room, dark enough for white names on them.
-const ImU32 kBlockColours[] = { IM_COL32( 46, 125, 110, 255 ), IM_COL32( 160, 92, 40, 255 ), IM_COL32( 84, 92, 170, 255 ), IM_COL32( 150, 60, 110, 255 ),
+const ImU32 kBlockColours[] = { IM_COL32( 62, 104, 150, 255 ), IM_COL32( 160, 92, 40, 255 ), IM_COL32( 84, 92, 170, 255 ), IM_COL32( 150, 60, 110, 255 ),
 	                            IM_COL32( 110, 130, 40, 255 ), IM_COL32( 40, 110, 160, 255 ), IM_COL32( 150, 50, 50, 255 ), IM_COL32( 100, 100, 110, 255 ) };
 constexpr int kColourCount = (int)( sizeof( kBlockColours ) / sizeof( kBlockColours[ 0 ] ) );
 
@@ -801,7 +801,7 @@ void Lanes( App& app, float height )
 					ImVec2 a( X( state.targetStart ), trackY[ state.targetTrack ] + Ui( 2 ) );
 					ImVec2 b( X( state.targetStart + tc.length ), trackY[ state.targetTrack ] + trackH[ state.targetTrack ] - Ui( 3 ) );
 					draw->PushClipRect( ImVec2( laneLeft, laneTop ), ImVec2( viewRight, viewBottom ), true );
-					draw->AddRectFilled( a, b, IM_COL32( 102, 225, 192, 50 ), Ui( 3 ) );
+					draw->AddRectFilled( a, b, ( theme::Accent & 0x00FFFFFF ) | 0x32000000, Ui( 3 ) );
 					draw->AddRect( a, b, theme::Accent, Ui( 3 ), 0, Ui( 2 ) );
 					draw->PopClipRect();
 					ImGui::SetTooltip( "%s%s at %s", state.copy ? "Copy " : "", tc.clip.name.c_str(), t.BarsBeats( state.targetStart ).c_str() );

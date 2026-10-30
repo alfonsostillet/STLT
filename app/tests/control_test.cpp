@@ -139,6 +139,10 @@ static void TestLayerHeaderAddresses()
 	CHECK( ParseControlAddress( "/timeline/nextcue", t ) && t.kind == Kind::TimelineNextCue );
 	CHECK( ParseControlAddress( "/timeline/stop", t ) && t.kind == Kind::TimelineStop );
 	CHECK( !ParseControlAddress( "/timeline/cue/0", t ) && !ParseControlAddress( "/timeline/rewind", t ) );
+	CHECK( ParseControlAddress( "/chaser/sequence/2", t ) && t.kind == Kind::ChaserSequence && t.slot == 1 && t.IsButton() );
+	CHECK( ParseControlAddress( "/chaser/enabled", t ) && t.kind == Kind::ChaserEnabled && t.IsSwitch() );
+	CHECK( ParseControlAddress( "/chaser/play", t ) && t.IsSwitch() && ParseControlAddress( "/chaser/nextsequence", t ) );
+	CHECK( !ParseControlAddress( "/chaser/sequence/0", t ) && !ParseControlAddress( "/chaser/fast", t ) );
 	CHECK( ParseControlAddress( "/composition/connectprevcolumn", t ) && t.kind == Kind::PrevColumn );
 	CHECK( ParseControlAddress( "/composition/crossfader/phase", t ) && t.kind == Kind::Crossfader );
 	CHECK( ParseControlAddress( "/composition/bypassed", t ) && t.kind == Kind::CompositionBypass && t.IsSwitch() );

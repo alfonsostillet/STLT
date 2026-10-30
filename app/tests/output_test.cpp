@@ -5,6 +5,7 @@
 #include <string>
 #include "output/AdvancedOutput.h"
 #include "render/OutputWindow.h"
+#include "chaser/Chaser.h"
 
 using namespace stltvj;
 
@@ -19,6 +20,11 @@ static int failures = 0;
 			++failures;                                                                              \
 		}                                                                                            \
 	} while( 0 )
+
+static bool Near( float a, float b, float tolerance = 1e-4f )
+{
+	return std::fabs( a - b ) < tolerance;
+}
 
 static bool Near( Vec2 a, Vec2 b, float tolerance = 0.01f )
 {
@@ -402,10 +408,110 @@ static void TestDisplayIds()
 	CHECK( OutputWindow::MatchDisplay( displays, "Missing Monitor#1@0,0" ) == -1 );
 }
 
+// The chaser: steps light slices (the others dark), sustain, release and echoes, repeat and ping-pong, the
+// Factory, slice ids, saving.
+static void TestChaser()
+{
+	AdvancedOutputSetup setup = AdvancedOutputSetup::MakeDefault( 400, 100 );
+	Screen& screen            = setup.screens[ 0 ];
+	screen.slices.clear();
+	for( int i = 0; i < 4; ++i )
+	{
+		Slice s = AdvancedOutputSetup::MakeSlice( "S" + std::to_string( i ), 400, 100, 400, 100 );
+		s.input = { { i * 100.0f, 0 }, { i * 100.0f + 100, 0 }, { i * 100.0f + 100, 100 }, { i * 100.0f, 100 } };
+		screen.slices.push_back( s );
+	}
+	screen.slices.push_back( screen.slices[ 3 ] ); // a duplicate: its id must change
+	CHECK( setup.EnsureIds() && screen.slices[ 4 ].id != screen.slices[ 3 ].id && !setup.EnsureIds() );
+	screen.slices.pop_back();
+	std::vector< std::string > ids;
+	for( const Slice& s : screen.slices )
+		ids.push_back( s.id );
+
+	ChaserSetup c;
+	c.sequences.push_back( {} );
+	c.sequences[ 0 ].Resize( 4 );
+	for( int i = 0; i < 4; ++i )
+		c.sequences[ 0 ].Toggle( i, ids[ i ] );
+	c.Follow( 1.5 ); // one step a beat: step 1, halfway
+	auto g = c.Gains( ids );
+	CHECK( Near( g[ ids[ 1 ] ], 1 ) && Near( g[ ids[ 0 ] ], 0 ) && Near( g[ ids[ 2 ] ], 0 ) );
+	c.release = 1; // fades over a step after its own
+	g         = c.Gains( ids );
+	CHECK( Near( g[ ids[ 0 ] ], 0.5f ) && Near( g[ ids[ 1 ] ], 1 ) );
+	c.release = 0;
+	c.echoes  = 2;
+	c.Follow( 2.0 );
+	g = c.Gains( ids );
+	CHECK( Near( g[ ids[ 2 ] ], 1 ) && Near( g[ ids[ 1 ] ], 2.0f / 3 ) && Near( g[ ids[ 0 ] ], 1.0f / 3 ) && Near( g[ ids[ 3 ] ], 0 ) );
+	c.echoes = 0;
+	c.Follow( 5.2 ); // round again: step 1
+	CHECK( Near( c.Gains( ids )[ ids[ 1 ] ], 1 ) );
+	c.dark = 0.25f; // the unlit slices show a little
+	CHECK( Near( c.Gains( ids )[ ids[ 3 ] ], 0.25f ) );
+	c.dark   = 0;
+	c.driver = ChaserDriver::Random;
+	c.randomCount = 2;
+	int lit = 0;
+	for( auto& [ id, level ] : c.Gains( ids ) )
+		lit += level > 0.5f ? 1 : 0;
+	CHECK( lit == 2 );
+	c.driver = ChaserDriver::Chaser;
+
+	// Repeat and ping-pong of the steps used.
+	ChaserSequence r;
+	r.Resize( 8 );
+	r.Toggle( 0, "a" );
+	r.Toggle( 1, "b" );
+	r.Toggle( 2, "c" );
+	r.Repeat( false );
+	CHECK( r.Lit( 3, "a" ) && r.Lit( 7, "b" ) );
+	r.Clear();
+	r.Toggle( 0, "a" );
+	r.Toggle( 1, "b" );
+	r.Toggle( 2, "c" );
+	r.Repeat( true ); // a b c b a b c b
+	CHECK( r.Lit( 3, "b" ) && r.Lit( 4, "a" ) && r.Lit( 6, "c" ) );
+
+	// The Factory from the slices' places.
+	std::vector< SlicePlace > places = SlicePlaces( setup );
+	CHECK( places.size() == 4 && Near( places[ 2 ].x, 250 ) );
+	FactorySettings f;
+	std::vector< std::vector< std::string > > steps = FactorySteps( places, 400, 100, f );
+	CHECK( steps.size() == 4 && steps[ 0 ][ 0 ] == ids[ 0 ] && steps[ 3 ][ 0 ] == ids[ 3 ] );
+	f.order = FactoryOrder::RightToLeft;
+	CHECK( FactorySteps( places, 400, 100, f )[ 0 ][ 0 ] == ids[ 3 ] );
+	f.order  = FactoryOrder::LeftToRight;
+	f.mirror = true; // the outer two, then the inner two
+	steps    = FactorySteps( places, 400, 100, f );
+	CHECK( steps.size() == 2 && steps[ 0 ].size() == 2 && steps[ 1 ].size() == 2 );
+	f.mirror = false;
+	f.fill   = true;
+	steps    = FactorySteps( places, 400, 100, f );
+	CHECK( steps.size() == 4 && steps[ 3 ].size() == 4 );
+	f.fill     = false;
+	f.pingPong = true;
+	CHECK( FactorySteps( places, 400, 100, f ).size() == 6 );
+	f.pingPong = false;
+	f.block    = 2;
+	CHECK( FactorySteps( places, 400, 100, f ).size() == 2 );
+
+	// Saved; slice ids survive the output setup's saving too.
+	c.sequences[ 0 ].name = "Run";
+	c.stepsPerBeat        = 2;
+	ChaserSetup loaded;
+	CHECK( loaded.Load( c.Save() ) && loaded.sequences.size() == 1 && loaded.sequences[ 0 ].name == "Run" && loaded.sequences[ 0 ].Lit( 2, ids[ 2 ] ) );
+	CHECK( Near( loaded.stepsPerBeat, 2 ) && !loaded.Load( "{}" ) );
+	AdvancedOutputSetup back;
+	std::string error;
+	CHECK( LoadAdvancedOutput( SaveAdvancedOutput( setup ), back, error ) && back.screens[ 0 ].slices[ 2 ].id == ids[ 2 ] );
+}
+
 int main()
 {
 	TestPerspective();
 	TestDisplayIds();
+	TestChaser();
 	TestGrids();
 	TestContour();
 	TestMasks();

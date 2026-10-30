@@ -3,7 +3,11 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
+#include <chrono>
+#include <cstdio>
 #include <json.hpp>
+#include <random>
+#include <unordered_set>
 
 namespace stltvj
 {
@@ -607,6 +611,26 @@ std::vector< Vec2 > Slice::InputOutline() const
 	return mask ? std::vector< Vec2 >() : input;
 }
 
+bool AdvancedOutputSetup::EnsureIds()
+{
+	static std::mt19937_64 random( std::random_device{}() ^ (uint64_t)std::chrono::steady_clock::now().time_since_epoch().count() );
+	std::unordered_set< std::string > seen;
+	bool changed = false;
+	for( Screen& screen : screens )
+		for( Slice& slice : screen.slices )
+		{
+			while( slice.id.empty() || seen.count( slice.id ) )
+			{
+				char text[ 24 ];
+				std::snprintf( text, sizeof( text ), "%016llx", (unsigned long long)random() );
+				slice.id = text;
+				changed  = true;
+			}
+			seen.insert( slice.id );
+		}
+	return changed;
+}
+
 Slice AdvancedOutputSetup::MakeSlice( const std::string& name, float cw, float ch, float sw, float sh )
 {
 	Slice s;
@@ -665,6 +689,7 @@ AdvancedOutputSetup AdvancedOutputSetup::MakeDefault( int compWidth, int compHei
 	screen.height = compHeight;
 	screen.slices.push_back( MakeSlice( "Slice 1", (float)compWidth, (float)compHeight, (float)compWidth, (float)compHeight ) );
 	setup.screens.push_back( screen );
+	setup.EnsureIds();
 	return setup;
 }
 
@@ -793,6 +818,7 @@ std::string SaveAdvancedOutput( const AdvancedOutputSetup& setup )
 		{
 			json k;
 			k[ "name" ]    = sl.name;
+			k[ "id" ]      = sl.id;
 			k[ "enabled" ] = sl.enabled;
 			k[ "type" ]    = sl.mask ? "mask" : sl.polygon ? "polygon" : "slice";
 			auto writeContour = [ & ]() {
@@ -880,6 +906,7 @@ bool LoadAdvancedOutput( const std::string& text, AdvancedOutputSetup& out, std:
 				{
 					Slice sl;
 					sl.name    = k.value( "name", sl.name );
+					sl.id      = k.value( "id", "" );
 					sl.enabled = k.value( "enabled", true );
 					std::string type = k.value( "type", "slice" );
 					sl.polygon       = type == "polygon";
@@ -967,6 +994,7 @@ bool LoadAdvancedOutput( const std::string& text, AdvancedOutputSetup& out, std:
 				}
 			setup.screens.push_back( std::move( s ) );
 		}
+	setup.EnsureIds();
 	out = std::move( setup );
 	return true;
 }
@@ -1305,6 +1333,7 @@ bool ImportResolumeXml( const std::string& xml, AdvancedOutputSetup& out, std::s
 		*compWidth = (int)cw;
 	if( compHeight )
 		*compHeight = (int)ch;
+	setup.EnsureIds();
 	out = std::move( setup );
 	return true;
 }

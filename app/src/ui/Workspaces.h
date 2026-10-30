@@ -10,6 +10,7 @@ struct PanelVisibility
 {
 	bool layers             = true;
 	bool timeline           = false; // the Arrangement view's main panel
+	bool chaser             = false; // the chaser's editor (Output > Chaser)
 	bool clips              = true;
 	bool compositionMonitor = true;
 	bool previewMonitor     = true;
@@ -29,6 +30,7 @@ namespace panel
 {
 constexpr const char* Layers             = "Layers"; // the layers' headers, beside the clips
 constexpr const char* Timeline           = "Timeline";
+constexpr const char* Chaser             = "Chaser";
 constexpr const char* Clips              = "Clips";
 constexpr const char* CompositionMonitor = "Composition Monitor";
 constexpr const char* PreviewMonitor     = "Preview Monitor";

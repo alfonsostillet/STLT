@@ -53,6 +53,7 @@ struct SoftEdge
 // the composition pinned point by point), or a mask (a shape that blacks out what lies below it in the list).
 struct Slice
 {
+	std::string id; // stable (a chase's steps name slices by it); given by AdvancedOutputSetup::EnsureIds
 	std::string name = "Slice";
 	bool enabled     = true;
 	bool polygon     = false;
@@ -155,6 +156,8 @@ struct AdvancedOutputSetup
 	static Slice MakePolygon( const std::string& name, float compWidth, float compHeight, float screenWidth, float screenHeight );
 	// A rectangle or an ellipse in the middle of the screen.
 	static Slice MakeMask( const std::string& name, float screenWidth, float screenHeight, bool ellipse );
+	// Gives every slice an id, and a new one to a slice sharing another's (a duplicate); true if any changed.
+	bool EnsureIds();
 };
 
 std::string SaveAdvancedOutput( const AdvancedOutputSetup& setup );

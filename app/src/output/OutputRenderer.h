@@ -1,4 +1,5 @@
 #pragma once
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -30,6 +31,8 @@ public:
 	// Main context. `composition` is an FBO texture (first row at the bottom) of compWidth x compHeight. Not
 	// `live`: the screens are drawn (for the editor's views) but not shared with other programs.
 	void Render( const AdvancedOutputSetup& setup, GLuint composition, int compWidth, int compHeight, bool live = true );
+	// Each slice's brightness by its id (the chaser's), multiplied into its opacity; empty: all full.
+	std::map< std::string, float > sliceGains;
 	// The finished picture of screen `index` (FBO texture), or 0.
 	GLuint ScreenTexture( size_t index ) const;
 
@@ -66,7 +69,7 @@ private:
 		std::string localName, ndiName, ndiError;
 	};
 	void Share( const Screen& screen, ScreenState& state );
-	void DrawSlice( const Slice& slice, int index, const Screen& screen, int compWidth, int compHeight );
+	void DrawSlice( const Slice& slice, int index, const Screen& screen, int compWidth, int compHeight, float gain = 1.0f );
 	void ApplyMask( const Slice& mask, const Screen& screen, Fbo& target, GLuint composition );
 
 	void Match( size_t count );

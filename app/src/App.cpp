@@ -17,6 +17,7 @@
 #include "ui/ControlUi.h"
 #include "ui/EffectsUi.h"
 #include "ui/FileDialogs.h"
+#include "ui/ChaserUi.h"
 #include "ui/Panels.h"
 #include "ui/PreferencesUi.h"
 #include "ui/TimelineUi.h"
@@ -126,6 +127,18 @@ bool App::Init( const LaunchOptions& launch )
 		if( !options.fresh && ReadTextFile( ( fs::u8path( configDir ) / "preferences.json" ).u8string(), text ) )
 			prefs.Load( text );
 		ApplyPreferences( false );
+	}
+	{
+		// The chaser's sequences and settings (a first sequence when there are none).
+		std::string text;
+		if( !options.fresh && ReadTextFile( ( fs::u8path( configDir ) / "chaser.json" ).u8string(), text ) )
+			chaser.Load( text );
+		if( chaser.sequences.empty() )
+		{
+			chaser.sequences.push_back( {} );
+			chaser.sequences[ 0 ].name = "Sequence 1";
+			chaser.sequences[ 0 ].Resize( 16 );
+		}
 	}
 	// Sound: the output chosen in the Preferences, else the system's default (STLTVJ_NO_AUDIO=1 keeps it off).
 	if( !std::getenv( "STLTVJ_NO_AUDIO" ) && !audio.Start( prefs.audioDevice, prefs.audioBuffer ) )
@@ -318,6 +331,8 @@ void App::Shutdown()
 	WriteTextFile( ( fs::u8path( configDir ) / "advanced-output.json" ).u8string(), savedOutput );
 	if( !options.fresh )
 		SaveOutputMode();
+	if( !options.fresh && chaserDirty )
+		SaveChaser();
 	glfwMakeContextCurrent( window );
 	audio.Stop();
 	outputs.Shutdown();
@@ -1398,6 +1413,36 @@ bool App::ApplyControl( const std::string& address, bool hasValue, float value, 
 		if( press && columnOk )
 			LaunchColumn( t.column );
 		return columnOk;
+	case Kind::ChaserEnabled:
+	{
+		bool on = chaser.enabled;
+		flip( on );
+		if( on != chaser.enabled )
+			ToggleChaser();
+		return true;
+	}
+	case Kind::ChaserPlay:
+		flip( chaser.playing );
+		chaserDirty = true;
+		return true;
+	case Kind::ChaserSequence:
+		if( press && t.slot < (int)chaser.sequences.size() )
+		{
+			chaser.active = t.slot;
+			chaserDirty   = true;
+			SetStatus( "Chaser: " + chaser.sequences[ t.slot ].name );
+		}
+		return t.slot < (int)chaser.sequences.size();
+	case Kind::ChaserNextSequence:
+	case Kind::ChaserPrevSequence:
+		if( press && !chaser.sequences.empty() )
+		{
+			int count     = (int)chaser.sequences.size();
+			chaser.active = ( chaser.active + ( t.kind == Kind::ChaserNextSequence ? 1 : -1 ) + count ) % count;
+			chaserDirty   = true;
+			SetStatus( "Chaser: " + chaser.sequences[ chaser.active ].name );
+		}
+		return true;
 	case Kind::TimelineCue:
 		if( press )
 			TimelineCue( t.slot );
@@ -1983,6 +2028,25 @@ void App::PasteEffects()
 	SetStatus( "Pasted effects onto " + selected->name );
 }
 
+void App::ToggleChaser()
+{
+	chaser.enabled = !chaser.enabled;
+	if( chaser.enabled )
+	{
+		if( outputMode != OutputMode::Advanced )
+			SetOutputMode( OutputMode::Advanced );
+		panels.chaser = true;
+	}
+	chaserDirty = true;
+	SetStatus( chaser.enabled ? "Chaser on: the slices light step by step" : "Chaser off: every slice shows" );
+}
+
+void App::SaveChaser()
+{
+	WriteTextFile( ( fs::u8path( configDir ) / "chaser.json" ).u8string(), chaser.Save() );
+	chaserDirty = false;
+}
+
 int App::ResizeAllClips( FitMode fit )
 {
 	int count = 0;
@@ -2320,6 +2384,24 @@ void App::Frame()
 	bool advancedLive = outputMode == OutputMode::Advanced;
 	bool quickLive    = outputMode == OutputMode::Window || outputMode == OutputMode::Fullscreen;
 	// The Advanced Output setup is drawn when it is shown and for the editor's views.
+	// The chaser: each slice's brightness for this beat, when it is on.
+	advancedOutput.EnsureIds();
+	chaser.Follow( composition.beat );
+	outputs.sliceGains.clear();
+	if( chaser.enabled )
+	{
+		std::vector< std::string > ids;
+		for( const Screen& screen : advancedOutput.screens )
+			for( const Slice& slice : screen.slices )
+				if( !slice.mask )
+					ids.push_back( slice.id );
+		outputs.sliceGains = chaser.Gains( ids );
+	}
+	if( chaserDirty && now - chaserSaved > 1.0 && !options.fresh )
+	{
+		SaveChaser();
+		chaserSaved = now;
+	}
 	if( advancedLive || panels.advancedOutput )
 		outputs.Render( advancedOutput, compositor.CompositionTexture(), composition.width, composition.height, advancedLive );
 	if( quickLive )
@@ -2472,6 +2554,12 @@ void App::DrawUi()
 	DrawAdvancedOutputSavePrompt( *this );
 	if( panels.advancedOutput )
 		DrawAdvancedOutputPanel( *this );
+	if( panels.chaser )
+	{
+		BeginMappable( *this );
+		DrawChaserPanel( *this );
+		EndMappable( *this );
+	}
 	droppedPaths.clear();
 }
 }

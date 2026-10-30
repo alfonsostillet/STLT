@@ -76,6 +76,20 @@ As in Ableton Live, two views: **Session** (the three upright lines at the top r
 
 Rendering: each slice is a fine triangle mesh that follows the warp, so perspective and curves stay smooth; the composition is sampled once per screen pixel, soft edges are computed per pixel, and each screen gets its own vsynced window.
 
+## Chaser
+
+STLT-CHASER, the FFGL plugin, is built in: on the output itself, it lights the Advanced Output's slices step by step, to the beat. *Output → Chaser...* (under the divider, after *Advanced...*) turns it on (switching the output to Advanced if needed) and opens its panel; choose it again to turn it off.
+
+- **Sequences** at the left: any number, each with its own steps (1 to 1024). Double-click to rename, right-click to duplicate or delete.
+- **Stage**: the slices as they sit in the composition. Click a slice to light it in the step being edited, or sweep across several to light (or darken) them all. The live state shows over them while it plays.
+- **Steps** below: click a step to edit it; Left and Right step through. *->* repeats the steps with something in them over the whole length, *<->* back and forth; *Invert Step*, *Clear Step*, *Copy to Next*; *Follow* keeps the edited step on the one playing.
+- **Factory**: makes the steps from where the slices are: left to right, right to left, top to bottom, bottom to top, centre out, outside in or random, with a tolerance for slices that light together (a column, a ring), several per step, *Mirror* (from both sides), *Fill* (each step keeps the previous ones) and *Ping-pong*.
+- **Playback**: *Chaser* plays the steps in order, *Random* lights a few slices at random each step. The rate goes from one step a bar to eight steps a beat, locked to the BPM. *Sustain* is how many steps a slice stays lit, *Release* how many it takes to fade, *Echoes* keeps the previous steps showing, dimmer and dimmer, and *Unlit* is how much of the picture the dark slices still show.
+- Mappable to keys, MIDI and OSC: `/chaser/enabled`, `/chaser/play`, `/chaser/sequence/N`, `/chaser/nextsequence`, `/chaser/prevsequence`.
+- The chaser is saved on its own (`chaser.json`, next to the Advanced Output setup) and follows slices by an id of their own, so moving or renaming a slice keeps its steps.
+
+> 🇮🇹 Il Chaser (STLT-CHASER) ora è dentro il programma: *Output → Chaser...* lo accende e apre il pannello. Clicca o trascina sulle slice per accenderle nello step, usa la Factory per creare gli step dalla posizione delle slice, e regola velocità, sustain, release ed echi; segue il BPM.
+
 ## Performance: HAP or not
 
 HAP is the format to use for a show. Other formats work, but every one of them costs more, in several ways:
