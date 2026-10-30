@@ -80,7 +80,9 @@ jobs:
   # A tag v* (or a manual run with a release tag) publishes the three builds as a GitHub Release, with the notes
   # in docs/releases/<tag>.md; a manual run creates the tag on the commit it built.
   release:
-    if: startsWith(github.ref, 'refs/tags/v') || inputs.release != ''
+    # always(): a release still goes out when one system's build did not run (the macOS runner can be unavailable);
+    # the packing step below needs Windows and Linux.
+    if: always() && (startsWith(github.ref, 'refs/tags/v') || inputs.release != '')
     needs: build
     runs-on: ubuntu-24.04
     permissions:
@@ -97,7 +99,7 @@ jobs:
           mkdir -p release
           V="${{ inputs.release || github.ref_name }}"
           (cd artifacts/STLT-VJ-windows && mkdir STLT-VJ && find . -maxdepth 1 -type f -exec mv {} STLT-VJ/ \; && zip -qr "../../release/STLT-VJ-$V-windows.zip" STLT-VJ)
-          cp artifacts/STLT-VJ-macos/stlt-vj.app.zip "release/STLT-VJ-$V-macos.zip"
+          if [ -f artifacts/STLT-VJ-macos/stlt-vj.app.zip ]; then cp artifacts/STLT-VJ-macos/stlt-vj.app.zip "release/STLT-VJ-$V-macos.zip"; fi
           (cd artifacts/STLT-VJ-linux && mkdir STLT-VJ && mv stlt-vj STLT-VJ/ && chmod +x STLT-VJ/stlt-vj && tar -czf "../../release/STLT-VJ-$V-linux.tar.gz" STLT-VJ)
           ls -l release
 
