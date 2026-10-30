@@ -240,11 +240,43 @@ enum class KeyProperty
 };
 const char* KeyPropertyName( KeyProperty property );
 
+// How the value travels from a keyframe to the next.
+enum class KeyCurve
+{
+	Linear,
+	EaseIn,    // starts slowly
+	EaseOut,   // arrives slowly
+	EaseInOut, // both
+	Hold,      // stays, then jumps at the next keyframe
+	Count
+};
+const char* KeyCurveName( KeyCurve curve );
+// The share (0..1) of the way covered at `f` (0..1) of the time.
+float CurveAt( KeyCurve curve, float f );
+
 struct Keyframe
 {
-	double time = 0; // seconds from the clip's start
-	float value = 0;
+	double time    = 0; // seconds from the clip's start
+	float value    = 0;
+	KeyCurve curve = KeyCurve::Linear; // towards the next keyframe
 };
+
+// The name ParamKeys give an effect's Mix (no parameter can have it: names have no '@').
+constexpr const char* kMixParam = "@mix";
+
+// Keyframes of one parameter of one of a timeline clip's effects.
+struct ParamKeys
+{
+	int slot = 0;      // the effect's place in the clip's chain
+	std::string param; // the parameter's name
+	std::vector< Keyframe > keys;
+};
+
+// The value of a keyframe list at `local` (`fallback` without keyframes); `keys` in time order.
+float EvaluateKeys( const std::vector< Keyframe >& keys, double local, float fallback );
+// A keyframe list's keyframe within a millisecond of `local` (-1: none); setting one (replacing the one there).
+int KeyIndex( const std::vector< Keyframe >& keys, double local );
+void SetKeyIn( std::vector< Keyframe >& keys, double local, float value );
 
 struct TimelineClip
 {
@@ -253,6 +285,7 @@ struct TimelineClip
 	double length = 4;  // seconds on the timeline
 	BlendMode blend = BlendMode::Alpha; // how it lies over the tracks under it
 	std::vector< Keyframe > keys[ (int)KeyProperty::Count ]; // in time order; none: the property holds its value
+	std::vector< ParamKeys > paramKeys;                        // of its effects' parameters
 	bool prepared = false; // runtime: its player, sound and effects were set up
 	double End() const { return start + length; }
 	// The clip's own value of a property (its opacity, position...), the one keyframes override.
@@ -268,6 +301,17 @@ struct TimelineClip
 	int KeyAt( KeyProperty property, double local ) const; // -1: none within a millisecond
 	// Every keyframe moves by `-seconds` (the clip's start moved on by that much while its content stays put).
 	void ShiftKeys( double seconds );
+	// The keyframes of an effect parameter (made when `create`; null when there are none).
+	ParamKeys* FindParamKeys( int slot, const std::string& param, bool create = false );
+	// Blend, keyframes and effect keyframes from `from` (a copy, a split's tail).
+	void CopyLookFrom( const TimelineClip& from );
+	// The times (from the clip's start) holding any keyframe, in order and once each.
+	std::vector< double > KeyTimes() const;
+	// Moves every keyframe at `from` (within a millisecond) to `to`, of any property or parameter.
+	void MoveKeysAt( double from, double to );
+	// Every keyframe at `local`, of any property or parameter: removed, or given `curve`.
+	void RemoveKeysAt( double local );
+	void SetCurveAt( double local, KeyCurve curve );
 	// Sets the animated fields to their values at timeline time `t`.
 	void Apply( double t );
 	// The media's length (a movie, or a sound alone); 0: unknown or endless (a source).

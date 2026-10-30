@@ -60,6 +60,7 @@ enum class Drag
 	BlockEnd,
 	BlockNew,   // a new block drawn on the block lane
 	Scrub,      // the playhead, on the ruler
+	Key,        // a keyframe (every one at that moment) along a clip
 };
 
 // What the panel remembers between frames.
@@ -75,6 +76,9 @@ struct State
 	double grab = 0; // where in the clip or block it was grabbed (seconds from its start)
 	double origStart = 0, origLength = 0, origIn = 0;
 	std::vector< Keyframe > origKeys[ (int)KeyProperty::Count ]; // a clip's keyframes when a trim began
+	std::vector< ParamKeys > origParamKeys;
+	double keyFrom = 0; // a keyframe being dragged on a clip: where it was (from the clip's start)
+	bool keyMoved  = false;
 	bool copy       = false;
 	int targetTrack = -1;
 	double targetStart = 0;
@@ -116,9 +120,7 @@ void Duplicate( App& app, int track, int index, double at = -1 )
 	copy.clip   = CopyClip( from.clip );
 	copy.start  = at >= 0 ? at : from.End();
 	copy.length = from.length;
-	copy.blend  = from.blend;
-	for( int p = 0; p < (int)KeyProperty::Count; ++p )
-		copy.keys[ p ] = from.keys[ p ];
+	copy.CopyLookFrom( from );
 	int placed  = t.Place( track, std::move( copy ) );
 	SelectClip( track, placed );
 }
@@ -608,12 +610,12 @@ void Lanes( App& app, float height )
 				bool atIn = mx - a.x < edge && b.x - a.x > edge * 3, atOut = b.x - mx < edge && b.x - a.x > edge * 3;
 				if( hovered && ( atIn || atOut ) && state.drag == Drag::None )
 					ImGui::SetMouseCursor( ImGuiMouseCursor_ResizeEW );
-				// Its keyframes: diamonds along the bottom (a click on one puts the playhead there).
+				// Its keyframes: diamonds along the bottom (a click on one puts the playhead there, a drag moves it,
+				// a right-click sets its curve).
 				std::vector< double > keyTimes;
-				for( const std::vector< Keyframe >& list : tc.keys )
-					for( const Keyframe& key : list )
-						if( key.time >= 0 && key.time <= tc.length && std::find_if( keyTimes.begin(), keyTimes.end(), [ & ]( double t0 ) { return std::fabs( t0 - key.time ) < 1e-3; } ) == keyTimes.end() )
-							keyTimes.push_back( key.time );
+				for( double time : tc.KeyTimes() )
+					if( time >= -1e-6 && time <= tc.length + 1e-6 )
+						keyTimes.push_back( time );
 				float keyY  = b.y - Ui( 6 );
 				int keyHit  = -1;
 				draw->PushClipRect( ImVec2( laneLeft, laneTop ), ImVec2( viewRight, viewBottom ), true );
@@ -643,13 +645,40 @@ void Lanes( App& app, float height )
 				if( ImGui::IsItemActivated() && keyHit >= 0 )
 				{
 					SelectClip( k, i );
-					t.Locate( tc.start + keyTimes[ keyHit ] );
+					state.drag      = Drag::Key;
+					state.dragTrack = k;
+					state.dragIndex = i;
+					state.keyFrom   = keyTimes[ keyHit ];
+					state.keyMoved  = false;
+				}
+				if( keyHit >= 0 && hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
+				{
+					SelectClip( k, i );
+					state.keyFrom = keyTimes[ keyHit ];
+					ImGui::OpenPopup( "##keyMenu" );
+				}
+				if( ImGui::BeginPopup( "##keyMenu" ) )
+				{
+					ImGui::TextDisabled( "Keyframes at %s", t.BarsBeats( tc.start + state.keyFrom ).c_str() );
+					ImGui::TextDisabled( "Towards the next one" );
+					KeyCurve now = KeyCurve::Linear;
+					for( const std::vector< Keyframe >& list : tc.keys )
+						if( int at = KeyIndex( list, state.keyFrom ); at >= 0 )
+							now = list[ at ].curve;
+					for( int c = 0; c < (int)KeyCurve::Count; ++c )
+						if( ImGui::MenuItem( KeyCurveName( (KeyCurve)c ), nullptr, now == (KeyCurve)c ) )
+							tc.SetCurveAt( state.keyFrom, (KeyCurve)c );
+					ImGui::Separator();
+					if( ImGui::MenuItem( "Delete" ) )
+						tc.RemoveKeysAt( state.keyFrom );
+					ImGui::EndPopup();
 				}
 				else if( ImGui::IsItemActivated() )
 				{
 					SelectClip( k, i );
 					for( int p = 0; p < (int)KeyProperty::Count; ++p )
 						state.origKeys[ p ] = tc.keys[ p ];
+					state.origParamKeys = tc.paramKeys;
 					state.drag       = atIn ? Drag::TrimIn : atOut ? Drag::TrimOut : Drag::Move;
 					state.dragTrack  = k;
 					state.dragIndex  = i;
@@ -677,7 +706,7 @@ void Lanes( App& app, float height )
 					ImGui::SetTooltip( "%s\n%s - %s (%.2f s)\nDrag: move (Alt: copy, Shift: off the grid); edges: trim\nDouble-click: playhead here; "
 					                   "right-click: menu",
 					                   tc.clip.name.c_str(), t.BarsBeats( tc.start ).c_str(), t.BarsBeats( tc.End() ).c_str(), tc.length );
-				if( ImGui::BeginPopupContextItem( "##clipMenu" ) )
+				if( ( keyHit < 0 || ImGui::IsPopupOpen( "##clipMenu" ) ) && ImGui::BeginPopupContextItem( "##clipMenu" ) )
 				{
 					SelectClip( k, i );
 					if( ImGui::MenuItem( "Duplicate", "Ctrl+D" ) )
@@ -702,6 +731,29 @@ void Lanes( App& app, float height )
 				ImGui::PopID();
 			}
 		}
+	}
+
+	// A keyframe being dragged along its clip (with every keyframe at that moment); a click without moving it puts
+	// the playhead there.
+	if( state.drag == Drag::Key )
+	{
+		if( state.dragTrack < (int)t.tracks.size() && state.dragIndex < (int)t.tracks[ state.dragTrack ].clips.size() )
+		{
+			TimelineClip& tc = t.tracks[ state.dragTrack ].clips[ state.dragIndex ];
+			double to        = std::clamp( Snapped( t, timeAt( io.MousePos.x ), freeDrag ) - tc.start, 0.0, tc.length );
+			if( ImGui::IsMouseDragging( ImGuiMouseButton_Left, Ui( 3 ) ) && std::fabs( to - state.keyFrom ) > 1e-4 )
+			{
+				tc.MoveKeysAt( state.keyFrom, to );
+				state.keyFrom  = to;
+				state.keyMoved = true;
+			}
+			if( state.keyMoved )
+				ImGui::SetTooltip( "Keyframe at %s", t.BarsBeats( tc.start + state.keyFrom ).c_str() );
+			if( !ImGui::IsMouseDown( ImGuiMouseButton_Left ) && !state.keyMoved )
+				t.Locate( tc.start + state.keyFrom );
+		}
+		if( !ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+			state.drag = Drag::None;
 	}
 
 	// A clip being dragged: trims follow the mouse at once; a move shows where it will land.
@@ -729,6 +781,7 @@ void Lanes( App& app, float height )
 				// The keyframes stay at their moments in time.
 				for( int p = 0; p < (int)KeyProperty::Count; ++p )
 					tc.keys[ p ] = state.origKeys[ p ];
+				tc.paramKeys = state.origParamKeys;
 				tc.ShiftKeys( start - state.origStart );
 			}
 			else if( state.drag == Drag::TrimOut )
@@ -767,9 +820,7 @@ void Lanes( App& app, float height )
 				{
 					moved.clip   = CopyClip( from[ state.dragIndex ].clip );
 					moved.length = from[ state.dragIndex ].length;
-					moved.blend  = from[ state.dragIndex ].blend;
-					for( int p = 0; p < (int)KeyProperty::Count; ++p )
-						moved.keys[ p ] = from[ state.dragIndex ].keys[ p ];
+					moved.CopyLookFrom( from[ state.dragIndex ] );
 				}
 				else
 				{
@@ -1197,10 +1248,8 @@ void Inspector( App& app )
 		{
 			// To the previous and next keyframe of any property, and removing them all.
 			std::vector< double > times;
-			for( const std::vector< Keyframe >& list : tc->keys )
-				for( const Keyframe& key : list )
-					times.push_back( tc->start + key.time );
-			std::sort( times.begin(), times.end() );
+			for( double time : tc->KeyTimes() )
+				times.push_back( tc->start + time );
 			double before = -1, after = -1;
 			for( double time : times )
 			{
@@ -1222,19 +1271,112 @@ void Inspector( App& app )
 			ImGui::SameLine();
 			ImGui::BeginDisabled( times.empty() );
 			if( ImGui::Button( "Clear All", ImVec2( third, 0 ) ) )
+			{
 				for( std::vector< Keyframe >& list : tc->keys )
 					list.clear();
+				tc->paramKeys.clear();
+			}
 			ImGui::EndDisabled();
+			// The curve from the keyframes at the playhead to the next ones.
+			double local = t.position - tc->start;
+			bool atKey   = false;
+			KeyCurve now = KeyCurve::Linear;
+			for( double time : tc->KeyTimes() )
+				atKey |= std::fabs( time - local ) < 1e-3;
+			if( atKey )
+			{
+				for( const std::vector< Keyframe >& list : tc->keys )
+					if( int at = KeyIndex( list, local ); at >= 0 )
+						now = list[ at ].curve;
+				for( const ParamKeys& p : tc->paramKeys )
+					if( int at = KeyIndex( p.keys, local ); at >= 0 )
+						now = p.keys[ at ].curve;
+				row( "Curve" );
+				if( ImGui::BeginCombo( "##curve", KeyCurveName( now ) ) )
+				{
+					for( int c = 0; c < (int)KeyCurve::Count; ++c )
+						if( ImGui::Selectable( KeyCurveName( (KeyCurve)c ), now == (KeyCurve)c ) )
+							tc->SetCurveAt( local, (KeyCurve)c );
+					ImGui::EndCombo();
+				}
+				if( ImGui::IsItemHovered() )
+					ImGui::SetTooltip( "How the values travel from the keyframes at the playhead to the next ones" );
+			}
 			ImGui::PushTextWrapPos( 0 );
 			ImGui::TextDisabled( "Press a diamond to set a keyframe at the playhead; move the playhead and change the value for the next. "
-			                     "In between the values move in a straight line." );
+			                     "On the clip: drag a keyframe to move it, right-click it for its curve (Linear, Ease, Hold) or to delete it." );
 			ImGui::PopTextWrapPos();
 		}
 
 		if( !track.audio && ImGui::CollapsingHeader( "Effects", ImGuiTreeNodeFlags_DefaultOpen ) )
 		{
-			ImGui::TextDisabled( "Each effect's Mix is how much of it shows." );
+			ImGui::TextDisabled( "Each effect's Mix is how much of it shows; the diamonds keyframe its parameters." );
+			// Keyframes for the effects' parameters, as for the clip's own.
+			double local = t.position - tc->start;
+			bool inside  = local >= -1e-6 && local <= tc->length + 1e-6;
+			ParamKeyHooks hooks;
+			hooks.button = [ & ]( Effect& effect, int slot, int param ) {
+				const std::string& name = effect.Params()[ param ].name;
+				ParamKeys* keys         = tc->FindParamKeys( slot, name );
+				bool animated           = keys && !keys->keys.empty();
+				bool onKey              = inside && keys && KeyIndex( keys->keys, local ) >= 0;
+				if( KeyButton( "##paramKey", onKey, animated, inside, !inside ? "Move the playhead over the clip to set keyframes"
+				                                                     : onKey  ? "Remove the keyframe at the playhead"
+				                                                              : "A keyframe at the playhead" ) )
+				{
+					keys = tc->FindParamKeys( slot, name, true );
+					if( onKey )
+						keys->keys.erase( keys->keys.begin() + KeyIndex( keys->keys, local ) );
+					else
+						SetKeyIn( keys->keys, local, effect.Value( param ) );
+				}
+			};
+			hooks.changed = [ & ]( Effect& effect, int slot, int param, float ) {
+				// With keyframes, an edit sets the one at the playhead.
+				ParamKeys* keys = tc->FindParamKeys( slot, effect.Params()[ param ].name );
+				if( keys && !keys->keys.empty() && inside )
+					SetKeyIn( keys->keys, local, effect.Value( param ) );
+			};
+			hooks.mixButton = [ & ]( float& mix, int slot ) {
+				ParamKeys* keys = tc->FindParamKeys( slot, kMixParam );
+				bool animated   = keys && !keys->keys.empty();
+				bool onKey      = inside && keys && KeyIndex( keys->keys, local ) >= 0;
+				if( KeyButton( "##mixKey", onKey, animated, inside, !inside ? "Move the playhead over the clip to set keyframes"
+				                                                 : onKey  ? "Remove the keyframe at the playhead"
+				                                                          : "A keyframe at the playhead: fade the effect in and out" ) )
+				{
+					keys = tc->FindParamKeys( slot, kMixParam, true );
+					if( onKey )
+						keys->keys.erase( keys->keys.begin() + KeyIndex( keys->keys, local ) );
+					else
+						SetKeyIn( keys->keys, local, mix );
+				}
+			};
+			hooks.mixChanged = [ & ]( float& mix, int slot ) {
+				ParamKeys* keys = tc->FindParamKeys( slot, kMixParam );
+				if( keys && !keys->keys.empty() && inside )
+					SetKeyIn( keys->keys, local, mix );
+			};
+			// Effects moved or removed in the chain take their keyframes along.
+			std::vector< Effect* > before;
+			for( EffectSlot& slot : tc->clip.effects )
+				before.push_back( slot.effect.get() );
+			paramKeyHooks = &hooks;
 			DrawEffectChain( app, tc->clip.effects, "timelineFx" );
+			paramKeyHooks = nullptr;
+			std::vector< ParamKeys > kept;
+			for( ParamKeys& p : tc->paramKeys )
+			{
+				Effect* was = p.slot >= 0 && p.slot < (int)before.size() ? before[ p.slot ] : nullptr;
+				for( int s = 0; s < (int)tc->clip.effects.size(); ++s )
+					if( was && tc->clip.effects[ s ].effect.get() == was )
+					{
+						p.slot = s;
+						kept.push_back( std::move( p ) );
+						break;
+					}
+			}
+			tc->paramKeys = std::move( kept );
 		}
 
 		ImGui::Spacing();

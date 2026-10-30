@@ -19,6 +19,8 @@ namespace fs = std::filesystem;
 
 namespace stltvj
 {
+ParamKeyHooks* paramKeyHooks = nullptr;
+
 namespace
 {
 constexpr const char* kSlotPayload = "STLT_SLOT";
@@ -158,11 +160,21 @@ void ParamLabel( const char* label )
 	ImGui::SetNextItemWidth( -FLT_MIN );
 }
 
-// A parameter's name: a click opens its menu (reset, animate).
+// The effect's place in its chain while its parameters are drawn (for keyframe hooks).
+int drawingSlot = -1;
+Effect* drawingEffect = nullptr;
+int drawingParam      = -1;
+
+// A parameter's name: a click opens its menu (reset, animate). With keyframe hooks, a keyframe button before it.
 void ParamName( const char* label, bool animatable )
 {
 	ImGui::TableNextRow();
 	ImGui::TableSetColumnIndex( 0 );
+	if( paramKeyHooks && paramKeyHooks->button && animatable && drawingEffect && drawingParam >= 0 )
+	{
+		paramKeyHooks->button( *drawingEffect, drawingSlot, drawingParam );
+		ImGui::SameLine( 0, Ui( 2 ) );
+	}
 	ImGui::AlignTextToFramePadding();
 	ImVec2 size = ImGui::CalcTextSize( label, nullptr, true );
 	if( ImGui::Selectable( label, false, ImGuiSelectableFlags_None, ImVec2( size.x, 0 ) ) )
@@ -189,7 +201,22 @@ std::string mapScope;
 int mapSlot = -1;
 
 // Draws parameter i (and the ones a colour picker groups with it); returns how many parameters it used.
+int ParamWidgetInner( Effect& effect, int i );
+
 int ParamWidget( Effect& effect, int i )
+{
+	drawingEffect = &effect;
+	drawingParam  = i;
+	float before  = effect.Value( i );
+	int used      = ParamWidgetInner( effect, i );
+	if( paramKeyHooks && paramKeyHooks->changed && effect.Value( i ) != before )
+		paramKeyHooks->changed( effect, drawingSlot, i, before );
+	drawingEffect = nullptr;
+	drawingParam  = -1;
+	return used;
+}
+
+int ParamWidgetInner( Effect& effect, int i )
 {
 	const std::vector< ParamInfo >& params = effect.Params();
 	const ParamInfo& p                     = params[ i ];
@@ -466,11 +493,24 @@ void DrawEffectChain( App& app, EffectChain& chain, const char* id, const std::s
 				{
 					ImGui::TableSetupColumn( "label", ImGuiTableColumnFlags_WidthFixed, Ui( 100 ) );
 					ImGui::TableSetupColumn( "value", ImGuiTableColumnFlags_WidthStretch );
-					ParamLabel( "Mix" );
-					float percent = slot.mix * 100;
+					ImGui::TableNextRow();
+					ImGui::TableSetColumnIndex( 0 );
+					if( paramKeyHooks && paramKeyHooks->mixButton )
+					{
+						paramKeyHooks->mixButton( slot.mix, i );
+						ImGui::SameLine( 0, Ui( 2 ) );
+					}
+					ImGui::AlignTextToFramePadding();
+					ImGui::TextUnformatted( "Mix" );
+					ImGui::TableSetColumnIndex( 1 );
+					ImGui::SetNextItemWidth( -FLT_MIN );
+					float mixBefore = slot.mix;
+					float percent   = slot.mix * 100;
 					if( FilledSlider( "##mix", &percent, 0, 100, "%.0f %%" ) )
 						slot.mix = percent / 100;
 					ResetValue( &slot.mix, 1.0f );
+					if( paramKeyHooks && paramKeyHooks->mixChanged && slot.mix != mixBefore )
+						paramKeyHooks->mixChanged( slot.mix, i );
 					ImGui::EndTable();
 				}
 				if( !scope.empty() )
@@ -479,7 +519,9 @@ void DrawEffectChain( App& app, EffectChain& chain, const char* id, const std::s
 					mapScope = scope;
 					mapSlot  = i;
 				}
+				drawingSlot = i;
 				DrawEffectParams( *slot.effect );
+				drawingSlot = -1;
 				mapApp  = nullptr;
 				mapSlot = -1;
 			}

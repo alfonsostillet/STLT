@@ -678,11 +678,32 @@ static nlohmann::json SaveTimeline( const Timeline& t )
 				{
 					json list = json::array();
 					for( const Keyframe& k : clip.keys[ p ] )
-						list.push_back( { k.time, k.value } );
+					{
+						json key = { k.time, k.value };
+						if( k.curve != KeyCurve::Linear )
+							key.push_back( KeyCurveName( k.curve ) );
+						list.push_back( key );
+					}
 					keys[ KeyPropertyName( (KeyProperty)p ) ] = list;
 				}
 			if( !keys.empty() )
 				c[ "keys" ] = keys;
+			json params = json::array();
+			for( const ParamKeys& p : clip.paramKeys )
+			{
+				json list = json::array();
+				for( const Keyframe& k : p.keys )
+				{
+					json key = { k.time, k.value };
+					if( k.curve != KeyCurve::Linear )
+						key.push_back( KeyCurveName( k.curve ) );
+					list.push_back( key );
+				}
+				if( !list.empty() )
+					params.push_back( { { "slot", p.slot }, { "param", p.param }, { "keys", list } } );
+			}
+			if( !params.empty() )
+				c[ "paramKeys" ] = params;
 			clips.push_back( c );
 		}
 		k[ "clips" ] = clips;
@@ -730,6 +751,21 @@ static Timeline LoadTimeline( const nlohmann::json& root )
 					clip.start  = std::max( 0.0, c.value( "start", 0.0 ) );
 					clip.length = std::max( 0.01, c.value( "length", 1.0 ) );
 					clip.blend  = ByName( c.value( "blend", json() ), BlendModeName, BlendMode::Alpha );
+					if( c.contains( "paramKeys" ) && c[ "paramKeys" ].is_array() )
+						for( const json& p : c[ "paramKeys" ] )
+						{
+							if( !p.is_object() || !p.contains( "keys" ) || !p[ "keys" ].is_array() )
+								continue;
+							ParamKeys pk;
+							pk.slot  = p.value( "slot", 0 );
+							pk.param = p.value( "param", "" );
+							for( const json& k : p[ "keys" ] )
+								if( k.is_array() && k.size() >= 2 && k[ 0 ].is_number() && k[ 1 ].is_number() )
+									pk.keys.push_back( { k[ 0 ].get< double >(), k[ 1 ].get< float >(), k.size() > 2 ? ByName( k[ 2 ], KeyCurveName, KeyCurve::Linear ) : KeyCurve::Linear } );
+							std::stable_sort( pk.keys.begin(), pk.keys.end(), []( const Keyframe& a, const Keyframe& b ) { return a.time < b.time; } );
+							if( !pk.param.empty() && !pk.keys.empty() )
+								clip.paramKeys.push_back( std::move( pk ) );
+						}
 					if( c.contains( "keys" ) && c[ "keys" ].is_object() )
 						for( int p = 0; p < (int)KeyProperty::Count; ++p )
 						{
@@ -737,8 +773,9 @@ static Timeline LoadTimeline( const nlohmann::json& root )
 							if( !c[ "keys" ].contains( name ) || !c[ "keys" ][ name ].is_array() )
 								continue;
 							for( const json& k : c[ "keys" ][ name ] )
-								if( k.is_array() && k.size() == 2 && k[ 0 ].is_number() && k[ 1 ].is_number() )
-									clip.keys[ p ].push_back( { k[ 0 ].get< double >(), k[ 1 ].get< float >() } );
+								if( k.is_array() && k.size() >= 2 && k[ 0 ].is_number() && k[ 1 ].is_number() )
+									clip.keys[ p ].push_back( { k[ 0 ].get< double >(), k[ 1 ].get< float >(),
+									                            k.size() > 2 ? ByName( k[ 2 ], KeyCurveName, KeyCurve::Linear ) : KeyCurve::Linear } );
 							std::stable_sort( clip.keys[ p ].begin(), clip.keys[ p ].end(), []( const Keyframe& a, const Keyframe& b ) { return a.time < b.time; } );
 						}
 					if( !clip.clip.Empty() )

@@ -11,6 +11,25 @@ const char* BlockEndName( BlockEnd end )
 	return names[ std::clamp( (int)end, 0, (int)BlockEnd::Count - 1 ) ];
 }
 
+const char* KeyCurveName( KeyCurve curve )
+{
+	static const char* names[] = { "Linear", "Ease In", "Ease Out", "Ease In Out", "Hold" };
+	return names[ std::clamp( (int)curve, 0, (int)KeyCurve::Count - 1 ) ];
+}
+
+float CurveAt( KeyCurve curve, float f )
+{
+	f = std::clamp( f, 0.0f, 1.0f );
+	switch( curve )
+	{
+	case KeyCurve::EaseIn: return f * f * f;
+	case KeyCurve::EaseOut: return 1 - ( 1 - f ) * ( 1 - f ) * ( 1 - f );
+	case KeyCurve::EaseInOut: return f < 0.5f ? 4 * f * f * f : 1 - 4 * ( 1 - f ) * ( 1 - f ) * ( 1 - f );
+	case KeyCurve::Hold: return 0;
+	default: return f;
+	}
+}
+
 const char* KeyPropertyName( KeyProperty property )
 {
 	static const char* names[] = { "opacity", "positionX", "positionY", "scale", "rotation", "volume" };
@@ -32,9 +51,13 @@ float& TimelineClip::Field( KeyProperty property )
 
 float TimelineClip::Evaluate( KeyProperty property, double local ) const
 {
-	const std::vector< Keyframe >& k = keys[ (int)property ];
+	return EvaluateKeys( keys[ (int)property ], local, Field( property ) );
+}
+
+float EvaluateKeys( const std::vector< Keyframe >& k, double local, float fallback )
+{
 	if( k.empty() )
-		return Field( property );
+		return fallback;
 	if( local <= k.front().time )
 		return k.front().value;
 	if( local >= k.back().time )
@@ -43,32 +66,40 @@ float TimelineClip::Evaluate( KeyProperty property, double local ) const
 		if( local < k[ i ].time )
 		{
 			double span = k[ i ].time - k[ i - 1 ].time;
-			double f    = span > 0 ? ( local - k[ i - 1 ].time ) / span : 1.0;
-			return (float)( k[ i - 1 ].value + ( k[ i ].value - k[ i - 1 ].value ) * f );
+			float f     = CurveAt( k[ i - 1 ].curve, span > 0 ? (float)( ( local - k[ i - 1 ].time ) / span ) : 1.0f );
+			return k[ i - 1 ].value + ( k[ i ].value - k[ i - 1 ].value ) * f;
 		}
 	return k.back().value;
 }
 
-int TimelineClip::KeyAt( KeyProperty property, double local ) const
+int KeyIndex( const std::vector< Keyframe >& k, double local )
 {
-	const std::vector< Keyframe >& k = keys[ (int)property ];
 	for( int i = 0; i < (int)k.size(); ++i )
 		if( std::fabs( k[ i ].time - local ) < 1e-3 )
 			return i;
 	return -1;
 }
 
-void TimelineClip::SetKey( KeyProperty property, double local, float value )
+void SetKeyIn( std::vector< Keyframe >& k, double local, float value )
 {
-	std::vector< Keyframe >& k = keys[ (int)property ];
-	int at                     = KeyAt( property, local );
+	int at = KeyIndex( k, local );
 	if( at >= 0 )
 	{
 		k[ at ].value = value;
 		return;
 	}
-	k.push_back( { local, value } );
+	k.push_back( { local, value, KeyCurve::Linear } );
 	std::stable_sort( k.begin(), k.end(), []( const Keyframe& a, const Keyframe& b ) { return a.time < b.time; } );
+}
+
+int TimelineClip::KeyAt( KeyProperty property, double local ) const
+{
+	return KeyIndex( keys[ (int)property ], local );
+}
+
+void TimelineClip::SetKey( KeyProperty property, double local, float value )
+{
+	SetKeyIn( keys[ (int)property ], local, value );
 }
 
 bool TimelineClip::RemoveKey( KeyProperty property, double local )
@@ -85,6 +116,96 @@ void TimelineClip::ShiftKeys( double seconds )
 	for( std::vector< Keyframe >& k : keys )
 		for( Keyframe& key : k )
 			key.time -= seconds;
+	for( ParamKeys& p : paramKeys )
+		for( Keyframe& key : p.keys )
+			key.time -= seconds;
+}
+
+ParamKeys* TimelineClip::FindParamKeys( int slot, const std::string& param, bool create )
+{
+	for( ParamKeys& p : paramKeys )
+		if( p.slot == slot && p.param == param )
+			return &p;
+	if( !create )
+		return nullptr;
+	paramKeys.push_back( { slot, param, {} } );
+	return &paramKeys.back();
+}
+
+void TimelineClip::CopyLookFrom( const TimelineClip& from )
+{
+	blend = from.blend;
+	for( int p = 0; p < (int)KeyProperty::Count; ++p )
+		keys[ p ] = from.keys[ p ];
+	paramKeys = from.paramKeys;
+}
+
+namespace
+{
+template< typename F >
+void ForEachKeyList( TimelineClip& c, F&& f )
+{
+	for( std::vector< Keyframe >& k : c.keys )
+		f( k );
+	for( ParamKeys& p : c.paramKeys )
+		f( p.keys );
+}
+
+void SortKeys( std::vector< Keyframe >& k )
+{
+	std::stable_sort( k.begin(), k.end(), []( const Keyframe& a, const Keyframe& b ) { return a.time < b.time; } );
+}
+}
+
+std::vector< double > TimelineClip::KeyTimes() const
+{
+	std::vector< double > times;
+	ForEachKeyList( const_cast< TimelineClip& >( *this ), [ & ]( std::vector< Keyframe >& k ) {
+		for( const Keyframe& key : k )
+			times.push_back( key.time );
+	} );
+	std::sort( times.begin(), times.end() );
+	std::vector< double > unique;
+	for( double t : times )
+		if( unique.empty() || t - unique.back() >= 1e-3 )
+			unique.push_back( t );
+	return unique;
+}
+
+void TimelineClip::MoveKeysAt( double from, double to )
+{
+	ForEachKeyList( *this, [ & ]( std::vector< Keyframe >& k ) {
+		// One keyframe a list at a time: one already at `to` is replaced.
+		int moving = -1;
+		for( int i = 0; i < (int)k.size(); ++i )
+			if( std::fabs( k[ i ].time - from ) < 1e-3 )
+				moving = i;
+		if( moving < 0 )
+			return;
+		Keyframe key = k[ moving ];
+		k.erase( k.begin() + moving );
+		k.erase( std::remove_if( k.begin(), k.end(), [ & ]( const Keyframe& other ) { return std::fabs( other.time - to ) < 1e-3; } ), k.end() );
+		key.time = to;
+		k.push_back( key );
+		SortKeys( k );
+	} );
+}
+
+void TimelineClip::RemoveKeysAt( double local )
+{
+	ForEachKeyList( *this, [ & ]( std::vector< Keyframe >& k ) {
+		k.erase( std::remove_if( k.begin(), k.end(), [ & ]( const Keyframe& key ) { return std::fabs( key.time - local ) < 1e-3; } ), k.end() );
+	} );
+	paramKeys.erase( std::remove_if( paramKeys.begin(), paramKeys.end(), []( const ParamKeys& p ) { return p.keys.empty(); } ), paramKeys.end() );
+}
+
+void TimelineClip::SetCurveAt( double local, KeyCurve curve )
+{
+	ForEachKeyList( *this, [ & ]( std::vector< Keyframe >& k ) {
+		for( Keyframe& key : k )
+			if( std::fabs( key.time - local ) < 1e-3 )
+				key.curve = curve;
+	} );
 }
 
 void TimelineClip::Apply( double t )
@@ -92,6 +213,22 @@ void TimelineClip::Apply( double t )
 	for( int p = 0; p < (int)KeyProperty::Count; ++p )
 		if( !keys[ p ].empty() )
 			Field( (KeyProperty)p ) = Evaluate( (KeyProperty)p, t - start );
+	for( const ParamKeys& p : paramKeys )
+	{
+		if( p.keys.empty() || p.slot < 0 || p.slot >= (int)clip.effects.size() )
+			continue;
+		if( p.param == kMixParam )
+		{
+			clip.effects[ p.slot ].mix = std::clamp( EvaluateKeys( p.keys, t - start, clip.effects[ p.slot ].mix ), 0.0f, 1.0f );
+			continue;
+		}
+		if( !clip.effects[ p.slot ].effect )
+			continue;
+		Effect& effect = *clip.effects[ p.slot ].effect;
+		int index      = effect.FindParam( p.param );
+		if( index >= 0 )
+			effect.SetValue( index, EvaluateKeys( p.keys, t - start, effect.Value( index ) ) );
+	}
 }
 
 double TimelineClip::MediaDuration() const
@@ -218,9 +355,7 @@ int Timeline::Place( int track, TimelineClip placed )
 			tail.clip   = CopyClip( c.clip );
 			tail.start  = e;
 			tail.length = c.End() - e;
-			tail.blend  = c.blend;
-			for( int p = 0; p < (int)KeyProperty::Count; ++p )
-				tail.keys[ p ] = c.keys[ p ];
+			tail.CopyLookFrom( c );
 			tail.ShiftKeys( e - c.start );
 			tail.clip.inPoint += ( e - c.start ) * std::max( 0.0f, c.clip.speed );
 			c.length = s - c.start;
@@ -264,9 +399,7 @@ bool Timeline::Split( int track, int index, double t )
 	tail.clip   = CopyClip( c.clip );
 	tail.start  = t;
 	tail.length = c.End() - t;
-	tail.blend  = c.blend;
-	for( int p = 0; p < (int)KeyProperty::Count; ++p )
-		tail.keys[ p ] = c.keys[ p ];
+	tail.CopyLookFrom( c );
 	tail.ShiftKeys( t - c.start );
 	tail.clip.inPoint += ( t - c.start ) * std::max( 0.0f, c.clip.speed );
 	c.length = t - c.start;

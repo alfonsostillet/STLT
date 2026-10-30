@@ -496,6 +496,49 @@ static void TestKeyframes()
 	CHECK( Near( clips[ 2 ].Evaluate( KeyProperty::Scale, 0 ), 1.6, 1e-5 ) );
 }
 
+// Keyframe curves, moving and removing keyframes at a moment, effect parameter keyframes; all saved.
+static void TestKeyCurves()
+{
+	CHECK( Near( CurveAt( KeyCurve::Linear, 0.25f ), 0.25 ) && Near( CurveAt( KeyCurve::EaseIn, 0.5f ), 0.125 ) );
+	CHECK( Near( CurveAt( KeyCurve::EaseOut, 0.5f ), 0.875 ) && Near( CurveAt( KeyCurve::EaseInOut, 0.5f ), 0.5 ) && Near( CurveAt( KeyCurve::Hold, 0.9f ), 0 ) );
+	CHECK( CurveAt( KeyCurve::EaseInOut, 0.25f ) < 0.25f && CurveAt( KeyCurve::EaseInOut, 0.75f ) > 0.75f );
+	TimelineClip c;
+	c.clip.path = "c.mov";
+	c.length    = 10;
+	c.SetKey( KeyProperty::Opacity, 0, 0.0f );
+	c.SetKey( KeyProperty::Opacity, 4, 1.0f );
+	c.SetKey( KeyProperty::Scale, 4, 2.0f );
+	c.SetCurveAt( 0, KeyCurve::Hold );
+	CHECK( Near( c.Evaluate( KeyProperty::Opacity, 3.9 ), 0 ) && Near( c.Evaluate( KeyProperty::Opacity, 4 ), 1 ) );
+	c.SetCurveAt( 0, KeyCurve::EaseIn );
+	CHECK( Near( c.Evaluate( KeyProperty::Opacity, 2 ), 0.125, 1e-5 ) );
+	ParamKeys* pk = c.FindParamKeys( 1, "amount", true );
+	SetKeyIn( pk->keys, 4, 0.3f );
+	SetKeyIn( pk->keys, 8, 0.9f );
+	CHECK( c.FindParamKeys( 1, "amount" ) && !c.FindParamKeys( 0, "amount" ) && Near( EvaluateKeys( pk->keys, 6, 0 ), 0.6, 1e-5 ) );
+	std::vector< double > times = c.KeyTimes();
+	CHECK( times.size() == 3 && Near( times[ 0 ], 0 ) && Near( times[ 1 ], 4 ) && Near( times[ 2 ], 8 ) );
+	// Every keyframe at 4 (opacity, scale, the parameter) moves to 5; then all at 5 go.
+	c.MoveKeysAt( 4, 5 );
+	CHECK( Near( c.keys[ (int)KeyProperty::Opacity ][ 1 ].time, 5 ) && Near( c.keys[ (int)KeyProperty::Scale ][ 0 ].time, 5 ) );
+	CHECK( Near( c.paramKeys[ 0 ].keys[ 0 ].time, 5 ) && c.KeyTimes().size() == 3 );
+	c.ShiftKeys( 1 );
+	CHECK( Near( c.paramKeys[ 0 ].keys[ 1 ].time, 7 ) );
+	Composition comp = Composition::MakeDefault();
+	comp.timeline.tracks.resize( 1 );
+	comp.timeline.Place( 0, std::move( c ) );
+	Composition loaded;
+	std::string error;
+	CHECK( LoadComposition( SaveComposition( comp ), loaded, error ) );
+	const TimelineClip& l = loaded.timeline.tracks[ 0 ].clips[ 0 ];
+	CHECK( l.keys[ (int)KeyProperty::Opacity ][ 0 ].curve == KeyCurve::EaseIn && l.paramKeys.size() == 1 && l.paramKeys[ 0 ].slot == 1 );
+	CHECK( l.paramKeys[ 0 ].param == "amount" && l.paramKeys[ 0 ].keys.size() == 2 && Near( l.paramKeys[ 0 ].keys[ 1 ].value, 0.9, 1e-6 ) );
+	TimelineClip r;
+	r.CopyLookFrom( l );
+	r.RemoveKeysAt( 4 );
+	CHECK( r.keys[ (int)KeyProperty::Scale ].empty() && r.paramKeys[ 0 ].keys.size() == 1 && r.keys[ (int)KeyProperty::Opacity ].size() == 1 );
+}
+
 int main()
 {
 	TestRange();
@@ -506,6 +549,7 @@ int main()
 	TestDecks();
 	TestTimeline();
 	TestKeyframes();
+	TestKeyCurves();
 	TestFrameClock();
 	TestEvenFrames();
 	if( failures )
