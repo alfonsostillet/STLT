@@ -269,8 +269,8 @@ static void DrawOutputModeItems( App& app )
 		for( const OutputWindow::Display& d : OutputWindow::Displays() )
 		{
 			std::string label = d.name + "  (" + std::to_string( d.width ) + "x" + std::to_string( d.height ) + ")";
-			if( ImGui::MenuItem( label.c_str(), nullptr, app.outputMode == OutputMode::Fullscreen && app.outputDisplay == d.monitorName ) )
-				app.SetOutputMode( OutputMode::Fullscreen, d.monitorName );
+			if( ImGui::MenuItem( label.c_str(), nullptr, app.outputMode == OutputMode::Fullscreen && OutputWindow::FindDisplay( app.outputDisplay ) == d.monitor ) )
+				app.SetOutputMode( OutputMode::Fullscreen, d.id );
 		}
 		ImGui::EndMenu();
 	}
@@ -362,6 +362,35 @@ void DrawMainMenu( App& app )
 				ImGui::SetWindowFocus( panel::Control );
 			}
 			ImGui::Separator();
+			// Presets: the maps by name; the Shortcuts panel names and deletes them.
+			if( ImGui::MenuItem( app.control.preset.empty() ? "Save Shortcuts..." : ( "Save Shortcuts (" + app.control.preset + ")" ).c_str(), nullptr, false,
+			                     true ) )
+			{
+				if( app.control.preset.empty() )
+				{
+					app.panels.control = true;
+					ImGui::SetWindowFocus( panel::Control );
+					app.SetStatus( "Name the preset in the Shortcuts panel, then Save" );
+				}
+				else
+					app.SaveShortcutPreset( app.control.preset );
+			}
+			if( ImGui::BeginMenu( "Load Shortcuts" ) )
+			{
+				std::vector< std::string > presets = app.ShortcutPresets();
+				for( const std::string& name : presets )
+					if( ImGui::MenuItem( name.c_str(), nullptr, name == app.control.preset ) )
+						app.LoadShortcutPreset( name );
+				if( presets.empty() )
+					ImGui::TextDisabled( "No presets yet" );
+				ImGui::EndMenu();
+			}
+			if( ImGui::MenuItem( "Import Shortcuts..." ) )
+				ShowFileDialog( FileDialog::OpenShortcuts, DocumentsDirectory(), [ &app ]( const std::vector< std::string >& paths ) { app.ImportShortcuts( paths[ 0 ] ); } );
+			if( ImGui::MenuItem( "Export Shortcuts..." ) )
+				ShowFileDialog( FileDialog::SaveShortcuts, DocumentsDirectory(), [ &app ]( const std::vector< std::string >& paths ) { app.ExportShortcuts( paths[ 0 ] ); },
+				                ( app.control.preset.empty() ? std::string( "STLT-VJ shortcuts" ) : app.control.preset ) + ".json" );
+			ImGui::Separator();
 			if( ImGui::MenuItem( "Clear All Keys", nullptr, false, !app.control.keys.empty() ) )
 			{
 				app.control.keys.clear();
@@ -394,6 +423,7 @@ void DrawMainMenu( App& app )
 		if( ImGui::BeginMenu( "View" ) )
 		{
 			PanelVisibility& p = app.panels;
+			ImGui::MenuItem( panel::Layers, nullptr, &p.layers );
 			ImGui::MenuItem( panel::Clips, nullptr, &p.clips );
 			ImGui::MenuItem( panel::CompositionMonitor, nullptr, &p.compositionMonitor );
 			ImGui::MenuItem( panel::PreviewMonitor, nullptr, &p.previewMonitor );
@@ -892,10 +922,13 @@ static void Crossfader( App& app, ImVec2 pos, ImVec2 size )
 		comp.crossfader = 1;
 }
 
-void DrawClipGrid( App& app )
+// The deck in two panels: Layers (the composition's row, each layer's header, the crossfader) and Clips (the deck
+// tabs, columns and cells). Same geometry in both, so a layer's header and its clips line up when the panels sit
+// side by side.
+static void DrawDeck( App& app, bool layersPart )
 {
 	Composition& comp = app.composition;
-	if( !ImGui::Begin( panel::Clips, &app.panels.clips ) )
+	if( !ImGui::Begin( layersPart ? panel::Layers : panel::Clips, layersPart ? &app.panels.layers : &app.panels.clips ) )
 	{
 		ImGui::End();
 		return;
@@ -910,7 +943,7 @@ void DrawClipGrid( App& app )
 	// group under them); the clip's picture and name; speed, loop, timing, direction and position; previous/next.
 	const float colGap = Ui( 4 ), wX = Ui( 40 ), wBS = Ui( 96 ), wFaders = Ui( 66 ), wThumb = Ui( 88 ), wTransport = Ui( 112 ), wArrows = Ui( 46 );
 	const float headerW = wX + wBS + wFaders + wThumb + wTransport + wArrows + colGap * 5;
-	const float leftW   = headerW + Ui( 10 );
+	const float leftW   = layersPart ? headerW + Ui( 10 ) : 0.0f; // the headers' width (the cells start at the left)
 	const float nameH   = Ui( 21 );
 	const float rowH    = Ui( 19 ); // compact controls
 	const float headerH = nameH + Ui( 3 ) + rowH + Ui( 8 );
@@ -925,6 +958,17 @@ void DrawClipGrid( App& app )
 		std::string generatorId;
 	} pendingLoad;
 
+	// The Layers panel's bar, as high as the deck tabs beside it.
+	if( layersPart )
+	{
+		ImGui::PushStyleVar( ImGuiStyleVar_FramePadding, ImVec2( Ui( 10 ), Ui( 3 ) ) );
+		if( ImGui::Button( "+ Layer" ) )
+			comp.AddLayer();
+		if( ImGui::IsItemHovered() && !app.learning )
+			ImGui::SetTooltip( "New layer, on top" );
+		ImGui::PopStyleVar();
+	}
+	else
 	// Decks, as in Resolume: a tab each (a dot when a clip of it plays while another deck is shown), + adds one.
 	// Double-click or right-click a tab to rename or remove it.
 	{
@@ -1023,7 +1067,9 @@ void DrawClipGrid( App& app )
 	if( !movingPicked )
 		moveTarget = { -1, -1 };
 	CellRef nextMoveTarget{ -1, -1 };
-	if( app.moveMode )
+	if( app.moveMode && layersPart )
+		ImGui::Dummy( ImVec2( 1, ImGui::GetFrameHeightWithSpacing() + Ui( 6 ) ) ); // as high as the banner beside it
+	else if( app.moveMode )
 	{
 		ImGui::PushStyleColor( ImGuiCol_ChildBg, ImVec4( 0.45f, 0.22f, 0.55f, 0.55f ) );
 		ImGui::BeginChild( "##moveBanner", ImVec2( 0, ImGui::GetFrameHeightWithSpacing() + Ui( 6 ) ), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar );
@@ -1041,7 +1087,19 @@ void DrawClipGrid( App& app )
 			app.SetMoveMode( false );
 	}
 
-	ImGui::BeginChild( "##grid", ImVec2( 0, 0 ), ImGuiChildFlags_None, ImGuiWindowFlags_HorizontalScrollbar );
+	ImGui::BeginChild( layersPart ? "##layerHeaders" : "##grid", ImVec2( 0, 0 ), ImGuiChildFlags_None,
+	                   layersPart ? ImGuiWindowFlags_NoScrollbar : ImGuiWindowFlags_HorizontalScrollbar );
+	{
+		// The Layers and Clips panels scroll up and down together, so each layer's header stays beside its clips.
+		static float shared = 0, own[ 2 ] = { 0, 0 };
+		float& mine           = own[ layersPart ? 1 : 0 ];
+		float now             = ImGui::GetScrollY();
+		if( now != mine )
+			shared = now;
+		else if( shared != now )
+			ImGui::SetScrollY( shared );
+		mine = now != mine ? now : shared;
+	}
 	draw         = ImGui::GetWindowDrawList();
 	ImVec2 origin = ImGui::GetCursorScreenPos();
 	// The headers stay at the left of the view while the deck scrolls sideways: column headers and cells are cut
@@ -1058,6 +1116,7 @@ void DrawClipGrid( App& app )
 
 	// The composition: its name, then clear, black, master, speed, the transport of every clip and the
 	// previous/next column.
+	if( layersPart )
 	{
 		float y0 = origin.y, y1 = origin.y + nameH + Ui( 3 );
 		ImGui::SetCursorScreenPos( ImVec2( xX, y0 ) );
@@ -1105,50 +1164,53 @@ void DrawClipGrid( App& app )
 		MapTarget( app, "/composition/connectnextcolumn" );
 	}
 
-	// Column headers, beside the composition's controls.
-	const float columnsY = origin.y + nameH + Ui( 3 );
-	ImGui::PushClipRect( ImVec2( cellsLeft, viewMin.y ), viewMax, true );
-	for( int c = 0; c < comp.ColumnCount(); ++c )
+	if( !layersPart )
 	{
-		ImVec2 pos( origin.x + leftW + c * ( cellW + gap ), columnsY );
-		ImGui::SetCursorScreenPos( pos );
-		ImGui::PushID( c );
-		float h      = rowH;
-		bool clicked = ImGui::InvisibleButton( "##column", ImVec2( cellW, h ) );
-		bool hovered = ImGui::IsItemHovered();
-		bool active  = comp.activeColumn == c;
-		ImU32 bg     = active ? theme::Accent : hovered ? theme::RaisedHover : theme::Raised;
-		ImVec2 max( pos.x + cellW, pos.y + h );
-		draw->AddRectFilled( pos, max, bg, h / 2 );
-		if( app.IsQueued( -1, c ) )
-			draw->AddRect( pos, max, IM_COL32( 255, 196, 80, (int)( 110 + 145 * ( 0.5f + 0.5f * std::sin( (float)ImGui::GetTime() * 12 ) ) ) ), h / 2, 0, Ui( 2 ) );
-		ImU32 fg = active ? theme::OnAccent : hovered ? theme::Text : theme::TextDim;
-		float icon = h * 0.62f;
-		DrawIcon( draw, Icon::Play, ImVec2( pos.x + Ui( 8 ), pos.y + ( h - icon ) / 2 ), ImVec2( pos.x + Ui( 8 ) + icon, pos.y + ( h + icon ) / 2 ), fg );
-		draw->PushClipRect( ImVec2( pos.x, pos.y ), ImVec2( max.x - Ui( 8 ), max.y ), true );
-		ImVec2 textSize = ImGui::CalcTextSize( comp.columns[ c ].c_str() );
-		draw->AddText( ImVec2( pos.x + Ui( 12 ) + icon, pos.y + ( h - textSize.y ) / 2 ), fg, comp.columns[ c ].c_str() );
-		draw->PopClipRect();
-		if( clicked )
-			app.LaunchColumn( c );
-		MapTarget( app, "/composition/columns/" + std::to_string( c + 1 ) + "/connect" );
-		if( ImGui::BeginPopupContextItem( "##columnMenu" ) )
+		// Column headers, beside the composition's controls.
+		const float columnsY = origin.y + nameH + Ui( 3 );
+		ImGui::PushClipRect( ImVec2( cellsLeft, viewMin.y ), viewMax, true );
+		for( int c = 0; c < comp.ColumnCount(); ++c )
 		{
-			ImGui::SetNextItemWidth( Ui( 160 ) );
-			ImGui::InputText( "Name", &comp.columns[ c ] );
-			ImGui::EndPopup();
+			ImVec2 pos( origin.x + leftW + c * ( cellW + gap ), columnsY );
+			ImGui::SetCursorScreenPos( pos );
+			ImGui::PushID( c );
+			float h      = rowH;
+			bool clicked = ImGui::InvisibleButton( "##column", ImVec2( cellW, h ) );
+			bool hovered = ImGui::IsItemHovered();
+			bool active  = comp.activeColumn == c;
+			ImU32 bg     = active ? theme::Accent : hovered ? theme::RaisedHover : theme::Raised;
+			ImVec2 max( pos.x + cellW, pos.y + h );
+			draw->AddRectFilled( pos, max, bg, h / 2 );
+			if( app.IsQueued( -1, c ) )
+				draw->AddRect( pos, max, IM_COL32( 255, 196, 80, (int)( 110 + 145 * ( 0.5f + 0.5f * std::sin( (float)ImGui::GetTime() * 12 ) ) ) ), h / 2, 0, Ui( 2 ) );
+			ImU32 fg = active ? theme::OnAccent : hovered ? theme::Text : theme::TextDim;
+			float icon = h * 0.62f;
+			DrawIcon( draw, Icon::Play, ImVec2( pos.x + Ui( 8 ), pos.y + ( h - icon ) / 2 ), ImVec2( pos.x + Ui( 8 ) + icon, pos.y + ( h + icon ) / 2 ), fg );
+			draw->PushClipRect( ImVec2( pos.x, pos.y ), ImVec2( max.x - Ui( 8 ), max.y ), true );
+			ImVec2 textSize = ImGui::CalcTextSize( comp.columns[ c ].c_str() );
+			draw->AddText( ImVec2( pos.x + Ui( 12 ) + icon, pos.y + ( h - textSize.y ) / 2 ), fg, comp.columns[ c ].c_str() );
+			draw->PopClipRect();
+			if( clicked )
+				app.LaunchColumn( c );
+			MapTarget( app, "/composition/columns/" + std::to_string( c + 1 ) + "/connect" );
+			if( ImGui::BeginPopupContextItem( "##columnMenu" ) )
+			{
+				ImGui::SetNextItemWidth( Ui( 160 ) );
+				ImGui::InputText( "Name", &comp.columns[ c ] );
+				ImGui::EndPopup();
+			}
+			ImGui::PopID();
 		}
-		ImGui::PopID();
+		{
+			ImVec2 pos( origin.x + leftW + comp.ColumnCount() * ( cellW + gap ), columnsY );
+			ImGui::SetCursorScreenPos( pos );
+			if( ImGui::Button( "+##addColumn", ImVec2( rowH, rowH ) ) )
+				comp.AddColumn();
+			if( ImGui::IsItemHovered() )
+				ImGui::SetTooltip( "New column" );
+		}
+		ImGui::PopClipRect();
 	}
-	{
-		ImVec2 pos( origin.x + leftW + comp.ColumnCount() * ( cellW + gap ), columnsY );
-		ImGui::SetCursorScreenPos( pos );
-		if( ImGui::Button( "+##addColumn", ImVec2( rowH, rowH ) ) )
-			comp.AddColumn();
-		if( ImGui::IsItemHovered() )
-			ImGui::SetTooltip( "New column" );
-	}
-	ImGui::PopClipRect();
 
 	// Layers, top layer first.
 	int layerCount = (int)comp.layers.size();
@@ -1167,446 +1229,471 @@ void DrawClipGrid( App& app )
 			comp.selectedLayer = l;
 			ImGui::SetWindowFocus( panel::Layer );
 		};
-		// The whole header, under its controls: a click on a free part of it selects the layer.
-		ImGui::SetCursorScreenPos( ImVec2( xX, y ) );
-		ImGui::SetNextItemAllowOverlap();
-		if( ImGui::InvisibleButton( "##header", ImVec2( headerW, cellH ) ) )
-			selectLayer();
-
-		// Clear; black (bypass) and solo with the blend mode under them; the layer's name.
-		if( BoxButton( "##clear", ImVec2( xX, y ), ImVec2( wX, upH ), "", false, theme::Accent, tip( "Clear the layer" ), &kCloseIcon ) )
-			app.ClearLayer( l );
-		MapTarget( app, layerAddress + "/clear" );
-		float bsW = ( wBS - colGap ) / 2, bsH = upH - rowH - Ui( 3 );
-		if( BoxButton( "##bypass", ImVec2( xBS, y ), ImVec2( bsW, bsH ), "B", layer.bypass, IM_COL32( 230, 170, 70, 255 ), tip( "Black: the layer off" ) ) )
-			layer.bypass = !layer.bypass;
-		MapTarget( app, layerAddress + "/bypassed" );
-		if( BoxButton( "##solo", ImVec2( xBS + bsW + colGap, y ), ImVec2( bsW, bsH ), "S", layer.solo, theme::Solo, tip( "Solo: only this layer" ) ) )
-			layer.solo = !layer.solo;
-		MapTarget( app, layerAddress + "/solo" );
-		ImGui::SetCursorScreenPos( ImVec2( xBS, y + upH - rowH ) );
-		ImGui::SetNextItemWidth( wBS );
-		if( ImGui::BeginCombo( "##blend", BlendModeName( layer.blend ), ImGuiComboFlags_HeightLarge ) )
+		if( layersPart )
 		{
-			for( int b = 0; b < (int)BlendMode::Count; ++b )
-				if( ImGui::Selectable( BlendModeName( (BlendMode)b ), (int)layer.blend == b ) )
-					layer.blend = (BlendMode)b;
-			ImGui::EndCombo();
-		}
-		if( ImGui::IsItemHovered() && !learning )
-			ImGui::SetTooltip( "Blend mode: how this layer mixes with the layers below it" );
-		ImGui::SetCursorScreenPos( ImVec2( xX, yName ) );
-		if( ImGui::InvisibleButton( "##name", ImVec2( wX + colGap + wBS, nameH ) ) )
-			selectLayer();
-		bool nameHovered = ImGui::IsItemHovered();
-		if( AcceptEffectDrop( app, layer.effects ) )
-			comp.selectedLayer = l;
-		if( nameHovered && !learning && ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) )
-			ImGui::SetTooltip( "Click: select the layer (its settings and effects in the Layer panel)%s",
-			                   comp.target == ClipTarget::SelectedLayer ? "\nClips launched from any row play on the selected layer" : "" );
-		draw->AddRectFilled( ImVec2( xX, yName ), ImVec2( xBS + wBS, yName + nameH ), selectedLayer ? theme::Accent : nameHovered ? theme::RaisedHover : theme::Raised, Ui( 4 ) );
-		ImGui::PushFont( Fonts().bold );
-		draw->AddText( ImVec2( xX + Ui( 6 ), yName + ( nameH - ImGui::GetTextLineHeight() ) / 2 ), selectedLayer ? theme::OnAccent : theme::Text, layer.name.c_str() );
-		ImGui::PopFont();
+			// The whole header, under its controls: a click on a free part of it selects the layer.
+			ImGui::SetCursorScreenPos( ImVec2( xX, y ) );
+			ImGui::SetNextItemAllowOverlap();
+			if( ImGui::InvisibleButton( "##header", ImVec2( headerW, cellH ) ) )
+				selectLayer();
 
-		// Faders: master (video and sound), audio, video; the crossfader group under them.
-		float fw = ( wFaders - 2 * Ui( 2 ) ) / 3;
-		VerticalFader( "##master", ImVec2( xF, y ), ImVec2( fw, upH ), &layer.master, "M", IM_COL32( 96, 102, 114, 255 ), "Master (video and sound)", learning );
-		MapTarget( app, layerAddress + "/master" );
-		VerticalFader( "##audio", ImVec2( xF + fw + Ui( 2 ), y ), ImVec2( fw, upH ), &layer.volume, "A", IM_COL32( 168, 74, 116, 255 ), "Audio", learning );
-		MapTarget( app, layerAddress + "/audio/volume" );
-		float shownOpacity = layer.ShownOpacity( comp.beat ); // moving with the beat: shown, not edited
-		VerticalFader( "##video", ImVec2( xF + 2 * ( fw + Ui( 2 ) ), y ), ImVec2( fw, upH ), layer.opacityAnimation.mode == AnimMode::Off ? &layer.opacity : &shownOpacity, "V",
-		               IM_COL32( 44, 138, 112, 255 ), "Video", learning );
-		MapTarget( app, layerAddress + "/video/opacity" );
-		float groupW = ( wFaders - colGap ) / 2;
-		if( BoxButton( "##groupA", ImVec2( xF, yName ), ImVec2( groupW, nameH ), "A", layer.crossfader == 1, IM_COL32( 214, 120, 160, 255 ), tip( "Crossfader group A" ) ) )
-			layer.crossfader = layer.crossfader == 1 ? 0 : 1;
-		if( BoxButton( "##groupB", ImVec2( xF + groupW + colGap, yName ), ImVec2( groupW, nameH ), "B", layer.crossfader == 2, IM_COL32( 214, 120, 160, 255 ), tip( "Crossfader group B" ) ) )
-			layer.crossfader = layer.crossfader == 2 ? 0 : 2;
-
-		// The playing clip's picture (click: select it) and name.
-		{
-			ImVec2 p0( xT, y ), p1( xT + wThumb, y + upH );
-			ImGui::SetCursorScreenPos( p0 );
-			if( ImGui::InvisibleButton( "##picture", ImVec2( wThumb, upH ) ) && playing )
+			// Clear; black (bypass) and solo with the blend mode under them; the layer's name.
+			if( BoxButton( "##clear", ImVec2( xX, y ), ImVec2( wX, upH ), "", false, theme::Accent, tip( "Clear the layer" ), &kCloseIcon ) )
+				app.ClearLayer( l );
+			MapTarget( app, layerAddress + "/clear" );
+			float bsW = ( wBS - colGap ) / 2, bsH = upH - rowH - Ui( 3 );
+			if( BoxButton( "##bypass", ImVec2( xBS, y ), ImVec2( bsW, bsH ), "B", layer.bypass, IM_COL32( 230, 170, 70, 255 ), tip( "Black: the layer off" ) ) )
+				layer.bypass = !layer.bypass;
+			MapTarget( app, layerAddress + "/bypassed" );
+			if( BoxButton( "##solo", ImVec2( xBS + bsW + colGap, y ), ImVec2( bsW, bsH ), "S", layer.solo, theme::Solo, tip( "Solo: only this layer" ) ) )
+				layer.solo = !layer.solo;
+			MapTarget( app, layerAddress + "/solo" );
+			ImGui::SetCursorScreenPos( ImVec2( xBS, y + upH - rowH ) );
+			ImGui::SetNextItemWidth( wBS );
+			if( ImGui::BeginCombo( "##blend", BlendModeName( layer.blend ), ImGuiComboFlags_HeightLarge ) )
 			{
-				app.ShowDeck( layer.activeDeck ); // its clip may be in another deck
-				app.Select( layer.activeRow, layer.active );
-			}
-			draw->AddRectFilled( p0, p1, IM_COL32( 12, 13, 16, 255 ), Ui( 4 ) );
-			GLuint picture = !playing ? 0 : playing->player ? playing->player->Thumbnail().Texture() : playing->generatorThumbnail ? playing->generatorThumbnail->Texture() : 0;
-			if( picture )
-			{
-				ImVec2 offset;
-				ImVec2 size = FitSize( ImVec2( wThumb, upH ), 16.0f / 9.0f, &offset );
-				draw->AddImageRounded( TextureId( picture ), ImVec2( p0.x + offset.x, p0.y + offset.y ), ImVec2( p0.x + offset.x + size.x, p0.y + offset.y + size.y ), ImVec2( 0, 1 ),
-				                       ImVec2( 1, 0 ), IM_COL32_WHITE, Ui( 3 ) );
-			}
-			draw->AddRectFilled( ImVec2( xT, yName ), ImVec2( xT + wThumb, yName + nameH ), selectedLayer && playing ? theme::Accent : theme::Raised, Ui( 4 ) );
-			if( playing )
-			{
-				draw->PushClipRect( ImVec2( xT, yName ), ImVec2( xT + wThumb - Ui( 4 ), yName + nameH ), true );
-				draw->AddText( ImVec2( xT + Ui( 6 ), yName + ( nameH - ImGui::GetTextLineHeight() ) / 2 ), selectedLayer ? theme::OnAccent : theme::Text, playing->name.c_str() );
-				draw->PopClipRect();
-			}
-		}
-
-		// The layer's speed; the playing clip's loop mode, timing, direction and position.
-		{
-			float rowGap = Ui( 3 );
-			BoxButton( "##speedLabel", ImVec2( xTr, y ), ImVec2( rowH, rowH ), "S", false, theme::Accent, tip( "Layer speed" ) );
-			ImGui::SetCursorScreenPos( ImVec2( xTr + rowH + Ui( 2 ), y ) );
-			ImGui::SetNextItemWidth( wTransport - rowH - Ui( 2 ) );
-			FilledSlider( "##speed", &layer.speed, 0.0f, 4.0f, "%.2fx" );
-			ResetValue( &layer.speed, 1.0f );
-			MapTarget( app, layerAddress + "/speed" );
-			if( ImGui::IsItemHovered() && !learning )
-				ImGui::SetTooltip( "Layer speed: times the clip's own (right-click: 1x)" );
-
-			ImGui::BeginDisabled( !playing || !playing->Loaded() );
-			float half = ( wTransport - Ui( 2 ) ) / 2, y2 = y + rowH + rowGap;
-			static const char* loopShort[] = { "Loop", "Bounce", "Hold", "Clear" };
-			ImGui::SetCursorScreenPos( ImVec2( xTr, y2 ) );
-			ImGui::SetNextItemWidth( half );
-			if( ImGui::BeginCombo( "##loop", playing ? loopShort[ (int)playing->playMode ] : "Loop", ImGuiComboFlags_NoArrowButton ) )
-			{
-				for( int m = 0; m < (int)PlayMode::Count; ++m )
-					if( ImGui::Selectable( PlayModeName( (PlayMode)m ), playing && (int)playing->playMode == m ) && playing )
-						playing->playMode = (PlayMode)m;
+				for( int b = 0; b < (int)BlendMode::Count; ++b )
+					if( ImGui::Selectable( BlendModeName( (BlendMode)b ), (int)layer.blend == b ) )
+						layer.blend = (BlendMode)b;
 				ImGui::EndCombo();
 			}
 			if( ImGui::IsItemHovered() && !learning )
-				ImGui::SetTooltip( "Loop, Bounce, Play Once & Hold, Play Once & Clear" );
-			ImGui::SetCursorScreenPos( ImVec2( xTr + half + Ui( 2 ), y2 ) );
-			ImGui::SetNextItemWidth( half );
-			bool sync = playing && playing->syncBeats > 0;
-			if( ImGui::BeginCombo( "##timing", sync ? "BPM" : "Time", ImGuiComboFlags_NoArrowButton ) )
-			{
-				if( ImGui::Selectable( "Timeline", !sync ) && playing )
-					SetBpmSync( *playing, false, comp.bpm );
-				if( ImGui::Selectable( "BPM Sync", sync ) && playing )
-					SetBpmSync( *playing, true, comp.bpm );
-				ImGui::EndCombo();
-			}
-			if( ImGui::IsItemHovered() && !learning )
-				ImGui::SetTooltip( "Timeline: the clip at its speed. BPM Sync: it lasts a number of beats (set them in the Clip panel)." );
-			float y3 = y2 + rowH + rowGap, third = ( wTransport - 2 * Ui( 2 ) ) / 3, h3 = upH - ( y3 - y );
-			int direction = playing ? playing->direction : 1;
-			if( IconBox( "##reverse", ImVec2( xTr, y3 ), ImVec2( third, h3 ), Icon::Reverse, playing && direction < 0 ) && playing )
-				playing->direction = -1;
-			if( IconBox( "##pause", ImVec2( xTr + third + Ui( 2 ), y3 ), ImVec2( third, h3 ), Icon::Pause, playing && direction == 0 ) && playing )
-				playing->direction = 0;
-			if( IconBox( "##forward", ImVec2( xTr + 2 * ( third + Ui( 2 ) ), y3 ), ImVec2( third, h3 ), Icon::Play, playing && direction > 0 ) && playing )
-			{
-				playing->direction = 1;
-				playing->finished  = false;
-			}
-			ImGui::EndDisabled();
-			PositionBar( "##position", ImVec2( xTr, yName ), ImVec2( wTransport, nameH ), playing );
-		}
+				ImGui::SetTooltip( "Blend mode: how this layer mixes with the layers below it" );
+			ImGui::SetCursorScreenPos( ImVec2( xX, yName ) );
+			if( ImGui::InvisibleButton( "##name", ImVec2( wX + colGap + wBS, nameH ) ) )
+				selectLayer();
+			bool nameHovered = ImGui::IsItemHovered();
+			if( AcceptEffectDrop( app, layer.effects ) )
+				comp.selectedLayer = l;
+			if( nameHovered && !learning && ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) )
+				ImGui::SetTooltip( "Click: select the layer (its settings and effects in the Layer panel)%s",
+				                   comp.target == ClipTarget::SelectedLayer ? "\nClips launched from any row play on the selected layer" : "" );
+			draw->AddRectFilled( ImVec2( xX, yName ), ImVec2( xBS + wBS, yName + nameH ), selectedLayer ? theme::Accent : nameHovered ? theme::RaisedHover : theme::Raised, Ui( 4 ) );
+			ImGui::PushFont( Fonts().bold );
+			draw->AddText( ImVec2( xX + Ui( 6 ), yName + ( nameH - ImGui::GetTextLineHeight() ) / 2 ), selectedLayer ? theme::OnAccent : theme::Text, layer.name.c_str() );
+			ImGui::PopFont();
 
-		// Previous and next clip on this layer.
-		float arrowW = ( wArrows - Ui( 2 ) ) / 2;
-		if( IconBox( "##prevClip", ImVec2( xAr, yName ), ImVec2( arrowW, nameH ), Icon::Previous, false, tip( "Previous clip on this layer" ) ) )
-			app.LaunchNextClip( l, -1 );
-		MapTarget( app, layerAddress + "/connectprevclip" );
-		if( IconBox( "##nextClip", ImVec2( xAr + arrowW + Ui( 2 ), yName ), ImVec2( arrowW, nameH ), Icon::Next, false, tip( "Next clip on this layer" ) ) )
-			app.LaunchNextClip( l, 1 );
-		MapTarget( app, layerAddress + "/connectnextclip" );
+			// Faders: master (video and sound), audio, video; the crossfader group under them.
+			float fw = ( wFaders - 2 * Ui( 2 ) ) / 3;
+			VerticalFader( "##master", ImVec2( xF, y ), ImVec2( fw, upH ), &layer.master, "M", IM_COL32( 96, 102, 114, 255 ), "Master (video and sound)", learning );
+			MapTarget( app, layerAddress + "/master" );
+			VerticalFader( "##audio", ImVec2( xF + fw + Ui( 2 ), y ), ImVec2( fw, upH ), &layer.volume, "A", IM_COL32( 168, 74, 116, 255 ), "Audio", learning );
+			MapTarget( app, layerAddress + "/audio/volume" );
+			float shownOpacity = layer.ShownOpacity( comp.beat ); // moving with the beat: shown, not edited
+			VerticalFader( "##video", ImVec2( xF + 2 * ( fw + Ui( 2 ) ), y ), ImVec2( fw, upH ), layer.opacityAnimation.mode == AnimMode::Off ? &layer.opacity : &shownOpacity, "V",
+			               IM_COL32( 44, 138, 112, 255 ), "Video", learning );
+			MapTarget( app, layerAddress + "/video/opacity" );
+			float groupW = ( wFaders - colGap ) / 2;
+			if( BoxButton( "##groupA", ImVec2( xF, yName ), ImVec2( groupW, nameH ), "A", layer.crossfader == 1, IM_COL32( 214, 120, 160, 255 ), tip( "Crossfader group A" ) ) )
+				layer.crossfader = layer.crossfader == 1 ? 0 : 1;
+			if( BoxButton( "##groupB", ImVec2( xF + groupW + colGap, yName ), ImVec2( groupW, nameH ), "B", layer.crossfader == 2, IM_COL32( 214, 120, 160, 255 ), tip( "Crossfader group B" ) ) )
+				layer.crossfader = layer.crossfader == 2 ? 0 : 2;
 
-		if( selectedLayer )
-			draw->AddRect( ImVec2( xX - Ui( 2 ), y - Ui( 2 ) ), ImVec2( xX + headerW + Ui( 2 ), y + cellH + Ui( 2 ) ), theme::AccentDim, round, 0, Ui( 1.5f ) );
-
-		// Cells.
-		ImGui::PushClipRect( ImVec2( cellsLeft, viewMin.y ), viewMax, true );
-		for( int c = 0; c < comp.ColumnCount(); ++c )
-		{
-			Clip& clip = layer.clips[ c ];
-			ImVec2 min( origin.x + leftW + c * ( cellW + gap ), y );
-			ImVec2 max( min.x + cellW, min.y + cellH );
-			ImGui::SetCursorScreenPos( min );
-			ImGui::PushID( c );
-			bool clicked = ImGui::InvisibleButton( "##cell", ImVec2( cellW, cellH ) );
-			bool hovered = ImGui::IsItemHovered();
-			ImVec2 cellMin = ImGui::GetItemRectMin(), cellMax = ImGui::GetItemRectMax();
-			int showingOn = comp.LayerShowing( l, c ); // the layer playing it: its own, or another one (layer based)
-			bool playing  = showingOn >= 0;
-			bool selected = comp.selectedRow == l && comp.selectedColumn == c;
-			// The picture launches the clip; the name strip below only selects it (Clip panel and Preview Monitor).
-			bool overName = ImGui::GetIO().MousePos.y >= min.y + thumbH;
-			draw->AddRectFilled( min, max, hovered ? theme::RaisedHover : theme::CellEmpty, round );
-			if( clip.Empty() && hovered )
+			// The playing clip's picture (click: select it) and name.
 			{
-				// An empty cell under the mouse: the place for a clip.
-				ImVec2 c0( ( min.x + max.x ) / 2, ( min.y + max.y ) / 2 );
-				float r = Ui( 7 );
-				draw->AddLine( ImVec2( c0.x - r, c0.y ), ImVec2( c0.x + r, c0.y ), theme::TextDim, Ui( 1.5f ) );
-				draw->AddLine( ImVec2( c0.x, c0.y - r ), ImVec2( c0.x, c0.y + r ), theme::TextDim, Ui( 1.5f ) );
-			}
-			if( !clip.Empty() )
-			{
-				// The picture on top, the name on a strip below.
-				ImVec2 thumbMax( max.x, min.y + thumbH );
-				GLuint thumbnail = clip.player ? clip.player->Thumbnail().Texture() : clip.generatorThumbnail ? clip.generatorThumbnail->Texture() : 0;
-				if( thumbnail )
+				ImVec2 p0( xT, y ), p1( xT + wThumb, y + upH );
+				ImGui::SetCursorScreenPos( p0 );
+				if( ImGui::InvisibleButton( "##picture", ImVec2( wThumb, upH ) ) && playing )
 				{
-					if( clip.generator )
-						draw->AddRectFilled( min, thumbMax, IM_COL32( 0, 0, 0, 255 ), round, ImDrawFlags_RoundCornersTop );
-					draw->AddImageRounded( TextureId( thumbnail ), min, thumbMax, ImVec2( 0, 1 ), ImVec2( 1, 0 ), IM_COL32( 255, 255, 255, hovered || playing ? 255 : 225 ),
-					                       round, ImDrawFlags_RoundCornersTop );
+					app.ShowDeck( layer.activeDeck ); // its clip may be in another deck
+					app.Select( layer.activeRow, layer.active );
 				}
-				else
-					draw->AddRectFilled( min, thumbMax, IM_COL32( 70, 30, 34, 255 ), round, ImDrawFlags_RoundCornersTop );
-				ImU32 strip = playing ? IM_COL32( 22, 52, 46, 255 ) : hovered && overName ? theme::RaisedHover : selected ? IM_COL32( 50, 56, 66, 255 ) : theme::Raised;
-				draw->AddRectFilled( ImVec2( min.x, thumbMax.y ), max, strip, round, ImDrawFlags_RoundCornersBottom );
-				if( !clip.effects.empty() )
+				draw->AddRectFilled( p0, p1, IM_COL32( 12, 13, 16, 255 ), Ui( 4 ) );
+				GLuint picture = !playing ? 0 : playing->player ? playing->player->Thumbnail().Texture() : playing->generatorThumbnail ? playing->generatorThumbnail->Texture() : 0;
+				if( picture )
 				{
-					// An FX badge in the corner.
-					ImGui::PushFont( Fonts().bold );
-					ImVec2 t = ImGui::CalcTextSize( "FX" );
-					ImGui::PopFont();
-					float bw = t.x * 0.8f + Ui( 8 ), bh = t.y * 0.8f + Ui( 2 );
-					ImVec2 b0( thumbMax.x - bw - Ui( 4 ), min.y + Ui( 4 ) );
-					draw->AddRectFilled( b0, ImVec2( b0.x + bw, b0.y + bh ), IM_COL32( 0, 0, 0, 170 ), bh / 2 );
-					draw->AddText( Fonts().bold, ImGui::GetFontSize() * 0.8f, ImVec2( b0.x + Ui( 4 ), b0.y + Ui( 1 ) ), theme::Accent, "FX" );
+					ImVec2 offset;
+					ImVec2 size = FitSize( ImVec2( wThumb, upH ), 16.0f / 9.0f, &offset );
+					draw->AddImageRounded( TextureId( picture ), ImVec2( p0.x + offset.x, p0.y + offset.y ), ImVec2( p0.x + offset.x + size.x, p0.y + offset.y + size.y ), ImVec2( 0, 1 ),
+					                       ImVec2( 1, 0 ), IM_COL32_WHITE, Ui( 3 ) );
 				}
-				if( clip.trigger != TriggerStyle::Normal || clip.ignoreColumn )
-				{
-					// How it triggers, in the picture's bottom left corner.
-					std::string badge = clip.trigger == TriggerStyle::Toggle ? "TOGGLE" : clip.trigger == TriggerStyle::Piano ? "PIANO" : "";
-					if( clip.ignoreColumn )
-						badge += badge.empty() ? "NO COL" : " - NO COL";
-					float size = ImGui::GetFontSize() * 0.7f;
-					ImVec2 t   = Fonts().bold->CalcTextSizeA( size, FLT_MAX, 0, badge.c_str() );
-					ImVec2 b0( min.x + Ui( 4 ), thumbMax.y - t.y - Ui( 8 ) );
-					draw->AddRectFilled( b0, ImVec2( b0.x + t.x + Ui( 8 ), b0.y + t.y + Ui( 3 ) ), IM_COL32( 0, 0, 0, 170 ), Ui( 3 ) );
-					draw->AddText( Fonts().bold, size, ImVec2( b0.x + Ui( 4 ), b0.y + Ui( 1.5f ) ), IM_COL32( 255, 205, 110, 255 ), badge.c_str() );
-				}
-				ImU32 labelColour = !clip.Playable() ? theme::Error : playing ? theme::Accent : theme::Text;
-				draw->PushClipRect( ImVec2( min.x, thumbMax.y ), ImVec2( max.x - Ui( 6 ), max.y ), true );
-				draw->AddText( ImVec2( min.x + Ui( 7 ), thumbMax.y + ( labelH - ImGui::GetTextLineHeight() ) / 2 ), labelColour, clip.name.c_str() );
-				draw->PopClipRect();
+				draw->AddRectFilled( ImVec2( xT, yName ), ImVec2( xT + wThumb, yName + nameH ), selectedLayer && playing ? theme::Accent : theme::Raised, Ui( 4 ) );
 				if( playing )
 				{
-					// Progress along the bottom of the picture.
-					float progress = clip.Duration() > 0 ? (float)( clip.time / clip.Duration() ) : 0;
-					draw->AddRectFilled( ImVec2( min.x, thumbMax.y - Ui( 3 ) ), ImVec2( max.x, thumbMax.y ), IM_COL32( 0, 0, 0, 140 ) );
-					draw->AddRectFilled( ImVec2( min.x, thumbMax.y - Ui( 3 ) ), ImVec2( min.x + cellW * progress, thumbMax.y ), theme::Accent );
+					draw->PushClipRect( ImVec2( xT, yName ), ImVec2( xT + wThumb - Ui( 4 ), yName + nameH ), true );
+					draw->AddText( ImVec2( xT + Ui( 6 ), yName + ( nameH - ImGui::GetTextLineHeight() ) / 2 ), selectedLayer ? theme::OnAccent : theme::Text, playing->name.c_str() );
+					draw->PopClipRect();
 				}
-				if( playing && showingOn != l )
-				{
-					// Launched onto another layer (layer based): which one.
-					const std::string& onLayer = comp.layers[ showingOn ].name;
-					ImVec2 t                   = ImGui::CalcTextSize( onLayer.c_str() );
-					ImVec2 b0( min.x + Ui( 4 ), min.y + Ui( 4 ) );
-					draw->AddRectFilled( b0, ImVec2( b0.x + t.x * 0.8f + Ui( 10 ), b0.y + t.y * 0.8f + Ui( 4 ) ), theme::Accent, Ui( 4 ) );
-					draw->AddText( Fonts().bold, ImGui::GetFontSize() * 0.8f, ImVec2( b0.x + Ui( 5 ), b0.y + Ui( 2 ) ), theme::OnAccent, onLayer.c_str() );
-				}
-				if( hovered && !clip.Playable() && clip.player )
-					ImGui::SetTooltip( "%s\n%s", clip.path.c_str(), clip.player->Error().c_str() );
-				else if( hovered && clip.IsGenerator() && !clip.generator )
-					ImGui::SetTooltip( "Source not installed: %s", clip.generatorId.c_str() );
-				else if( hovered && ImGui::GetIO().KeyAlt )
-					ImGui::SetTooltip( "%s", clip.path.c_str() );
-				else if( hovered && ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) )
-					ImGui::SetTooltip( "%s", overName                                ? "Click the name: preview and edit, without launching"
-					                         : clip.trigger == TriggerStyle::Toggle ? "Click the picture: launch, or stop when it plays (Toggle)"
-					                         : clip.trigger == TriggerStyle::Piano  ? "Hold the picture: plays while held (Piano)"
-					                                                                : "Click the picture: launch" );
-			}
-			if( playing )
-				draw->AddRect( ImVec2( min.x - Ui( 1 ), min.y - Ui( 1 ) ), ImVec2( max.x + Ui( 1 ), max.y + Ui( 1 ) ), theme::Accent, round + Ui( 1 ), 0, Ui( 2 ) );
-			else if( selected )
-				draw->AddRect( min, max, IM_COL32( 230, 233, 238, 160 ), round, 0, Ui( 1.5f ) );
-			else
-				draw->AddRect( min, max, theme::CellBorder, round );
-			if( app.IsQueued( l, c ) )
-			{
-				// Waiting for its beat: a pulsing frame.
-				float pulse = 0.5f + 0.5f * std::sin( (float)ImGui::GetTime() * 12 );
-				draw->AddRect( ImVec2( min.x - Ui( 1 ), min.y - Ui( 1 ) ), ImVec2( max.x + Ui( 1 ), max.y + Ui( 1 ) ), IM_COL32( 255, 196, 80, (int)( 110 + 145 * pulse ) ), round + Ui( 1 ), 0,
-				               Ui( 2 ) );
 			}
 
-			if( app.moveMode )
+			// The layer's speed; the playing clip's loop mode, timing, direction and position.
 			{
-				// Picked clips: tinted and framed. Under a box being dragged: framed thinner. Where the dragged clips
-				// would land: an outline, red when that cell holds another clip.
-				bool picked = app.IsPicked( l, c );
-				bool inBox  = box.active && !clip.Empty() && min.x < boxMax.x && max.x > boxMin.x && min.y < boxMax.y && max.y > boxMin.y;
-				if( picked )
+				float rowGap = Ui( 3 );
+				BoxButton( "##speedLabel", ImVec2( xTr, y ), ImVec2( rowH, rowH ), "S", false, theme::Accent, tip( "Layer speed" ) );
+				ImGui::SetCursorScreenPos( ImVec2( xTr + rowH + Ui( 2 ), y ) );
+				ImGui::SetNextItemWidth( wTransport - rowH - Ui( 2 ) );
+				FilledSlider( "##speed", &layer.speed, 0.0f, 4.0f, "%.2fx" );
+				ResetValue( &layer.speed, 1.0f );
+				MapTarget( app, layerAddress + "/speed" );
+				if( ImGui::IsItemHovered() && !learning )
+					ImGui::SetTooltip( "Layer speed: times the clip's own (right-click: 1x)" );
+
+				ImGui::BeginDisabled( !playing || !playing->Loaded() );
+				float half = ( wTransport - Ui( 2 ) ) / 2, y2 = y + rowH + rowGap;
+				static const char* loopShort[] = { "Loop", "Bounce", "Hold", "Clear" };
+				ImGui::SetCursorScreenPos( ImVec2( xTr, y2 ) );
+				ImGui::SetNextItemWidth( half );
+				if( ImGui::BeginCombo( "##loop", playing ? loopShort[ (int)playing->playMode ] : "Loop", ImGuiComboFlags_NoArrowButton ) )
 				{
-					draw->AddRectFilled( min, max, IM_COL32( 214, 120, 255, 60 ), round );
-					draw->AddRect( ImVec2( min.x - Ui( 1 ), min.y - Ui( 1 ) ), ImVec2( max.x + Ui( 1 ), max.y + Ui( 1 ) ), kMoveColour, round + Ui( 1 ), 0, Ui( 2.5f ) );
+					for( int m = 0; m < (int)PlayMode::Count; ++m )
+						if( ImGui::Selectable( PlayModeName( (PlayMode)m ), playing && (int)playing->playMode == m ) && playing )
+							playing->playMode = (PlayMode)m;
+					ImGui::EndCombo();
 				}
-				else if( inBox )
-					draw->AddRect( min, max, kMoveColour, round, 0, Ui( 1.5f ) );
-				if( moveTarget.layer >= 0 && app.IsPicked( l - ( moveTarget.layer - moveFrom.layer ), c - ( moveTarget.column - moveFrom.column ) ) )
+				if( ImGui::IsItemHovered() && !learning )
+					ImGui::SetTooltip( "Loop, Bounce, Play Once & Hold, Play Once & Clear" );
+				ImGui::SetCursorScreenPos( ImVec2( xTr + half + Ui( 2 ), y2 ) );
+				ImGui::SetNextItemWidth( half );
+				bool sync = playing && playing->syncBeats > 0;
+				if( ImGui::BeginCombo( "##timing", sync ? "BPM" : "Time", ImGuiComboFlags_NoArrowButton ) )
 				{
-					bool taken = !clip.Empty() && !picked;
-					draw->AddRect( ImVec2( min.x + Ui( 3 ), min.y + Ui( 3 ) ), ImVec2( max.x - Ui( 3 ), max.y - Ui( 3 ) ), taken ? theme::Error : IM_COL32( 255, 255, 255, 230 ),
-					               round, 0, Ui( 2 ) );
+					if( ImGui::Selectable( "Timeline", !sync ) && playing )
+						SetBpmSync( *playing, false, comp.bpm );
+					if( ImGui::Selectable( "BPM Sync", sync ) && playing )
+						SetBpmSync( *playing, true, comp.bpm );
+					ImGui::EndCombo();
 				}
-				if( boxRelease && inBox && !picked )
-					app.TogglePicked( l, c );
-				if( ImGui::IsItemActivated() && clip.Empty() )
+				if( ImGui::IsItemHovered() && !learning )
+					ImGui::SetTooltip( "Timeline: the clip at its speed. BPM Sync: it lasts a number of beats (set them in the Clip panel)." );
+				float y3 = y2 + rowH + rowGap, third = ( wTransport - 2 * Ui( 2 ) ) / 3, h3 = upH - ( y3 - y );
+				int direction = playing ? playing->direction : 1;
+				if( IconBox( "##reverse", ImVec2( xTr, y3 ), ImVec2( third, h3 ), Icon::Reverse, playing && direction < 0 ) && playing )
+					playing->direction = -1;
+				if( IconBox( "##pause", ImVec2( xTr + third + Ui( 2 ), y3 ), ImVec2( third, h3 ), Icon::Pause, playing && direction == 0 ) && playing )
+					playing->direction = 0;
+				if( IconBox( "##forward", ImVec2( xTr + 2 * ( third + Ui( 2 ) ), y3 ), ImVec2( third, h3 ), Icon::Play, playing && direction > 0 ) && playing )
 				{
-					// Pressed on an empty cell: a box starts (with Ctrl or Shift it adds to the picks).
-					box.active   = true;
-					box.additive = io.KeyCtrl || io.KeyShift;
-					box.start    = io.MousePos;
-					if( !box.additive )
-						app.movePicked.clear();
+					playing->direction = 1;
+					playing->finished  = false;
 				}
-				if( insertPressed && hovered )
-				{
-					app.TogglePicked( l, c );
-					insertHandled = true;
-				}
-				// (The cell button is not "hovered" while another item is dragged: test the mouse.)
-				if( movingPicked && io.MousePos.x >= cellsLeft && ImGui::IsMouseHoveringRect( min, max )
-				    && ImGui::IsWindowHovered( ImGuiHoveredFlags_AllowWhenBlockedByActiveItem ) )
-					nextMoveTarget = { l, c };
+				ImGui::EndDisabled();
+				PositionBar( "##position", ImVec2( xTr, yName ), ImVec2( wTransport, nameH ), playing );
 			}
 
-			// A Piano clip plays from the press on its picture until the button is let go (anywhere).
-			bool piano = clip.Playable() && clip.trigger == TriggerStyle::Piano;
-			if( piano && !app.moveMode && ImGui::IsItemActivated() && io.MousePos.y < min.y + thumbH )
+			// Previous and next clip on this layer.
+			float arrowW = ( wArrows - Ui( 2 ) ) / 2;
+			if( IconBox( "##prevClip", ImVec2( xAr, yName ), ImVec2( arrowW, nameH ), Icon::Previous, false, tip( "Previous clip on this layer" ) ) )
+				app.LaunchNextClip( l, -1 );
+			MapTarget( app, layerAddress + "/connectprevclip" );
+			if( IconBox( "##nextClip", ImVec2( xAr + arrowW + Ui( 2 ), yName ), ImVec2( arrowW, nameH ), Icon::Next, false, tip( "Next clip on this layer" ) ) )
+				app.LaunchNextClip( l, 1 );
+			MapTarget( app, layerAddress + "/connectnextclip" );
+
+			if( selectedLayer )
+				draw->AddRect( ImVec2( xX - Ui( 2 ), y - Ui( 2 ) ), ImVec2( xX + headerW + Ui( 2 ), y + cellH + Ui( 2 ) ), theme::AccentDim, round, 0, Ui( 1.5f ) );
+		}
+
+		if( !layersPart )
+		{
+			// Cells.
+			ImGui::PushClipRect( ImVec2( cellsLeft, viewMin.y ), viewMax, true );
+			for( int c = 0; c < comp.ColumnCount(); ++c )
 			{
-				app.TriggerClip( l, c, true );
-				pianoHeld = { l, c };
-			}
-			if( clicked && app.moveMode )
-			{
+				Clip& clip = layer.clips[ c ];
+				ImVec2 min( origin.x + leftW + c * ( cellW + gap ), y );
+				ImVec2 max( min.x + cellW, min.y + cellH );
+				ImGui::SetCursorScreenPos( min );
+				ImGui::PushID( c );
+				bool clicked = ImGui::InvisibleButton( "##cell", ImVec2( cellW, cellH ) );
+				bool hovered = ImGui::IsItemHovered();
+				ImVec2 cellMin = ImGui::GetItemRectMin(), cellMax = ImGui::GetItemRectMax();
+				int showingOn = comp.LayerShowing( l, c ); // the layer playing it: its own, or another one (layer based)
+				bool playing  = showingOn >= 0;
+				bool selected = comp.selectedRow == l && comp.selectedColumn == c;
+				// The picture launches the clip; the name strip below only selects it (Clip panel and Preview Monitor).
+				bool overName = ImGui::GetIO().MousePos.y >= min.y + thumbH;
+				draw->AddRectFilled( min, max, hovered ? theme::RaisedHover : theme::CellEmpty, round );
+				if( clip.Empty() && hovered )
+				{
+					// An empty cell under the mouse: the place for a clip.
+					ImVec2 c0( ( min.x + max.x ) / 2, ( min.y + max.y ) / 2 );
+					float r = Ui( 7 );
+					draw->AddLine( ImVec2( c0.x - r, c0.y ), ImVec2( c0.x + r, c0.y ), theme::TextDim, Ui( 1.5f ) );
+					draw->AddLine( ImVec2( c0.x, c0.y - r ), ImVec2( c0.x, c0.y + r ), theme::TextDim, Ui( 1.5f ) );
+				}
 				if( !clip.Empty() )
-					app.TogglePicked( l, c );
-			}
-			else if( clicked )
-			{
-				if( clip.Empty() || ImGui::GetIO().MouseClickedPos[ ImGuiMouseButton_Left ].y >= min.y + thumbH )
-					app.Select( l, c );
-				else if( !piano )
-					app.TriggerClip( l, c, true );
-			}
-			if( !clip.Empty() && ImGui::BeginDragDropSource() )
-			{
-				CellRef ref{ l, c };
+				{
+					// The picture on top, the name on a strip below.
+					ImVec2 thumbMax( max.x, min.y + thumbH );
+					GLuint thumbnail = clip.player ? clip.player->Thumbnail().Texture() : clip.generatorThumbnail ? clip.generatorThumbnail->Texture() : 0;
+					if( thumbnail )
+					{
+						if( clip.generator )
+							draw->AddRectFilled( min, thumbMax, IM_COL32( 0, 0, 0, 255 ), round, ImDrawFlags_RoundCornersTop );
+						draw->AddImageRounded( TextureId( thumbnail ), min, thumbMax, ImVec2( 0, 1 ), ImVec2( 1, 0 ), IM_COL32( 255, 255, 255, hovered || playing ? 255 : 225 ),
+						                       round, ImDrawFlags_RoundCornersTop );
+					}
+					else
+						draw->AddRectFilled( min, thumbMax, IM_COL32( 70, 30, 34, 255 ), round, ImDrawFlags_RoundCornersTop );
+					ImU32 strip = playing ? IM_COL32( 22, 52, 46, 255 ) : hovered && overName ? theme::RaisedHover : selected ? IM_COL32( 50, 56, 66, 255 ) : theme::Raised;
+					draw->AddRectFilled( ImVec2( min.x, thumbMax.y ), max, strip, round, ImDrawFlags_RoundCornersBottom );
+					if( !clip.effects.empty() )
+					{
+						// An FX badge in the corner.
+						ImGui::PushFont( Fonts().bold );
+						ImVec2 t = ImGui::CalcTextSize( "FX" );
+						ImGui::PopFont();
+						float bw = t.x * 0.8f + Ui( 8 ), bh = t.y * 0.8f + Ui( 2 );
+						ImVec2 b0( thumbMax.x - bw - Ui( 4 ), min.y + Ui( 4 ) );
+						draw->AddRectFilled( b0, ImVec2( b0.x + bw, b0.y + bh ), IM_COL32( 0, 0, 0, 170 ), bh / 2 );
+						draw->AddText( Fonts().bold, ImGui::GetFontSize() * 0.8f, ImVec2( b0.x + Ui( 4 ), b0.y + Ui( 1 ) ), theme::Accent, "FX" );
+					}
+					if( clip.trigger != TriggerStyle::Normal || clip.ignoreColumn )
+					{
+						// How it triggers, in the picture's bottom left corner.
+						std::string badge = clip.trigger == TriggerStyle::Toggle ? "TOGGLE" : clip.trigger == TriggerStyle::Piano ? "PIANO" : "";
+						if( clip.ignoreColumn )
+							badge += badge.empty() ? "NO COL" : " - NO COL";
+						float size = ImGui::GetFontSize() * 0.7f;
+						ImVec2 t   = Fonts().bold->CalcTextSizeA( size, FLT_MAX, 0, badge.c_str() );
+						ImVec2 b0( min.x + Ui( 4 ), thumbMax.y - t.y - Ui( 8 ) );
+						draw->AddRectFilled( b0, ImVec2( b0.x + t.x + Ui( 8 ), b0.y + t.y + Ui( 3 ) ), IM_COL32( 0, 0, 0, 170 ), Ui( 3 ) );
+						draw->AddText( Fonts().bold, size, ImVec2( b0.x + Ui( 4 ), b0.y + Ui( 1.5f ) ), IM_COL32( 255, 205, 110, 255 ), badge.c_str() );
+					}
+					ImU32 labelColour = !clip.Playable() ? theme::Error : playing ? theme::Accent : theme::Text;
+					draw->PushClipRect( ImVec2( min.x, thumbMax.y ), ImVec2( max.x - Ui( 6 ), max.y ), true );
+					draw->AddText( ImVec2( min.x + Ui( 7 ), thumbMax.y + ( labelH - ImGui::GetTextLineHeight() ) / 2 ), labelColour, clip.name.c_str() );
+					draw->PopClipRect();
+					if( playing )
+					{
+						// Progress along the bottom of the picture.
+						float progress = clip.Duration() > 0 ? (float)( clip.time / clip.Duration() ) : 0;
+						draw->AddRectFilled( ImVec2( min.x, thumbMax.y - Ui( 3 ) ), ImVec2( max.x, thumbMax.y ), IM_COL32( 0, 0, 0, 140 ) );
+						draw->AddRectFilled( ImVec2( min.x, thumbMax.y - Ui( 3 ) ), ImVec2( min.x + cellW * progress, thumbMax.y ), theme::Accent );
+					}
+					if( playing && showingOn != l )
+					{
+						// Launched onto another layer (layer based): which one.
+						const std::string& onLayer = comp.layers[ showingOn ].name;
+						ImVec2 t                   = ImGui::CalcTextSize( onLayer.c_str() );
+						ImVec2 b0( min.x + Ui( 4 ), min.y + Ui( 4 ) );
+						draw->AddRectFilled( b0, ImVec2( b0.x + t.x * 0.8f + Ui( 10 ), b0.y + t.y * 0.8f + Ui( 4 ) ), theme::Accent, Ui( 4 ) );
+						draw->AddText( Fonts().bold, ImGui::GetFontSize() * 0.8f, ImVec2( b0.x + Ui( 5 ), b0.y + Ui( 2 ) ), theme::OnAccent, onLayer.c_str() );
+					}
+					if( hovered && !clip.Playable() && clip.player )
+						ImGui::SetTooltip( "%s\n%s", clip.path.c_str(), clip.player->Error().c_str() );
+					else if( hovered && clip.IsGenerator() && !clip.generator )
+						ImGui::SetTooltip( "Source not installed: %s", clip.generatorId.c_str() );
+					else if( hovered && ImGui::GetIO().KeyAlt )
+						ImGui::SetTooltip( "%s", clip.path.c_str() );
+					else if( hovered && ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) )
+						ImGui::SetTooltip( "%s", overName                                ? "Click the name: preview and edit, without launching"
+						                         : clip.trigger == TriggerStyle::Toggle ? "Click the picture: launch, or stop when it plays (Toggle)"
+						                         : clip.trigger == TriggerStyle::Piano  ? "Hold the picture: plays while held (Piano)"
+						                                                                : "Click the picture: launch" );
+				}
+				if( playing )
+					draw->AddRect( ImVec2( min.x - Ui( 1 ), min.y - Ui( 1 ) ), ImVec2( max.x + Ui( 1 ), max.y + Ui( 1 ) ), theme::Accent, round + Ui( 1 ), 0, Ui( 2 ) );
+				else if( selected )
+					draw->AddRect( min, max, IM_COL32( 230, 233, 238, 160 ), round, 0, Ui( 1.5f ) );
+				else
+					draw->AddRect( min, max, theme::CellBorder, round );
+				if( app.IsQueued( l, c ) )
+				{
+					// Waiting for its beat: a pulsing frame.
+					float pulse = 0.5f + 0.5f * std::sin( (float)ImGui::GetTime() * 12 );
+					draw->AddRect( ImVec2( min.x - Ui( 1 ), min.y - Ui( 1 ) ), ImVec2( max.x + Ui( 1 ), max.y + Ui( 1 ) ), IM_COL32( 255, 196, 80, (int)( 110 + 145 * pulse ) ), round + Ui( 1 ), 0,
+					               Ui( 2 ) );
+				}
+
 				if( app.moveMode )
 				{
-					// Dragging a clip moves every picked clip along (it is picked too).
-					if( !app.IsPicked( l, c ) )
-						app.TogglePicked( l, c );
-					ImGui::SetDragDropPayload( kMovePayload, &ref, sizeof( ref ) );
-					ImGui::Text( "Moving %d clip%s", (int)app.movePicked.size(), app.movePicked.size() == 1 ? "" : "s" );
-				}
-				else
-				{
-					ImGui::SetDragDropPayload( kCellPayload, &ref, sizeof( ref ) );
-					ImGui::TextUnformatted( clip.name.c_str() );
-				}
-				ImGui::EndDragDropSource();
-			}
-			if( ImGui::BeginDragDropTarget() )
-			{
-				if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kMovePayload ) )
-				{
-					CellRef ref = *(const CellRef*)payload->Data;
-					app.MovePicked( l - ref.layer, c - ref.column );
-				}
-				if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kCellPayload ) )
-				{
-					CellRef ref = *(const CellRef*)payload->Data;
-					app.MoveClip( ref.layer, ref.column, l, c );
-				}
-				if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kFilePayload ) )
-					pendingLoad = { l, c, { std::string( (const char*)payload->Data ) }, {} };
-				if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kEffectPayload ) )
-				{
-					std::string id                = (const char*)payload->Data;
-					const EffectRegistry::Entry* e = app.registry->Find( id );
-					if( e && e->source )
-						pendingLoad = { l, c, {}, id };
-					else if( !clip.Empty() )
+					// Picked clips: tinted and framed. Under a box being dragged: framed thinner. Where the dragged clips
+					// would land: an outline, red when that cell holds another clip.
+					bool picked = app.IsPicked( l, c );
+					bool inBox  = box.active && !clip.Empty() && min.x < boxMax.x && max.x > boxMin.x && min.y < boxMax.y && max.y > boxMin.y;
+					if( picked )
 					{
-						app.AddEffect( clip.effects, id );
-						app.Select( l, c );
+						draw->AddRectFilled( min, max, IM_COL32( 214, 120, 255, 60 ), round );
+						draw->AddRect( ImVec2( min.x - Ui( 1 ), min.y - Ui( 1 ) ), ImVec2( max.x + Ui( 1 ), max.y + Ui( 1 ) ), kMoveColour, round + Ui( 1 ), 0, Ui( 2.5f ) );
 					}
+					else if( inBox )
+						draw->AddRect( min, max, kMoveColour, round, 0, Ui( 1.5f ) );
+					if( moveTarget.layer >= 0 && app.IsPicked( l - ( moveTarget.layer - moveFrom.layer ), c - ( moveTarget.column - moveFrom.column ) ) )
+					{
+						bool taken = !clip.Empty() && !picked;
+						draw->AddRect( ImVec2( min.x + Ui( 3 ), min.y + Ui( 3 ) ), ImVec2( max.x - Ui( 3 ), max.y - Ui( 3 ) ), taken ? theme::Error : IM_COL32( 255, 255, 255, 230 ),
+						               round, 0, Ui( 2 ) );
+					}
+					if( boxRelease && inBox && !picked )
+						app.TogglePicked( l, c );
+					if( ImGui::IsItemActivated() && clip.Empty() )
+					{
+						// Pressed on an empty cell: a box starts (with Ctrl or Shift it adds to the picks).
+						box.active   = true;
+						box.additive = io.KeyCtrl || io.KeyShift;
+						box.start    = io.MousePos;
+						if( !box.additive )
+							app.movePicked.clear();
+					}
+					if( insertPressed && hovered )
+					{
+						app.TogglePicked( l, c );
+						insertHandled = true;
+					}
+					// (The cell button is not "hovered" while another item is dragged: test the mouse.)
+					if( movingPicked && io.MousePos.x >= cellsLeft && ImGui::IsMouseHoveringRect( min, max )
+					    && ImGui::IsWindowHovered( ImGuiHoveredFlags_AllowWhenBlockedByActiveItem ) )
+						nextMoveTarget = { l, c };
 				}
-				ImGui::EndDragDropTarget();
+
+				// A Piano clip plays from the press on its picture until the button is let go (anywhere).
+				bool piano = clip.Playable() && clip.trigger == TriggerStyle::Piano;
+				if( piano && !app.moveMode && ImGui::IsItemActivated() && io.MousePos.y < min.y + thumbH )
+				{
+					app.TriggerClip( l, c, true );
+					pianoHeld = { l, c };
+				}
+				if( clicked && app.moveMode )
+				{
+					if( !clip.Empty() )
+						app.TogglePicked( l, c );
+				}
+				else if( clicked )
+				{
+					if( clip.Empty() || ImGui::GetIO().MouseClickedPos[ ImGuiMouseButton_Left ].y >= min.y + thumbH )
+						app.Select( l, c );
+					else if( !piano )
+						app.TriggerClip( l, c, true );
+				}
+				if( !clip.Empty() && ImGui::BeginDragDropSource() )
+				{
+					CellRef ref{ l, c };
+					if( app.moveMode )
+					{
+						// Dragging a clip moves every picked clip along (it is picked too).
+						if( !app.IsPicked( l, c ) )
+							app.TogglePicked( l, c );
+						ImGui::SetDragDropPayload( kMovePayload, &ref, sizeof( ref ) );
+						ImGui::Text( "Moving %d clip%s", (int)app.movePicked.size(), app.movePicked.size() == 1 ? "" : "s" );
+					}
+					else
+					{
+						ImGui::SetDragDropPayload( kCellPayload, &ref, sizeof( ref ) );
+						ImGui::TextUnformatted( clip.name.c_str() );
+					}
+					ImGui::EndDragDropSource();
+				}
+				if( ImGui::BeginDragDropTarget() )
+				{
+					if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kMovePayload ) )
+					{
+						CellRef ref = *(const CellRef*)payload->Data;
+						app.MovePicked( l - ref.layer, c - ref.column );
+					}
+					if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kCellPayload ) )
+					{
+						CellRef ref = *(const CellRef*)payload->Data;
+						app.MoveClip( ref.layer, ref.column, l, c );
+					}
+					if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kFilePayload ) )
+						pendingLoad = { l, c, { std::string( (const char*)payload->Data ) }, {} };
+					if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kEffectPayload ) )
+					{
+						std::string id                = (const char*)payload->Data;
+						const EffectRegistry::Entry* e = app.registry->Find( id );
+						if( e && e->source )
+							pendingLoad = { l, c, {}, id };
+						else if( !clip.Empty() )
+						{
+							app.AddEffect( clip.effects, id );
+							app.Select( l, c );
+						}
+					}
+					ImGui::EndDragDropTarget();
+				}
+				if( ImGui::BeginPopupContextItem( "##cellMenu" ) )
+				{
+					app.Select( l, c );
+					if( ImGui::MenuItem( "Launch", nullptr, false, clip.Playable() ) )
+						app.Launch( l, c );
+					if( ImGui::MenuItem( "Load Media..." ) )
+						ShowFileDialog( FileDialog::OpenMedia, app.browserDirectory,
+						                [ &app, l, c ]( const std::vector< std::string >& paths ) { LoadInto( app, l, c, paths ); } );
+					if( ImGui::MenuItem( "Remove Clip", nullptr, false, !clip.Empty() ) )
+						app.RemoveClip( l, c );
+					ImGui::EndPopup();
+				}
+				if( app.learning )
+				{
+					// The highlight goes over the drawn cell (the cell button is the item it belongs to).
+					ImGui::SetCursorScreenPos( cellMin );
+					ImGui::Dummy( ImVec2( cellMax.x - cellMin.x, cellMax.y - cellMin.y ) );
+					MapTarget( app, layerAddress + "/clips/" + std::to_string( c + 1 ) + "/connect" );
+				}
+				if( dropPending && dropPoint.x >= std::max( min.x, cellsLeft ) && dropPoint.x < max.x && dropPoint.y >= min.y && dropPoint.y < max.y )
+				{
+					pendingLoad = { l, c, app.droppedPaths, {} };
+					dropPending = false;
+				}
+				ImGui::PopID();
 			}
-			if( ImGui::BeginPopupContextItem( "##cellMenu" ) )
-			{
-				app.Select( l, c );
-				if( ImGui::MenuItem( "Launch", nullptr, false, clip.Playable() ) )
-					app.Launch( l, c );
-				if( ImGui::MenuItem( "Load Media..." ) )
-					ShowFileDialog( FileDialog::OpenMedia, app.browserDirectory,
-					                [ &app, l, c ]( const std::vector< std::string >& paths ) { LoadInto( app, l, c, paths ); } );
-				if( ImGui::MenuItem( "Remove Clip", nullptr, false, !clip.Empty() ) )
-					app.RemoveClip( l, c );
-				ImGui::EndPopup();
-			}
-			if( app.learning )
-			{
-				// The highlight goes over the drawn cell (the cell button is the item it belongs to).
-				ImGui::SetCursorScreenPos( cellMin );
-				ImGui::Dummy( ImVec2( cellMax.x - cellMin.x, cellMax.y - cellMin.y ) );
-				MapTarget( app, layerAddress + "/clips/" + std::to_string( c + 1 ) + "/connect" );
-			}
-			if( dropPending && dropPoint.x >= std::max( min.x, cellsLeft ) && dropPoint.x < max.x && dropPoint.y >= min.y && dropPoint.y < max.y )
-			{
-				pendingLoad = { l, c, app.droppedPaths, {} };
-				dropPending = false;
-			}
-			ImGui::PopID();
+			ImGui::PopClipRect();
 		}
-		ImGui::PopClipRect();
 		ImGui::PopID();
 	}
 
-	if( pianoHeld.layer >= 0 && !ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+	if( !layersPart )
 	{
-		app.TriggerClip( pianoHeld.layer, pianoHeld.column, false );
-		pianoHeld = { -1, -1 };
-	}
-	if( app.moveMode )
-	{
-		moveTarget = nextMoveTarget;
-		if( box.active )
+		if( pianoHeld.layer >= 0 && !ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
 		{
-			draw->PushClipRect( ImVec2( cellsLeft, viewMin.y ), viewMax, true );
-			draw->AddRectFilled( boxMin, boxMax, IM_COL32( 214, 120, 255, 40 ) );
-			draw->AddRect( boxMin, boxMax, kMoveColour );
-			draw->PopClipRect();
+			app.TriggerClip( pianoHeld.layer, pianoHeld.column, false );
+			pianoHeld = { -1, -1 };
 		}
-		if( boxRelease )
-			box.active = false;
-		// Ins with no cell under the mouse: the selected clip.
-		if( insertPressed && !insertHandled )
-			app.TogglePicked( comp.selectedRow, comp.selectedColumn );
+		if( app.moveMode )
+		{
+			moveTarget = nextMoveTarget;
+			if( box.active )
+			{
+				draw->PushClipRect( ImVec2( cellsLeft, viewMin.y ), viewMax, true );
+				draw->AddRectFilled( boxMin, boxMax, IM_COL32( 214, 120, 255, 40 ) );
+				draw->AddRect( boxMin, boxMax, kMoveColour );
+				draw->PopClipRect();
+			}
+			if( boxRelease )
+				box.active = false;
+			// Ins with no cell under the mouse: the selected clip.
+			if( insertPressed && !insertHandled )
+				app.TogglePicked( comp.selectedRow, comp.selectedColumn );
+		}
 	}
 
-	// The crossfader, under the layers.
+	// The crossfader, under the layers; a line of help under the cells. Both panels end at the same height, so
+	// they scroll alike.
 	float bottom = origin.y + headerH + layerCount * ( cellH + gap );
-	Crossfader( app, ImVec2( stickyX, bottom ), ImVec2( headerW, nameH ) );
+	if( layersPart )
+		Crossfader( app, ImVec2( stickyX, bottom ), ImVec2( headerW, nameH ) );
 	ImGui::PopStyleVar();
 	ImGui::SetCursorScreenPos( ImVec2( stickyX, bottom + nameH + gap ) );
-	if( ImGui::Button( "+ Layer" ) )
-		comp.AddLayer();
-	ImGui::SameLine();
-	ImGui::TextDisabled( "Click a picture to launch a clip, its name to preview it. Drop clips and sources on cells, effects on clips or layers; drag a clip to move it, right-click for options." );
-	ImGui::Dummy( ImVec2( leftW + comp.ColumnCount() * ( cellW + gap ) + headerH, 0 ) );
+	ImGui::AlignTextToFramePadding();
+	if( layersPart )
+		ImGui::TextDisabled( "Click a layer to select it; drop effects on its name." );
+	else
+		ImGui::TextDisabled( "Click a picture to launch a clip, its name to preview it. Drop clips and sources on cells, effects on clips; drag a clip to move it, right-click for options." );
+	ImGui::Dummy( ImVec2( layersPart ? leftW : comp.ColumnCount() * ( cellW + gap ) + headerH, 0 ) );
 	ImGui::EndChild();
 
-	if( pendingLoad.layer >= 0 && !pendingLoad.generatorId.empty() )
-		app.LoadGenerator( pendingLoad.layer, pendingLoad.column, pendingLoad.generatorId );
-	else if( pendingLoad.layer >= 0 )
-		LoadInto( app, pendingLoad.layer, pendingLoad.column, pendingLoad.paths );
-	// Dropped anywhere else: fill the selected layer.
-	if( dropPending )
-		LoadIntoSelected( app, app.droppedPaths );
+	if( !layersPart )
+	{
+		if( pendingLoad.layer >= 0 && !pendingLoad.generatorId.empty() )
+			app.LoadGenerator( pendingLoad.layer, pendingLoad.column, pendingLoad.generatorId );
+		else if( pendingLoad.layer >= 0 )
+			LoadInto( app, pendingLoad.layer, pendingLoad.column, pendingLoad.paths );
+		// Dropped anywhere else: fill the selected layer.
+		if( dropPending )
+			LoadIntoSelected( app, app.droppedPaths );
+	}
 	ImGui::End();
+}
+
+void DrawClipGrid( App& app )
+{
+	DrawDeck( app, false );
+}
+
+void DrawLayersPanel( App& app )
+{
+	DrawDeck( app, true );
 }
 
 void DrawCompositionMonitor( App& app )
@@ -2337,8 +2424,8 @@ void DrawOutputPanel( App& app )
 		for( const OutputWindow::Display& d : displays )
 		{
 			std::string label = d.name + "  " + std::to_string( d.width ) + "x" + std::to_string( d.height ) + " @ " + std::to_string( d.refresh ) + " Hz";
-			if( ImGui::MenuItem( label.c_str(), nullptr, app.outputMode == OutputMode::Fullscreen && app.outputDisplay == d.monitorName ) )
-				app.SetOutputMode( OutputMode::Fullscreen, d.monitorName );
+			if( ImGui::MenuItem( label.c_str(), nullptr, app.outputMode == OutputMode::Fullscreen && OutputWindow::FindDisplay( app.outputDisplay ) == d.monitor ) )
+				app.SetOutputMode( OutputMode::Fullscreen, d.id );
 		}
 		ImGui::EndPopup();
 	}
@@ -2377,7 +2464,7 @@ void DrawOutputPanel( App& app )
 		ImGui::AlignTextToFramePadding();
 		ImGui::TextUnformatted( screen.name.c_str() );
 		ImGui::SameLine( Ui( 90 ) );
-		std::string current = screen.device == OutputDevice::Display ? screen.display : OutputDeviceName( screen.device );
+		std::string current = screen.device == OutputDevice::Display ? OutputWindow::DisplayLabel( screen.display ) : OutputDeviceName( screen.device );
 		ImGui::SetNextItemWidth( -FLT_MIN );
 		if( ImGui::BeginCombo( "##device", current.c_str() ) )
 		{
@@ -2388,8 +2475,8 @@ void DrawOutputPanel( App& app )
 			for( const OutputWindow::Display& d : displays )
 			{
 				std::string label = "Fullscreen " + d.name + "  " + std::to_string( d.width ) + "x" + std::to_string( d.height ) + " @ " + std::to_string( d.refresh ) + " Hz";
-				if( ImGui::Selectable( label.c_str(), screen.device == OutputDevice::Display && screen.display == d.monitorName ) )
-					app.ShowScreenOn( s, OutputDevice::Display, d.monitorName );
+				if( ImGui::Selectable( label.c_str(), screen.device == OutputDevice::Display && OutputWindow::FindDisplay( screen.display ) == d.monitor ) )
+					app.ShowScreenOn( s, OutputDevice::Display, d.id );
 			}
 			ImGui::EndCombo();
 		}

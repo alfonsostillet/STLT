@@ -148,6 +148,18 @@ public:
 	// the next key, MIDI note or controller is mapped to learnTarget, the control last clicked.
 	bool ApplyControl( const std::string& address, bool hasValue, float value, bool momentary = false, float previous = 0 );
 	void SaveControlSettings() const;
+	// Shortcut presets: the key and MIDI maps saved by name (in the settings folder) or to a file. The maps in use
+	// are kept between sessions whatever project is open; `shortcutPreset` names the preset they came from.
+	std::vector< std::string > ShortcutPresets() const;
+	bool SaveShortcutPreset( const std::string& name );
+	bool LoadShortcutPreset( const std::string& name );
+	bool DeleteShortcutPreset( const std::string& name );
+	bool ExportShortcuts( const std::string& path );
+	bool ImportShortcuts( const std::string& path );
+	// Whether the maps differ from the preset they came from (or there is none and they are not empty).
+	bool ShortcutsChanged() const { return control.SaveShortcuts() != shortcutPresetText; }
+	std::string ShortcutPresetDirectory() const;
+	std::string shortcutPresetText; // the maps of the preset in use (control.preset), as loaded or saved
 	ControlSettings control;
 	RemoteInputs remote;
 	AudioEngine audio;

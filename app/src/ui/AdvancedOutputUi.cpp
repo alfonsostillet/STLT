@@ -1121,7 +1121,7 @@ void DrawScreenProps( App& app, Screen& screen )
 	Row( "Name" );
 	ImGui::InputText( "##name", &screen.name );
 	Row( "Device" );
-	std::string current = screen.device == OutputDevice::Display ? screen.display : OutputDeviceName( screen.device );
+	std::string current = screen.device == OutputDevice::Display ? OutputWindow::DisplayLabel( screen.display ) : OutputDeviceName( screen.device );
 	if( ImGui::BeginCombo( "##device", current.c_str() ) )
 	{
 		if( ImGui::Selectable( "Virtual Output", screen.device == OutputDevice::Virtual ) )
@@ -1131,10 +1131,10 @@ void DrawScreenProps( App& app, Screen& screen )
 		for( const OutputWindow::Display& d : OutputWindow::Displays() )
 		{
 			std::string label = d.name + "  " + std::to_string( d.width ) + "x" + std::to_string( d.height );
-			if( ImGui::Selectable( label.c_str(), screen.device == OutputDevice::Display && screen.display == d.monitorName ) )
+			if( ImGui::Selectable( label.c_str(), screen.device == OutputDevice::Display && OutputWindow::FindDisplay( screen.display ) == d.monitor ) )
 			{
 				screen.device  = OutputDevice::Display;
-				screen.display = d.monitorName;
+				screen.display = d.id;
 			}
 		}
 		ImGui::EndCombo();
@@ -1156,7 +1156,7 @@ void DrawScreenProps( App& app, Screen& screen )
 		Row( "" );
 		if( ImGui::Button( "Use the Display's Size" ) )
 			for( const OutputWindow::Display& d : OutputWindow::Displays() )
-				if( d.monitorName == screen.display )
+				if( d.monitor == OutputWindow::FindDisplay( screen.display ) )
 				{
 					screen.width  = d.width;
 					screen.height = d.height;

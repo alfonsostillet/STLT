@@ -374,6 +374,7 @@ std::string ControlSettings::Save() const
 	root[ "oscPort" ]      = oscPort;
 	root[ "midiEnabled" ]  = midiEnabled;
 	root[ "midiInputsOff" ] = midiInputsOff;
+	root[ "preset" ]        = preset;
 	json mappings          = json::array();
 	for( const MidiMapping& m : midi )
 		mappings.push_back( { { "type", m.key.type == MidiKey::Type::Note ? "note" : "cc" },
@@ -388,6 +389,35 @@ std::string ControlSettings::Save() const
 	return root.dump( 1 );
 }
 
+std::string ControlSettings::SaveShortcuts() const
+{
+	using nlohmann::json;
+	json root          = json::parse( Save() );
+	json shortcuts     = json::object();
+	shortcuts[ "format" ] = "stlt-vj-shortcuts";
+	shortcuts[ "keys" ]   = root[ "keys" ];
+	shortcuts[ "midi" ]   = root[ "midi" ];
+	return shortcuts.dump( 1 );
+}
+
+bool ControlSettings::LoadShortcuts( const std::string& text )
+{
+	using nlohmann::json;
+	json root = json::parse( text, nullptr, false );
+	if( root.is_discarded() || !root.is_object() )
+		return false;
+	std::string format = root.value( "format", "" );
+	if( format != "stlt-vj-shortcuts" && format != "stlt-vj-control" )
+		return false;
+	root[ "format" ] = "stlt-vj-control";
+	ControlSettings loaded;
+	if( !loaded.Load( root.dump() ) )
+		return false;
+	keys = std::move( loaded.keys );
+	midi = std::move( loaded.midi );
+	return true;
+}
+
 bool ControlSettings::Load( const std::string& text )
 {
 	using nlohmann::json;
@@ -398,6 +428,7 @@ bool ControlSettings::Load( const std::string& text )
 	s.oscEnabled  = root.value( "oscEnabled", false );
 	s.oscPort     = std::clamp( root.value( "oscPort", 7000 ), 1, 65535 );
 	s.midiEnabled = root.value( "midiEnabled", true );
+	s.preset      = root.value( "preset", "" );
 	if( root.contains( "midiInputsOff" ) && root[ "midiInputsOff" ].is_array() )
 		for( const json& name : root[ "midiInputsOff" ] )
 			if( name.is_string() )

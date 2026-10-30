@@ -8,6 +8,7 @@ class App;
 void DrawMainMenu( App& app );
 void DrawToolbar( App& app );
 void DrawClipGrid( App& app );
+void DrawLayersPanel( App& app );
 void DrawCompositionMonitor( App& app );
 void DrawPreviewMonitor( App& app );
 void DrawCompositionPanel( App& app );

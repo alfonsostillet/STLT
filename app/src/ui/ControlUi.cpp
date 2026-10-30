@@ -1,7 +1,10 @@
 #include "ui/ControlUi.h"
 #include <imgui.h>
+#include <imgui_stdlib.h>
 #include <algorithm>
 #include "App.h"
+#include "Settings.h"
+#include "ui/FileDialogs.h"
 #include "ui/Theme.h"
 #include "ui/Workspaces.h"
 
@@ -128,6 +131,108 @@ void DrawControlPanel( App& app )
 		ImGui::TextDisabled( "Keys and MIDI controls launch clips and columns, flip layers and move sliders. Each has its own map: "
 		                     "Map Keys shows the keys in blue, Map MIDI shows the MIDI in green." );
 	ImGui::PopTextWrapPos();
+
+	// Presets: the maps by name, for other projects, shows and controllers. The maps in use stay loaded whatever
+	// project is open.
+	ImGui::SeparatorText( "Presets" );
+	{
+		static std::string presetName, pendingLoad;
+		static bool named = false;
+		if( !named )
+		{
+			presetName = app.control.preset;
+			named      = true;
+		}
+		bool changed = app.ShortcutsChanged();
+		ImGui::AlignTextToFramePadding();
+		if( app.control.preset.empty() )
+			ImGui::TextDisabled( "In use: not saved as a preset" );
+		else
+			ImGui::Text( "In use: %s", app.control.preset.c_str() );
+		if( changed )
+		{
+			ImGui::SameLine();
+			ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( theme::Warning ), "(changed, not saved)" );
+		}
+		std::vector< std::string > presets = app.ShortcutPresets();
+		ImGui::SetNextItemWidth( -FLT_MIN );
+		if( ImGui::BeginCombo( "##loadShortcuts", "Load preset...", ImGuiComboFlags_HeightLarge ) )
+		{
+			for( const std::string& name : presets )
+				if( ImGui::Selectable( name.c_str(), name == app.control.preset ) )
+					pendingLoad = name;
+			if( presets.empty() )
+				ImGui::TextDisabled( "No presets yet: save one below" );
+			ImGui::EndCombo();
+		}
+		ImGui::SetNextItemWidth( -Ui( 56 ) );
+		bool enter = ImGui::InputTextWithHint( "##shortcutPresetName", "preset name", &presetName, ImGuiInputTextFlags_EnterReturnsTrue );
+		ImGui::SameLine();
+		if( ImGui::Button( "Save", ImVec2( -FLT_MIN, 0 ) ) || enter )
+			app.SaveShortcutPreset( presetName );
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "Saves the key and MIDI maps under this name (an existing one is replaced)" );
+		float third = ( ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x * 2 ) / 3;
+		if( ImGui::Button( "Import...", ImVec2( third, 0 ) ) )
+			ShowFileDialog( FileDialog::OpenShortcuts, DocumentsDirectory(), [ &app ]( const std::vector< std::string >& paths ) {
+				if( app.ImportShortcuts( paths[ 0 ] ) )
+					presetName = app.control.preset;
+			} );
+		ImGui::SameLine();
+		if( ImGui::Button( "Export...", ImVec2( third, 0 ) ) )
+			ShowFileDialog( FileDialog::SaveShortcuts, DocumentsDirectory(), [ &app ]( const std::vector< std::string >& paths ) { app.ExportShortcuts( paths[ 0 ] ); },
+			                ( app.control.preset.empty() ? std::string( "STLT-VJ shortcuts" ) : app.control.preset ) + ".json" );
+		ImGui::SameLine();
+		ImGui::BeginDisabled( app.control.preset.empty() );
+		if( ImGui::Button( "Delete", ImVec2( third, 0 ) ) )
+			ImGui::OpenPopup( "##deletePreset" );
+		ImGui::EndDisabled();
+		if( ImGui::BeginPopup( "##deletePreset" ) )
+		{
+			ImGui::Text( "Delete the preset \"%s\"? The maps in use stay.", app.control.preset.c_str() );
+			if( ImGui::Button( "Delete" ) )
+			{
+				app.DeleteShortcutPreset( app.control.preset );
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::SameLine();
+			if( ImGui::Button( "Cancel" ) )
+				ImGui::CloseCurrentPopup();
+			ImGui::EndPopup();
+		}
+		// Loading over unsaved changes asks first.
+		if( !pendingLoad.empty() )
+		{
+			if( changed && ( !app.control.keys.empty() || !app.control.midi.empty() ) )
+				ImGui::OpenPopup( "##replaceShortcuts" );
+			else
+			{
+				if( app.LoadShortcutPreset( pendingLoad ) )
+					presetName = pendingLoad;
+				pendingLoad.clear();
+			}
+		}
+		if( ImGui::BeginPopup( "##replaceShortcuts" ) )
+		{
+			ImGui::Text( "The maps in use have changes that are not saved. Load \"%s\" over them?", pendingLoad.c_str() );
+			if( ImGui::Button( "Load" ) )
+			{
+				if( app.LoadShortcutPreset( pendingLoad ) )
+					presetName = pendingLoad;
+				pendingLoad.clear();
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::SameLine();
+			if( ImGui::Button( "Cancel" ) )
+			{
+				pendingLoad.clear();
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::EndPopup();
+		}
+		else if( !pendingLoad.empty() && !ImGui::IsPopupOpen( "##replaceShortcuts" ) )
+			pendingLoad.clear();
+	}
 
 	ImGui::SeparatorText( "Keyboard" );
 	if( !c.keys.empty()

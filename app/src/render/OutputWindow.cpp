@@ -1,5 +1,6 @@
 #include "OutputWindow.h"
 #include <GLFW/glfw3.h>
+#include <cstdio>
 #include "render/Compositor.h"
 
 namespace stltvj
@@ -9,10 +10,12 @@ std::vector< OutputWindow::Display > OutputWindow::Displays()
 	std::vector< Display > displays;
 	int count              = 0;
 	GLFWmonitor** monitors = glfwGetMonitors( &count );
+	GLFWmonitor* primary   = glfwGetPrimaryMonitor();
 	for( int i = 0; i < count; ++i )
 	{
 		Display d;
 		d.monitor               = monitors[ i ];
+		d.primary               = monitors[ i ] == primary;
 		const GLFWvidmode* mode = glfwGetVideoMode( monitors[ i ] );
 		if( mode )
 		{
@@ -20,25 +23,89 @@ std::vector< OutputWindow::Display > OutputWindow::Displays()
 			d.height  = mode->height;
 			d.refresh = mode->refreshRate;
 		}
+		glfwGetMonitorPos( monitors[ i ], &d.x, &d.y );
 		const char* name = glfwGetMonitorName( monitors[ i ] );
 		d.monitorName    = name ? name : "Display";
-		d.name           = std::to_string( i + 1 ) + ": " + d.monitorName;
 		displays.push_back( d );
 	}
+	SetIds( displays );
 	return displays;
+}
+
+void OutputWindow::SetIds( std::vector< Display >& displays )
+{
+	for( size_t i = 0; i < displays.size(); ++i )
+	{
+		Display& d = displays[ i ];
+		int same   = 1;
+		for( size_t j = 0; j < i; ++j )
+			same += displays[ j ].monitorName == d.monitorName ? 1 : 0;
+		d.id   = d.monitorName + "#" + std::to_string( same ) + "@" + std::to_string( d.x ) + "," + std::to_string( d.y );
+		d.name = std::to_string( i + 1 ) + ": " + d.monitorName + ( d.primary ? " (main)" : "" );
+	}
+}
+
+namespace
+{
+// An id's parts: the name, the number among displays of that name and the place (false: a name alone).
+bool SplitId( const std::string& id, std::string& name, int& number, int& x, int& y )
+{
+	size_t at = id.rfind( '@' ), hash = id.rfind( '#', at );
+	if( at == std::string::npos || hash == std::string::npos )
+		return false;
+	name = id.substr( 0, hash );
+	return std::sscanf( id.c_str() + hash + 1, "%d", &number ) == 1 && std::sscanf( id.c_str() + at + 1, "%d,%d", &x, &y ) == 2;
+}
+}
+
+int OutputWindow::MatchDisplay( const std::vector< Display >& displays, const std::string& id )
+{
+	for( size_t i = 0; i < displays.size(); ++i )
+		if( displays[ i ].id == id )
+			return (int)i;
+	std::string name;
+	int number = 0, x = 0, y = 0;
+	if( !SplitId( id, name, number, x, y ) )
+	{
+		for( size_t i = 0; i < displays.size(); ++i )
+			if( displays[ i ].monitorName == id )
+				return (int)i;
+		return -1;
+	}
+	for( size_t i = 0; i < displays.size(); ++i )
+		if( displays[ i ].monitorName == name && displays[ i ].x == x && displays[ i ].y == y )
+			return (int)i;
+	for( size_t i = 0; i < displays.size(); ++i )
+	{
+		std::string otherName;
+		int otherNumber = 0, ox = 0, oy = 0;
+		if( SplitId( displays[ i ].id, otherName, otherNumber, ox, oy ) && otherName == name && otherNumber == number )
+			return (int)i;
+	}
+	return -1;
+}
+
+GLFWmonitor* OutputWindow::FindDisplay( const std::string& id )
+{
+	std::vector< Display > displays = Displays();
+	int found                       = MatchDisplay( displays, id );
+	return found >= 0 ? displays[ found ].monitor : nullptr;
+}
+
+std::string OutputWindow::DisplayLabel( const std::string& id )
+{
+	std::vector< Display > displays = Displays();
+	int found                       = MatchDisplay( displays, id );
+	if( found >= 0 )
+		return displays[ found ].name;
+	std::string name;
+	int number = 0, x = 0, y = 0;
+	return ( SplitId( id, name, number, x, y ) ? name : id ) + " (not connected)";
 }
 
 OutputWindow::~OutputWindow()
 {
 	Close();
-}
-
-GLFWmonitor* OutputWindow::FindDisplay( const std::string& monitorName )
-{
-	for( const Display& d : Displays() )
-		if( d.monitorName == monitorName )
-			return d.monitor;
-	return nullptr;
 }
 
 bool OutputWindow::Open( GLFWwindow* shareWith, GLFWmonitor* monitor, const std::string& title, int windowWidth, int windowHeight, bool vsync )

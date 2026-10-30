@@ -159,6 +159,18 @@ static void TestSettings()
 	CHECK( loaded.oscEnabled && loaded.oscPort == 9000 && loaded.midiInputsOff.size() == 1 && loaded.midi.size() == 2 );
 	CHECK( loaded.midi.size() == 2 && loaded.midi[ 0 ].key == s.midi[ 0 ].key && loaded.midi[ 1 ].address == s.midi[ 1 ].address );
 	CHECK( !loaded.Load( "{}" ) && loaded.oscPort == 9000 );
+
+	// Shortcut presets carry the maps alone: loading one replaces the maps and keeps the OSC and MIDI settings.
+	s.preset = "Club";
+	ControlSettings other;
+	other.oscPort = 7100;
+	other.keys.push_back( { { "Z" }, "/composition/stop" } );
+	CHECK( other.LoadShortcuts( s.SaveShortcuts() ) );
+	CHECK( other.oscPort == 7100 && other.keys.size() == 2 && other.midi.size() == 2 && other.keys[ 1 ].chord == KeyChord{ "F5" } );
+	CHECK( other.SaveShortcuts() == s.SaveShortcuts() );
+	CHECK( other.LoadShortcuts( s.Save() ) && other.keys.size() == 2 ); // a whole settings file works too
+	CHECK( !other.LoadShortcuts( "{\"format\":\"stlt-vj-composition\"}" ) && other.keys.size() == 2 );
+	CHECK( loaded.Load( s.Save() ) && loaded.preset == "Club" );
 }
 
 int main()

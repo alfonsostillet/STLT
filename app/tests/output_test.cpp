@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <string>
 #include "output/AdvancedOutput.h"
+#include "render/OutputWindow.h"
 
 using namespace stltvj;
 
@@ -369,9 +370,42 @@ static void TestResolumeWarpImport()
 	CHECK( bez.warp == WarpMode::Curved && bez.gridColumns == 2 && bez.gridRows == 2 && Near( bez.Map( 1, 0 ), { 350, 0 }, 0.05f ) );
 }
 
+// Displays sharing a name (Windows calls most of them "Generic PnP Monitor") are told apart: the one chosen is the
+// one found again, also when they are listed in another order or one moves; ids from before (a name) still work.
+static void TestDisplayIds()
+{
+	using Display = OutputWindow::Display;
+	auto make     = []( const char* name, int x, int y ) {
+		Display d;
+		d.monitorName = name;
+		d.x           = x;
+		d.y           = y;
+		return d;
+	};
+	std::vector< Display > displays = { make( "Generic PnP Monitor", 0, 0 ), make( "Generic PnP Monitor", 1920, 0 ), make( "DELL U2720Q", -2560, 0 ) };
+	OutputWindow::SetIds( displays );
+	CHECK( displays[ 0 ].id != displays[ 1 ].id );
+	CHECK( OutputWindow::MatchDisplay( displays, displays[ 1 ].id ) == 1 );
+	CHECK( OutputWindow::MatchDisplay( displays, displays[ 0 ].id ) == 0 );
+	CHECK( OutputWindow::MatchDisplay( displays, displays[ 2 ].id ) == 2 );
+	// Listed the other way round: still the one at 1920,0.
+	std::string second              = displays[ 1 ].id;
+	std::vector< Display > reversed = { displays[ 1 ], displays[ 0 ], displays[ 2 ] };
+	OutputWindow::SetIds( reversed );
+	CHECK( OutputWindow::MatchDisplay( reversed, second ) == 0 );
+	// Moved on the desktop: the second of that name.
+	std::vector< Display > moved = { make( "Generic PnP Monitor", 0, 0 ), make( "Generic PnP Monitor", 0, 1080 ) };
+	OutputWindow::SetIds( moved );
+	CHECK( OutputWindow::MatchDisplay( moved, second ) == 1 );
+	// A name alone (setups saved before): the first of that name; unknown: none.
+	CHECK( OutputWindow::MatchDisplay( displays, "DELL U2720Q" ) == 2 );
+	CHECK( OutputWindow::MatchDisplay( displays, "Missing Monitor#1@0,0" ) == -1 );
+}
+
 int main()
 {
 	TestPerspective();
+	TestDisplayIds();
 	TestGrids();
 	TestContour();
 	TestMasks();

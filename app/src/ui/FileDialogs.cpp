@@ -29,6 +29,7 @@ const nfdu8filteritem_t kMediaFilters[] = {
 	{ "Images", "png,jpg,jpeg,bmp,gif,tif,tiff,webp" },
 };
 const nfdu8filteritem_t kCompositionFilters[] = { { "STLT-VJ composition", "stltvj" } };
+const nfdu8filteritem_t kShortcutFilters[]    = { { "STLT-VJ shortcuts", "json" } };
 
 // The folder part of a default path: dialogs want an existing folder to start in.
 std::string StartFolder( const std::string& path )
@@ -82,6 +83,10 @@ void Run( FileDialog kind, const std::string& defaultPath, const std::string& de
 		break;
 	case FileDialog::PickFolder: outcome = NFD_PickFolderU8( &path, start ); break;
 	case FileDialog::OpenAnyFile: outcome = NFD_OpenDialogU8( &path, nullptr, 0, start ); break;
+	case FileDialog::OpenShortcuts: outcome = NFD_OpenDialogU8( &path, kShortcutFilters, 1, start ); break;
+	case FileDialog::SaveShortcuts:
+		outcome = NFD_SaveDialogU8( &path, kShortcutFilters, 1, start, defaultName.empty() ? nullptr : defaultName.c_str() );
+		break;
 	}
 	if( path )
 	{
@@ -93,6 +98,8 @@ void Run( FileDialog kind, const std::string& defaultPath, const std::string& de
 	// A save dialog may hand back a name without the extension.
 	if( kind == FileDialog::SaveComposition && !result.paths.empty() && fs::u8path( result.paths[ 0 ] ).extension() != ".stltvj" )
 		result.paths[ 0 ] += ".stltvj";
+	if( kind == FileDialog::SaveShortcuts && !result.paths.empty() && fs::u8path( result.paths[ 0 ] ).extension() != ".json" )
+		result.paths[ 0 ] += ".json";
 	NFD_Quit();
 }
 }

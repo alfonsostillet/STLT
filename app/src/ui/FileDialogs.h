@@ -16,6 +16,8 @@ enum class FileDialog
 	SaveComposition,
 	PickFolder,
 	OpenAnyFile,
+	OpenShortcuts,
+	SaveShortcuts,
 };
 
 using FileDialogDone = std::function< void( const std::vector< std::string >& paths ) >;

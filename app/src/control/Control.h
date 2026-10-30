@@ -152,8 +152,13 @@ struct ControlSettings
 	std::vector< std::string > midiInputsOff; // input names the user switched off (new devices are on)
 	std::vector< MidiMapping > midi;
 	std::vector< KeyMapping > keys;
+	std::string preset; // the shortcut preset the maps came from ("": none)
 
 	std::string Save() const;
 	bool Load( const std::string& json );
+	// The maps alone (keys and MIDI), as a shortcut preset or file to carry to other computers and projects.
+	// LoadShortcuts replaces both maps; it also takes a whole settings file.
+	std::string SaveShortcuts() const;
+	bool LoadShortcuts( const std::string& json );
 };
 }

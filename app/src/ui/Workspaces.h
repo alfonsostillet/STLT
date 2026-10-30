@@ -8,6 +8,7 @@ namespace stltvj
 // Which panels are open. Saved inside the layout, so a workspace brings back its own set of panels.
 struct PanelVisibility
 {
+	bool layers             = true;
 	bool clips              = true;
 	bool compositionMonitor = true;
 	bool previewMonitor     = true;
@@ -25,6 +26,7 @@ struct PanelVisibility
 // Panel window names: also the keys ImGui saves their place under.
 namespace panel
 {
+constexpr const char* Layers             = "Layers"; // the layers' headers, beside the clips
 constexpr const char* Clips              = "Clips";
 constexpr const char* CompositionMonitor = "Composition Monitor";
 constexpr const char* PreviewMonitor     = "Preview Monitor";

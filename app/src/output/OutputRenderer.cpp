@@ -537,7 +537,7 @@ std::string OutputRenderer::DeviceStatus( size_t index ) const
 		return "";
 	const ScreenState& state = *screens[ index ];
 	if( state.missingDisplay )
-		return "display \"" + state.display + "\" not connected";
+		return OutputWindow::DisplayLabel( state.display );
 	if( state.window && state.window->IsOpen() )
 		return state.window->Description();
 	return "virtual (not shown)";

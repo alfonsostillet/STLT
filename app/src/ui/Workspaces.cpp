@@ -14,12 +14,19 @@ namespace
 {
 PanelVisibility* visibility = nullptr;
 
+// What the Layers panel needs: the layers' headers (as drawn by the deck) and the window's padding.
+float LayersWidth()
+{
+	return 478.0f * ImGui::GetFontSize() / 15.0f + ImGui::GetStyle().WindowPadding.x * 2 + 4;
+}
+
 struct Flag
 {
 	const char* key;
 	bool PanelVisibility::*member;
 };
 const Flag kFlags[] = {
+	{ "Layers", &PanelVisibility::layers },
 	{ "Clips", &PanelVisibility::clips },
 	{ "CompositionMonitor", &PanelVisibility::compositionMonitor },
 	{ "PreviewMonitor", &PanelVisibility::previewMonitor },
@@ -158,6 +165,18 @@ void Workspaces::BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size )
 		ImGuiWindowSettings* files = ImGui::FindWindowSettingsByID( ImHashStr( panel::Files ) );
 		if( files && files->DockId && !ImGui::FindWindowSettingsByID( ImHashStr( panel::Control ) ) && !ImGui::FindWindowByName( panel::Control ) )
 			ImGui::DockBuilderDockWindow( panel::Control, files->DockId );
+		// Before the Layers panel the layers' headers were part of Clips: it goes to Clips' left.
+		ImGuiWindowSettings* clips = ImGui::FindWindowSettingsByID( ImHashStr( panel::Clips ) );
+		ImGuiDockNode* deck        = clips && clips->DockId ? ImGui::DockBuilderGetNode( clips->DockId ) : nullptr;
+		if( deck && !ImGui::FindWindowSettingsByID( ImHashStr( panel::Layers ) ) && !ImGui::FindWindowByName( panel::Layers ) )
+		{
+			ImGuiID left, right;
+			float width = std::max( deck->Size.x, 1.0f );
+			ImGui::DockBuilderSplitNode( deck->ID, ImGuiDir_Left, std::clamp( LayersWidth() / width, 0.2f, 0.6f ), &left, &right );
+			ImGui::DockBuilderDockWindow( panel::Layers, left );
+			ImGui::DockBuilderDockWindow( panel::Clips, right );
+			ImGui::DockBuilderFinish( dockspace );
+		}
 		return;
 	}
 	buildDefault = false;
@@ -178,7 +197,10 @@ void Workspaces::BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size )
 	ImGuiID clipParams, browser;
 	ImGui::DockBuilderSplitNode( rest2, ImGuiDir_Left, 0.5f, &clipParams, &browser );
 
-	ImGui::DockBuilderDockWindow( panel::Clips, top );
+	ImGuiID layers, clips;
+	ImGui::DockBuilderSplitNode( top, ImGuiDir_Left, std::clamp( LayersWidth() / std::max( size.x, 1.0f ), 0.2f, 0.6f ), &layers, &clips );
+	ImGui::DockBuilderDockWindow( panel::Layers, layers );
+	ImGui::DockBuilderDockWindow( panel::Clips, clips );
 	ImGui::DockBuilderDockWindow( panel::CompositionMonitor, compositionMonitor );
 	ImGui::DockBuilderDockWindow( panel::PreviewMonitor, previewMonitor );
 	ImGui::DockBuilderDockWindow( panel::Composition, params );

@@ -126,6 +126,16 @@ bool App::Init( const LaunchOptions& launch )
 		std::string text;
 		if( ReadTextFile( ( fs::u8path( configDir ) / "control.json" ).u8string(), text ) )
 			control.Load( text );
+		// The preset the maps came from, to tell whether they changed since.
+		std::string preset;
+		ControlSettings saved;
+		if( !control.preset.empty() && ReadTextFile( ( fs::u8path( ShortcutPresetDirectory() ) / fs::u8path( control.preset + ".json" ) ).u8string(), preset )
+		    && saved.LoadShortcuts( preset ) )
+			shortcutPresetText = saved.SaveShortcuts();
+		else
+			control.preset.clear();
+		if( control.preset.empty() )
+			shortcutPresetText = ControlSettings{}.SaveShortcuts();
 		if( options.oscPort > 0 )
 		{
 			control.oscEnabled = true;
@@ -1074,6 +1084,103 @@ void App::SaveControlSettings() const
 	WriteTextFile( ( fs::u8path( configDir ) / "control.json" ).u8string(), control.Save() );
 }
 
+std::string App::ShortcutPresetDirectory() const
+{
+	return ( fs::u8path( configDir ) / "shortcut-presets" ).u8string();
+}
+
+std::vector< std::string > App::ShortcutPresets() const
+{
+	std::vector< std::string > names;
+	std::error_code error;
+	for( const fs::directory_entry& entry : fs::directory_iterator( fs::u8path( ShortcutPresetDirectory() ), error ) )
+		if( entry.path().extension() == ".json" )
+			names.push_back( entry.path().stem().u8string() );
+	std::sort( names.begin(), names.end() );
+	return names;
+}
+
+bool App::SaveShortcutPreset( const std::string& name )
+{
+	if( name.empty() || name.find_first_of( "/\\:*?\"<>|" ) != std::string::npos )
+	{
+		SetStatus( "Give the shortcut preset a name without / \\ : * ? \" < > |", true );
+		return false;
+	}
+	std::error_code ignored;
+	fs::create_directories( fs::u8path( ShortcutPresetDirectory() ), ignored );
+	std::string text = control.SaveShortcuts();
+	if( !WriteTextFile( ( fs::u8path( ShortcutPresetDirectory() ) / fs::u8path( name + ".json" ) ).u8string(), text ) )
+	{
+		SetStatus( "Could not save the shortcut preset " + name, true );
+		return false;
+	}
+	control.preset     = name;
+	shortcutPresetText = text;
+	SaveControlSettings();
+	SetStatus( "Shortcuts saved as \"" + name + "\"" );
+	return true;
+}
+
+bool App::LoadShortcutPreset( const std::string& name )
+{
+	std::string text;
+	if( !ReadTextFile( ( fs::u8path( ShortcutPresetDirectory() ) / fs::u8path( name + ".json" ) ).u8string(), text ) || !control.LoadShortcuts( text ) )
+	{
+		SetStatus( "Could not load the shortcut preset " + name, true );
+		return false;
+	}
+	control.preset     = name;
+	shortcutPresetText = control.SaveShortcuts();
+	learnTarget.clear();
+	SaveControlSettings();
+	SetStatus( "Shortcuts \"" + name + "\" loaded: " + std::to_string( control.keys.size() ) + " keys, " + std::to_string( control.midi.size() ) + " MIDI" );
+	return true;
+}
+
+bool App::DeleteShortcutPreset( const std::string& name )
+{
+	std::error_code error;
+	if( !fs::remove( fs::u8path( ShortcutPresetDirectory() ) / fs::u8path( name + ".json" ), error ) )
+		return false;
+	if( control.preset == name )
+	{
+		// The maps stay; they just no longer come from a preset.
+		control.preset     = "";
+		shortcutPresetText = ControlSettings{}.SaveShortcuts();
+		SaveControlSettings();
+	}
+	SetStatus( "Deleted the shortcut preset " + name );
+	return true;
+}
+
+bool App::ExportShortcuts( const std::string& path )
+{
+	if( !WriteTextFile( path, control.SaveShortcuts() ) )
+	{
+		SetStatus( "Could not write " + path, true );
+		return false;
+	}
+	SetStatus( "Shortcuts exported to " + path );
+	return true;
+}
+
+bool App::ImportShortcuts( const std::string& path )
+{
+	std::string text;
+	if( !ReadTextFile( path, text ) || !control.LoadShortcuts( text ) )
+	{
+		SetStatus( "Not an STLT-VJ shortcut file: " + path, true );
+		return false;
+	}
+	// It becomes a preset of its own, named after the file.
+	std::string name = fs::u8path( path ).stem().u8string();
+	learnTarget.clear();
+	SaveShortcutPreset( name );
+	SetStatus( "Shortcuts imported from " + path + " (preset \"" + name + "\")" );
+	return true;
+}
+
 void App::PollRemote()
 {
 	// Devices come and go: look again every couple of seconds.
@@ -1499,9 +1606,10 @@ void PlaceScreen( Screen& screen, OutputDevice device, const std::string& displa
 	screen.device  = device;
 	screen.display = display;
 	screen.enabled = true;
-	if( device == OutputDevice::Display )
+	GLFWmonitor* monitor = device == OutputDevice::Display ? OutputWindow::FindDisplay( display ) : nullptr;
+	if( monitor )
 		for( const OutputWindow::Display& d : OutputWindow::Displays() )
-			if( d.monitorName == display && screen.slices.size() <= 1 && ( screen.width != d.width || screen.height != d.height ) )
+			if( d.monitor == monitor && screen.slices.size() <= 1 && ( screen.width != d.width || screen.height != d.height ) )
 			{
 				// A simple one-slice screen follows the display's resolution.
 				screen.width  = d.width;
@@ -1568,10 +1676,7 @@ std::string App::OutputModeLabel() const
 	case OutputMode::Off: return "Off";
 	case OutputMode::Window: return "Window";
 	case OutputMode::Fullscreen:
-		for( const OutputWindow::Display& d : OutputWindow::Displays() )
-			if( d.monitorName == outputDisplay )
-				return "Fullscreen on " + d.name;
-		return "Fullscreen (display not connected)";
+		return "Fullscreen on " + OutputWindow::DisplayLabel( outputDisplay );
 	case OutputMode::Advanced: return "Advanced";
 	}
 	return "";
@@ -1936,6 +2041,8 @@ void App::DrawUi()
 		PollKeyboard();
 
 	BeginMappable( *this );
+	if( panels.layers )
+		DrawLayersPanel( *this );
 	if( panels.clips )
 		DrawClipGrid( *this );
 	if( panels.compositionMonitor )
