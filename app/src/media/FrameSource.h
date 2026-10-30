@@ -82,4 +82,6 @@ bool HardwareDecoding();
 
 // Extensions the browser and drops accept (lower case, with the dot).
 bool IsMediaExtension( const std::string& extension );
+// Sound files (no picture): for the timeline's audio tracks.
+bool IsAudioExtension( const std::string& extension );
 }

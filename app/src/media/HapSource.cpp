@@ -32,6 +32,17 @@ bool IsMediaExtension( const std::string& extension )
 	return false;
 }
 
+bool IsAudioExtension( const std::string& extension )
+{
+	static const char* known[] = { ".mp3", ".wav", ".aif", ".aiff", ".flac", ".m4a", ".aac", ".ogg", ".opus", ".wma" };
+	std::string e = extension;
+	std::transform( e.begin(), e.end(), e.begin(), []( unsigned char c ) { return (char)std::tolower( c ); } );
+	for( const char* k : known )
+		if( e == k )
+			return true;
+	return false;
+}
+
 bool HapSource::Open( std::unique_ptr< MovFile > file, std::string& error )
 {
 	movie                   = std::move( file );

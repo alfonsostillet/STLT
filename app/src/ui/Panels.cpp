@@ -67,6 +67,11 @@ bool IsMediaFile( const fs::path& path )
 	return IsMediaExtension( path.extension().u8string() );
 }
 
+bool IsAudioFile( const fs::path& path )
+{
+	return IsAudioExtension( path.extension().u8string() );
+}
+
 bool IsComposition( const fs::path& path )
 {
 	return path.extension() == ".stltvj";
@@ -190,7 +195,7 @@ const Listing& ListDirectory( const std::string& directory )
 		std::error_code ignored;
 		if( entry.is_directory( ignored ) )
 			listing.folders.push_back( entry.path() );
-		else if( IsMediaFile( entry.path() ) || IsComposition( entry.path() ) )
+		else if( IsMediaFile( entry.path() ) || IsAudioFile( entry.path() ) || IsComposition( entry.path() ) )
 			listing.files.push_back( entry.path() );
 	}
 	auto byName = []( const fs::path& a, const fs::path& b ) { return a.filename().u8string() < b.filename().u8string(); };
@@ -208,6 +213,11 @@ void LoadInto( App& app, int layer, int column, const std::vector< std::string >
 		{
 			app.OpenComposition( path );
 			return;
+		}
+		if( IsAudioFile( fs::u8path( path ) ) )
+		{
+			app.SetStatus( "Sound files go on the timeline's audio tracks (Arrangement view, Tab)", true );
+			continue;
 		}
 		if( !IsMediaFile( fs::u8path( path ) ) )
 			continue;
@@ -274,14 +284,13 @@ static void DrawOutputModeItems( App& app )
 		}
 		ImGui::EndMenu();
 	}
-	// As Resolume's "Advanced...": shows the Advanced Output setup and opens its editor.
+	// As Resolume's "Advanced...": shows the Advanced Output setup and opens its editor; chosen again, back to the
+	// mode before.
 	if( ImGui::MenuItem( "Advanced...", nullptr, app.outputMode == OutputMode::Advanced ) )
-	{
-		app.SetOutputMode( OutputMode::Advanced );
-		app.panels.advancedOutput = true;
-	}
+		app.ToggleAdvancedOutput();
 	if( ImGui::IsItemHovered() )
-		ImGui::SetTooltip( "Screens with slices, warps and masks: opens the Advanced Output editor (Ctrl+Shift+A)" );
+		ImGui::SetTooltip( app.outputMode == OutputMode::Advanced ? "Advanced is on: choose it again to go back to the output before it"
+		                                                          : "Screens with slices, warps and masks: opens the Advanced Output editor (Ctrl+Shift+A)" );
 }
 
 void DrawMainMenu( App& app )
@@ -2482,10 +2491,9 @@ void DrawOutputPanel( App& app )
 	}
 	ImGui::SameLine();
 	if( modeButton( "Advanced", app.outputMode == OutputMode::Advanced ) )
-	{
-		app.SetOutputMode( OutputMode::Advanced );
-		app.panels.advancedOutput = true;
-	}
+		app.ToggleAdvancedOutput();
+	if( ImGui::IsItemHovered() && app.outputMode == OutputMode::Advanced )
+		ImGui::SetTooltip( "Press again to go back to the output before Advanced" );
 	ImGui::PushTextWrapPos( 0 );
 	switch( app.outputMode )
 	{

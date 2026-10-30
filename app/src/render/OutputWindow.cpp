@@ -1,5 +1,6 @@
 #include "OutputWindow.h"
 #include <GLFW/glfw3.h>
+#include <algorithm>
 #include <cstdio>
 #include "render/Compositor.h"
 
@@ -120,10 +121,34 @@ bool OutputWindow::Open( GLFWwindow* shareWith, GLFWmonitor* monitor, const std:
 	if( monitor )
 	{
 		const GLFWvidmode* mode = glfwGetVideoMode( monitor );
-		glfwWindowHint( GLFW_REFRESH_RATE, mode->refreshRate );
-		window      = glfwCreateWindow( mode->width, mode->height, title.c_str(), monitor, shareWith );
 		description = std::string( glfwGetMonitorName( monitor ) ? glfwGetMonitorName( monitor ) : "Display" ) + " " + std::to_string( mode->width ) + "x"
 		              + std::to_string( mode->height );
+#ifdef __APPLE__
+		glfwWindowHint( GLFW_REFRESH_RATE, mode->refreshRate );
+		window = glfwCreateWindow( mode->width, mode->height, title.c_str(), monitor, shareWith );
+#else
+		// A borderless window over the whole display, not exclusive fullscreen: with exclusive fullscreen Windows
+		// switches the display's mode whenever the output gains or loses the focus (a click on it, a click back on
+		// the interface), and the projection goes black for seconds. One pixel taller than the display keeps the
+		// driver from turning the window into exclusive fullscreen on its own.
+		int x = 0, y = 0;
+		glfwGetMonitorPos( monitor, &x, &y );
+		glfwWindowHint( GLFW_DECORATED, GLFW_FALSE );
+		glfwWindowHint( GLFW_VISIBLE, GLFW_FALSE );
+		glfwWindowHint( GLFW_RESIZABLE, GLFW_FALSE );
+#ifdef _WIN32
+		const int extra = 1;
+#else
+		const int extra = 0;
+#endif
+		window     = glfwCreateWindow( mode->width, mode->height + extra, title.c_str(), nullptr, shareWith );
+		hiddenRows = extra;
+		if( window )
+		{
+			glfwSetWindowPos( window, x, y );
+			glfwShowWindow( window );
+		}
+#endif
 	}
 	else
 	{
@@ -133,6 +158,8 @@ bool OutputWindow::Open( GLFWwindow* shareWith, GLFWmonitor* monitor, const std:
 	glfwDefaultWindowHints();
 	if( !window )
 		return false;
+	if( !monitor )
+		hiddenRows = 0;
 	// Escape on the output (it only has the keyboard once clicked, or when it covers the interface's display)
 	// closes it, like its close button.
 	glfwSetKeyCallback( window, []( GLFWwindow* w, int key, int, int action, int ) {
@@ -175,8 +202,11 @@ void OutputWindow::Present( Compositor& compositor, GLuint texture, int width, i
 	glViewport( 0, 0, fbWidth, fbHeight );
 	glClearColor( 0, 0, 0, 1 );
 	glClear( GL_COLOR_BUFFER_BIT );
+	// The picture on the display's own rows (the window's extra row hangs below the display).
+	int shownHeight = std::max( 1, fbHeight - hiddenRows );
+	glViewport( 0, fbHeight - shownHeight, fbWidth, shownHeight );
 	glBindVertexArray( vao );
-	compositor.DrawFitted( texture, width, height, fbWidth, fbHeight, 1.0f );
+	compositor.DrawFitted( texture, width, height, fbWidth, shownHeight, 1.0f );
 	glBindVertexArray( 0 );
 	glfwSwapBuffers( window );
 	glfwMakeContextCurrent( restore );

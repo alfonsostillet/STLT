@@ -52,6 +52,7 @@ public:
 private:
 	GLFWwindow* window = nullptr;
 	GLuint vao         = 0;
+	int hiddenRows     = 0; // rows of the window below the display (see Open)
 	std::string description;
 };
 }

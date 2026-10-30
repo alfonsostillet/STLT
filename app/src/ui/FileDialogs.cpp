@@ -27,6 +27,7 @@ const nfdu8filteritem_t kMediaFilters[] = {
 	{ "Movies and images", "mov,mp4,m4v,avi,mkv,webm,mpg,mpeg,ts,mxf,gif,png,jpg,jpeg,bmp,tif,tiff,webp" },
 	{ "Movies", "mov,mp4,m4v,avi,mkv,webm,mpg,mpeg,ts,mxf" },
 	{ "Images", "png,jpg,jpeg,bmp,gif,tif,tiff,webp" },
+	{ "Sound (timeline)", "mp3,wav,aif,aiff,flac,m4a,aac,ogg,opus,wma" },
 };
 const nfdu8filteritem_t kCompositionFilters[] = { { "STLT-VJ composition", "stltvj" } };
 const nfdu8filteritem_t kShortcutFilters[]    = { { "STLT-VJ shortcuts", "json" } };
@@ -59,7 +60,7 @@ void Run( FileDialog kind, const std::string& defaultPath, const std::string& de
 	case FileDialog::OpenMedia:
 	{
 		const nfdpathset_t* set = nullptr;
-		outcome                 = NFD_OpenDialogMultipleU8( &set, kMediaFilters, 3, start );
+		outcome                 = NFD_OpenDialogMultipleU8( &set, kMediaFilters, 4, start );
 		if( outcome == NFD_OKAY )
 		{
 			nfdpathsetsize_t count = 0;

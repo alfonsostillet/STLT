@@ -138,6 +138,9 @@ public:
 	// Outputs. SetOutputMode switches what is shown (`display`: the monitor for Fullscreen); ShowScreenOn puts a
 	// screen of the Advanced Output setup on a display or in a window, and makes Advanced the mode.
 	void SetOutputMode( OutputMode mode, const std::string& display = {} );
+	// Advanced on; or, when it is on, back to the mode before it (Fullscreen on the same display, a window...).
+	void ToggleAdvancedOutput();
+	OutputMode beforeAdvanced = OutputMode::Off;
 	std::string OutputModeLabel() const; // "Off", "Window", "Fullscreen on DELL U2415", "Advanced"
 	void ShowScreenOn( size_t screen, OutputDevice device, const std::string& display = {} );
 	void StopOutputs() { SetOutputMode( OutputMode::Off ); }

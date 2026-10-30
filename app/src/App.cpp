@@ -228,6 +228,8 @@ bool App::Init( const LaunchOptions& launch )
 		std::string name = mode.value( "mode", "off" );
 		outputMode       = name == "window" ? OutputMode::Window : name == "fullscreen" ? OutputMode::Fullscreen : name == "advanced" ? OutputMode::Advanced : OutputMode::Off;
 		outputDisplay    = mode.value( "display", "" );
+		std::string before = mode.value( "beforeAdvanced", "off" );
+		beforeAdvanced     = before == "window" ? OutputMode::Window : before == "fullscreen" ? OutputMode::Fullscreen : OutputMode::Off;
 	}
 	else if( !options.fresh )
 		outputMode = std::any_of( advancedOutput.screens.begin(), advancedOutput.screens.end(), []( const Screen& s ) { return s.device != OutputDevice::Virtual; } )
@@ -1727,8 +1729,22 @@ void App::RevertOutputSetup()
 	SetStatus( "Advanced Output: back to the saved setup" );
 }
 
+void App::ToggleAdvancedOutput()
+{
+	if( outputMode == OutputMode::Advanced )
+	{
+		SetOutputMode( beforeAdvanced, outputDisplay );
+		panels.advancedOutput = false;
+		return;
+	}
+	SetOutputMode( OutputMode::Advanced );
+	panels.advancedOutput = true;
+}
+
 void App::SetOutputMode( OutputMode mode, const std::string& display )
 {
+	if( mode == OutputMode::Advanced && outputMode != OutputMode::Advanced )
+		beforeAdvanced = outputMode;
 	outputMode = mode;
 	if( mode == OutputMode::Fullscreen )
 		outputDisplay = display;
@@ -1766,7 +1782,7 @@ void App::UpdateQuickOutput()
 void App::SaveOutputMode() const
 {
 	const char* names[] = { "off", "window", "fullscreen", "advanced" };
-	nlohmann::json mode = { { "mode", names[ (int)outputMode ] }, { "display", outputDisplay } };
+	nlohmann::json mode = { { "mode", names[ (int)outputMode ] }, { "display", outputDisplay }, { "beforeAdvanced", names[ (int)beforeAdvanced ] } };
 	WriteTextFile( ( fs::u8path( configDir ) / "output-mode.json" ).u8string(), mode.dump( 1 ) );
 }
 
@@ -2021,6 +2037,23 @@ int App::AddTimelineClip( int track, double start, Clip clip )
 
 int App::AddTimelineFile( int track, double start, const std::string& path )
 {
+	// A sound file belongs on an audio track: the first one (made if there is none).
+	Timeline& t = composition.timeline;
+	if( IsAudioExtension( fs::u8path( path ).extension().u8string() ) && track >= 0 && track < (int)t.tracks.size() && !t.tracks[ track ].audio )
+	{
+		track = -1;
+		for( int k = 0; k < (int)t.tracks.size() && track < 0; ++k )
+			if( t.tracks[ k ].audio )
+				track = k;
+		if( track < 0 )
+		{
+			TimelineTrack audioTrack;
+			audioTrack.name  = "Audio 1";
+			audioTrack.audio = true;
+			t.tracks.push_back( std::move( audioTrack ) );
+			track = (int)t.tracks.size() - 1;
+		}
+	}
 	Clip clip;
 	clip.path = path;
 	clip.name = fs::u8path( path ).stem().u8string();
