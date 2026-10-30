@@ -150,15 +150,6 @@ void AnimatedMark( bool animated )
 	ImGui::GetWindowDrawList()->AddRectFilled( ImVec2( min.x - Ui( 4 ), min.y ), ImVec2( min.x - Ui( 1 ), ImGui::GetItemRectMax().y ), theme::Accent );
 }
 
-void ParamLabel( const char* label )
-{
-	ImGui::TableNextRow();
-	ImGui::TableSetColumnIndex( 0 );
-	ImGui::AlignTextToFramePadding();
-	ImGui::TextUnformatted( label );
-	ImGui::TableSetColumnIndex( 1 );
-	ImGui::SetNextItemWidth( -FLT_MIN );
-}
 
 // The effect's place in its chain while its parameters are drawn (for keyframe hooks).
 int drawingSlot = -1;
@@ -576,6 +567,55 @@ void DrawEffectChain( App& app, EffectChain& chain, const char* id, const std::s
 	ImGui::PopID();
 }
 
+void DrawPluginFolders( App& app )
+{
+	ImGui::TextWrapped( "FFGL 2 plugins (.dll on Windows, .bundle on macOS) are loaded from these folders and their subfolders." );
+	std::vector< std::string > defaults = EffectRegistry::DefaultFolders( app.configDir );
+	std::string remove;
+	for( const std::string& folder : app.PluginFolders() )
+	{
+		bool isDefault = std::find( defaults.begin(), defaults.end(), folder ) != defaults.end();
+		std::error_code ignored;
+		bool exists = fs::is_directory( fs::u8path( folder ), ignored );
+		ImGui::PushID( folder.c_str() );
+		if( !isDefault && ImGui::SmallButton( "x" ) )
+			remove = folder;
+		if( !isDefault )
+			ImGui::SameLine();
+		if( exists )
+			ImGui::TextUnformatted( folder.c_str() );
+		else
+			ImGui::TextDisabled( "%s (not found)", folder.c_str() );
+		ImGui::PopID();
+	}
+	if( !remove.empty() )
+		app.RemovePluginFolder( remove );
+	static std::string newFolder;
+	ImGui::SetNextItemWidth( -Ui( 120 ) );
+	ImGui::InputTextWithHint( "##newFolder", "another folder with FFGL plugins", &newFolder );
+	ImGui::SameLine();
+	if( ImGui::Button( "Add Folder" ) && !newFolder.empty() )
+	{
+		app.AddPluginFolder( newFolder );
+		newFolder.clear();
+	}
+	ImGui::SameLine();
+	if( ImGui::Button( "Choose Folder..." ) )
+		ShowFileDialog( FileDialog::PickFolder, app.configDir, [ &app ]( const std::vector< std::string >& paths ) { app.AddPluginFolder( paths[ 0 ] ); } );
+	if( ImGui::Button( "Rescan" ) )
+		app.RescanPlugins();
+	if( !app.registry->Failures().empty() )
+	{
+		ImGui::SeparatorText( "Not loaded" );
+		for( const EffectRegistry::Failure& f : app.registry->Failures() )
+		{
+			ImGui::TextColored( ImVec4( 0.9f, 0.55f, 0.3f, 1 ), "%s", fs::u8path( f.path ).filename().u8string().c_str() );
+			ImGui::SameLine();
+			ImGui::TextDisabled( "%s", f.reason.c_str() );
+		}
+	}
+}
+
 void DrawEffectsPanel( App& app )
 {
 	if( !ImGui::Begin( panel::Effects, &app.panels.effects ) )
@@ -607,51 +647,7 @@ void DrawEffectsPanel( App& app )
 
 	if( tab == 2 )
 	{
-		ImGui::TextWrapped( "FFGL 2 plugins (.dll on Windows, .bundle on macOS) are loaded from these folders and their subfolders." );
-		std::vector< std::string > defaults = EffectRegistry::DefaultFolders( app.configDir );
-		std::string remove;
-		for( const std::string& folder : app.PluginFolders() )
-		{
-			bool isDefault = std::find( defaults.begin(), defaults.end(), folder ) != defaults.end();
-			std::error_code ignored;
-			bool exists = fs::is_directory( fs::u8path( folder ), ignored );
-			ImGui::PushID( folder.c_str() );
-			if( !isDefault && ImGui::SmallButton( "x" ) )
-				remove = folder;
-			if( !isDefault )
-				ImGui::SameLine();
-			if( exists )
-				ImGui::TextUnformatted( folder.c_str() );
-			else
-				ImGui::TextDisabled( "%s (not found)", folder.c_str() );
-			ImGui::PopID();
-		}
-		if( !remove.empty() )
-			app.RemovePluginFolder( remove );
-		static std::string newFolder;
-		ImGui::SetNextItemWidth( -Ui( 120 ) );
-		ImGui::InputTextWithHint( "##newFolder", "another folder with FFGL plugins", &newFolder );
-		ImGui::SameLine();
-		if( ImGui::Button( "Add Folder" ) && !newFolder.empty() )
-		{
-			app.AddPluginFolder( newFolder );
-			newFolder.clear();
-		}
-		ImGui::SameLine();
-		if( ImGui::Button( "Choose Folder..." ) )
-			ShowFileDialog( FileDialog::PickFolder, app.configDir, [ &app ]( const std::vector< std::string >& paths ) { app.AddPluginFolder( paths[ 0 ] ); } );
-		if( ImGui::Button( "Rescan" ) )
-			app.RescanPlugins();
-		if( !app.registry->Failures().empty() )
-		{
-			ImGui::SeparatorText( "Not loaded" );
-			for( const EffectRegistry::Failure& f : app.registry->Failures() )
-			{
-				ImGui::TextColored( ImVec4( 0.9f, 0.55f, 0.3f, 1 ), "%s", fs::u8path( f.path ).filename().u8string().c_str() );
-				ImGui::SameLine();
-				ImGui::TextDisabled( "%s", f.reason.c_str() );
-			}
-		}
+		DrawPluginFolders( app );
 		ImGui::End();
 		return;
 	}

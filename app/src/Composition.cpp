@@ -226,7 +226,10 @@ Composition Composition::MakeDefault()
 void Composition::AddLayer()
 {
 	Layer layer;
-	layer.name = "Layer " + std::to_string( layers.size() + 1 );
+	layer.name               = "Layer " + std::to_string( layers.size() + 1 );
+	layer.blend              = newLayerBlend;
+	layer.transition         = newLayerTransition;
+	layer.transitionDuration = newLayerTransitionTime;
 	layer.clips.resize( columns.size() );
 	layers.push_back( std::move( layer ) );
 	Normalise(); // a row in the other decks too

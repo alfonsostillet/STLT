@@ -187,6 +187,8 @@ add_library(stltvj-core STATIC
     src/Composition.cpp
     src/Composition.h
     src/Timeline.cpp
+    src/Preferences.cpp
+    src/Preferences.h
     src/History.cpp
     src/History.h
     src/Settings.cpp
@@ -348,6 +350,8 @@ add_executable(stlt-vj WIN32 MACOSX_BUNDLE
     src/ui/FileDialogs.h
     src/ui/Panels.cpp
     src/ui/Panels.h
+    src/ui/PreferencesUi.cpp
+    src/ui/PreferencesUi.h
     src/ui/Theme.cpp
     src/ui/Theme.h
     src/ui/TimelineUi.cpp

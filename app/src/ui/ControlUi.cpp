@@ -93,6 +93,58 @@ void MapTarget( App& app, const std::string& address )
 	}
 }
 
+bool DrawMidiInputs( App& app )
+{
+	ControlSettings& c = app.control;
+	bool changed       = false;
+	changed |= ImGui::Checkbox( "MIDI input", &c.midiEnabled );
+	std::string midiStatus = app.remote.MidiStatus();
+	ImGui::PushTextWrapPos( 0 );
+	if( !midiStatus.empty() )
+		ImGui::TextColored( ImVec4( 0.95f, 0.6f, 0.4f, 1 ), "%s", midiStatus.c_str() );
+	ImGui::PopTextWrapPos();
+	std::vector< std::string > devices = app.remote.MidiDevices();
+	if( devices.empty() && midiStatus.empty() )
+		ImGui::TextDisabled( "No MIDI devices connected" );
+	ImGui::BeginDisabled( !c.midiEnabled );
+	for( const std::string& name : devices )
+	{
+		auto off = std::find( c.midiInputsOff.begin(), c.midiInputsOff.end(), name );
+		bool on  = off == c.midiInputsOff.end();
+		if( ImGui::Checkbox( name.c_str(), &on ) )
+		{
+			if( on )
+				c.midiInputsOff.erase( off );
+			else
+				c.midiInputsOff.push_back( name );
+			changed = true;
+		}
+	}
+	ImGui::EndDisabled();
+	return changed;
+}
+
+bool DrawOscSettings( App& app )
+{
+	ControlSettings& c = app.control;
+	bool changed       = false;
+	changed |= ImGui::Checkbox( "Receive OSC", &c.oscEnabled );
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth( Ui( 90 ) );
+	int port = c.oscPort;
+	if( ImGui::InputInt( "UDP port", &port, 0, 0, ImGuiInputTextFlags_EnterReturnsTrue ) )
+	{
+		c.oscPort = std::clamp( port, 1, 65535 );
+		changed   = true;
+	}
+	ImGui::PushTextWrapPos( 0 );
+	ImGui::TextDisabled( "%s", app.remote.OscStatus().c_str() );
+	ImGui::TextDisabled( "Addresses as in Resolume, e.g. /composition/layers/1/clips/2/connect, /composition/layers/1/video/opacity 0.5, "
+	                     "/composition/tempocontroller/tempotap. While mapping, hovering a control shows its address." );
+	ImGui::PopTextWrapPos();
+	return changed;
+}
+
 void DrawControlPanel( App& app )
 {
 	if( !ImGui::Begin( panel::Control, &app.panels.control ) )
@@ -273,30 +325,7 @@ void DrawControlPanel( App& app )
 	}
 
 	ImGui::SeparatorText( "MIDI" );
-	changed |= ImGui::Checkbox( "MIDI input", &c.midiEnabled );
-	std::string midiStatus = app.remote.MidiStatus();
-	ImGui::PushTextWrapPos( 0 );
-	if( !midiStatus.empty() )
-		ImGui::TextColored( ImVec4( 0.95f, 0.6f, 0.4f, 1 ), "%s", midiStatus.c_str() );
-	ImGui::PopTextWrapPos();
-	std::vector< std::string > devices = app.remote.MidiDevices();
-	if( devices.empty() && midiStatus.empty() )
-		ImGui::TextDisabled( "No MIDI devices connected" );
-	ImGui::BeginDisabled( !c.midiEnabled );
-	for( const std::string& name : devices )
-	{
-		auto off = std::find( c.midiInputsOff.begin(), c.midiInputsOff.end(), name );
-		bool on  = off == c.midiInputsOff.end();
-		if( ImGui::Checkbox( name.c_str(), &on ) )
-		{
-			if( on )
-				c.midiInputsOff.erase( off );
-			else
-				c.midiInputsOff.push_back( name );
-			changed = true;
-		}
-	}
-	ImGui::EndDisabled();
+	changed |= DrawMidiInputs( app );
 
 	if( ImGui::BeginTable( "##mappings", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY,
 	                       ImVec2( 0, std::min( Ui( 220 ), ImGui::GetFrameHeight() * ( c.midi.size() + 1.5f ) ) ) ) )
@@ -335,20 +364,7 @@ void DrawControlPanel( App& app )
 	}
 
 	ImGui::SeparatorText( "OSC" );
-	changed |= ImGui::Checkbox( "Receive OSC", &c.oscEnabled );
-	ImGui::SameLine();
-	ImGui::SetNextItemWidth( Ui( 90 ) );
-	int port = c.oscPort;
-	if( ImGui::InputInt( "UDP port", &port, 0, 0, ImGuiInputTextFlags_EnterReturnsTrue ) )
-	{
-		c.oscPort = std::clamp( port, 1, 65535 );
-		changed   = true;
-	}
-	ImGui::PushTextWrapPos( 0 );
-	ImGui::TextDisabled( "%s", app.remote.OscStatus().c_str() );
-	ImGui::TextDisabled( "Addresses as in Resolume, e.g. /composition/layers/1/clips/2/connect, /composition/layers/1/video/opacity 0.5, "
-	                     "/composition/tempocontroller/tempotap. While mapping, hovering a control shows its address." );
-	ImGui::PopTextWrapPos();
+	changed |= DrawOscSettings( app );
 
 	if( !app.lastControl.empty() )
 	{

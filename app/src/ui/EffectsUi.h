@@ -11,6 +11,8 @@ constexpr const char* kEffectPayload = "STLT_EFFECT";
 
 // The Effects panel: built-in and FFGL effects and sources to drag onto clips, layers and the composition.
 void DrawEffectsPanel( App& app );
+// The folders FFGL plugins load from (add, remove, rescan) and the plugins that did not load.
+void DrawPluginFolders( App& app );
 // An effect chain: one collapsible section per effect with bypass, mix, reorder, remove and its parameters,
 // plus a drop zone and an Add menu at the end.
 // `scope` is the chain's remote-control address ("/composition", "/composition/layers/2"...): its parameters can

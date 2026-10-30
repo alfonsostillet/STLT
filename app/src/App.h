@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory>
 #include "Composition.h"
+#include "Preferences.h"
 #include "History.h"
 #include "audio/AudioEngine.h"
 #include "control/RemoteInputs.h"
@@ -76,6 +77,26 @@ public:
 	};
 	View view = View::Session;
 	void SetView( View v );
+	// Preferences (the Preferences window, Ctrl+,): saved at once; Apply passes them on (audio output, decoding,
+	// layer defaults).
+	Preferences prefs;
+	bool showPreferences = false;
+	void SavePreferences();
+	void ApplyPreferences( bool restartAudio );
+	int startViewPending = -1; // a view to switch to once the first frame is drawn (the start view)
+	// Every clip (all decks, and the timeline) to this fit; the number changed.
+	int ResizeAllClips( FitMode fit );
+	// The selected deck clip to the clipboard (Ctrl+C; with `cut`, Ctrl+X, it leaves the deck); pasted into the
+	// selected cell (Ctrl+V). Its effects alone: Copy / Paste Effects (added after the target's own).
+	void CopyClip( bool cut );
+	void PasteClip();
+	void CopyEffects();
+	void PasteEffects();
+	bool HasClipboardClip() const { return clipboard != nullptr; }
+	bool HasClipboardEffects() const { return effectsClipboard != nullptr; }
+	// Players, sounds, effects and sources of a clip made from saved settings (a copy, a paste).
+	void PrepareClip( Clip& clip );
+	std::unique_ptr< Clip > clipboard, effectsClipboard;
 	// The timeline: clips placed in time on tracks (see Timeline). Its playhead runs in either view.
 	void TimelinePlay( bool play );
 	void TimelineStop(); // stops and goes back to the start

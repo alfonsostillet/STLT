@@ -429,6 +429,10 @@ struct Composition
 	int activeColumn   = -1;
 
 	static Composition MakeDefault();
+	// What a new layer starts with (the Preferences' layer defaults; not saved with a composition).
+	static inline BlendMode newLayerBlend           = BlendMode::Alpha;
+	static inline TransitionMode newLayerTransition = TransitionMode::Fade;
+	static inline float newLayerTransitionTime      = 0;
 	int ColumnCount() const { return (int)columns.size(); }
 	void AddLayer();
 	// Removes a layer and its row of clips in every deck (the caller stops what plays from it first).

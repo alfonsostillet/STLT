@@ -62,8 +62,12 @@ class AudioEngine
 public:
 	AudioEngine();
 	~AudioEngine();
-	// Opens the system's default output; without one, the engine stays silent and says why.
-	bool Start();
+	// Opens an output (by name; empty: the system's default) with buffers of `bufferFrames`; without one the engine
+	// stays silent and says why. Started again, it keeps its sample rate (the voices are made for it).
+	bool Start( const std::string& deviceName = {}, int bufferFrames = 256 );
+	// The outputs there are, by name.
+	static std::vector< std::string > OutputDevices();
+	std::string DeviceName() const { return deviceName; }
 	// For tests: runs without a device at `sampleRate` (Render is then called by hand).
 	void StartHeadless( int sampleRate );
 	void Stop();
@@ -81,6 +85,7 @@ private:
 	std::unique_ptr< Device > device;
 	int sampleRate = 0;
 	std::string status = "off";
+	std::string deviceName;
 	std::mutex mutex;
 	std::vector< std::shared_ptr< AudioVoice > > voices, playing; // playing: the audio thread's copy
 	// Lists replaced lately, kept so that a voice is never freed (its thread joined) on the audio thread.

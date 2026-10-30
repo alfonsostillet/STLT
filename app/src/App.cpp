@@ -18,6 +18,7 @@
 #include "ui/EffectsUi.h"
 #include "ui/FileDialogs.h"
 #include "ui/Panels.h"
+#include "ui/PreferencesUi.h"
 #include "ui/TimelineUi.h"
 #include "ui/Theme.h"
 
@@ -120,8 +121,14 @@ bool App::Init( const LaunchOptions& launch )
 		std::fprintf( stderr, "Warning: this GPU driver reports no S3TC (DXT) support; HAP needs it\n" );
 
 	configDir = ConfigDirectory();
-	// Sound: the system's default output (STLTVJ_NO_AUDIO=1 keeps it off).
-	if( !std::getenv( "STLTVJ_NO_AUDIO" ) && !audio.Start() )
+	{
+		std::string text;
+		if( !options.fresh && ReadTextFile( ( fs::u8path( configDir ) / "preferences.json" ).u8string(), text ) )
+			prefs.Load( text );
+		ApplyPreferences( false );
+	}
+	// Sound: the output chosen in the Preferences, else the system's default (STLTVJ_NO_AUDIO=1 keeps it off).
+	if( !std::getenv( "STLTVJ_NO_AUDIO" ) && !audio.Start( prefs.audioDevice, prefs.audioBuffer ) )
 		std::fprintf( stderr, "Audio: %s\n", audio.Status().c_str() );
 	{
 		std::string text;
@@ -160,6 +167,9 @@ bool App::Init( const LaunchOptions& launch )
 		view = View::Arrangement;
 		workspaces.SetView( 1 );
 	}
+	// A start view other than the last one: switched to once the layout is in (after the first frame).
+	if( !options.fresh && prefs.startView > 0 && ( prefs.startView == 2 ) != ( view == View::Arrangement ) )
+		startViewPending = prefs.startView;
 
 	float scaleX = 1, scaleY = 1;
 	glfwGetWindowContentScale( window, &scaleX, &scaleY );
@@ -211,7 +221,7 @@ bool App::Init( const LaunchOptions& launch )
 	browserDirectory = HomeDirectory();
 	composition      = Composition::MakeDefault();
 	std::string last = ( fs::u8path( configDir ) / "last-session.stltvj" ).u8string();
-	if( !options.fresh && fs::exists( fs::u8path( last ) ) )
+	if( !options.fresh && prefs.reopenLastSession && fs::exists( fs::u8path( last ) ) )
 		OpenComposition( last );
 	compositionPath.clear(); // the session file is not the user's own composition
 	std::string outputText, outputError;
@@ -371,6 +381,11 @@ void App::LoadClip( int layer, int column, const std::string& path )
 	{
 		SetStatus( clip.name + ": " + clip.player->Error(), true );
 	}
+	// The Preferences' clip defaults (Fill, Fit...; loop; trigger; BPM sync for movies).
+	if( !( clip.Loaded() && clip.player->Source().IsStill() ) )
+		prefs.ApplyToClip( clip );
+	else
+		clip.fit = prefs.clipFit;
 	composition.layers[ layer ].clips[ column ] = std::move( clip );
 	Select( layer, column );
 }
@@ -1290,7 +1305,7 @@ bool MappableKey( ImGuiKey key, bool ctrl, bool shift, bool alt )
 	    || ( key >= ImGuiKey_LeftCtrl && key <= ImGuiKey_RightSuper ) || ( key == ImGuiKey_Space && !ctrl && !shift && !alt ) )
 		return false;
 	if( ctrl )
-		for( ImGuiKey own : { ImGuiKey_Z, ImGuiKey_Y, ImGuiKey_S, ImGuiKey_O, ImGuiKey_I, ImGuiKey_M, ImGuiKey_K } )
+		for( ImGuiKey own : { ImGuiKey_Z, ImGuiKey_Y, ImGuiKey_S, ImGuiKey_O, ImGuiKey_I, ImGuiKey_M, ImGuiKey_K, ImGuiKey_C, ImGuiKey_X, ImGuiKey_V, ImGuiKey_D, ImGuiKey_E, ImGuiKey_Comma } )
 			if( key == own )
 				return false;
 	return !( ctrl && shift && key == ImGuiKey_A );
@@ -1914,6 +1929,97 @@ void App::UpdateAudio()
 	audio.SetVoices( std::move( voices ), composition.audioVolume );
 }
 
+void App::CopyClip( bool cut )
+{
+	Clip* selected = composition.SelectedClip();
+	if( !selected )
+	{
+		SetStatus( "Select a clip first", true );
+		return;
+	}
+	clipboard = std::make_unique< Clip >( stltvj::CopyClip( *selected ) );
+	SetStatus( std::string( cut ? "Cut " : "Copied " ) + selected->name );
+	if( cut )
+		RemoveClip( composition.selectedRow, composition.selectedColumn );
+}
+
+void App::PasteClip()
+{
+	if( !clipboard )
+		return;
+	int row = composition.selectedRow, column = composition.selectedColumn;
+	if( row < 0 || row >= (int)composition.layers.size() || column < 0 || column >= composition.ColumnCount() )
+	{
+		SetStatus( "Select a cell to paste into", true );
+		return;
+	}
+	StopCell( row, column );
+	Clip clip = stltvj::CopyClip( *clipboard );
+	PrepareClip( clip );
+	std::string name                          = clip.name;
+	composition.layers[ row ].clips[ column ] = std::move( clip );
+	Select( row, column );
+	SetStatus( "Pasted " + name );
+}
+
+void App::CopyEffects()
+{
+	Clip* selected = composition.SelectedClip();
+	if( !selected )
+		return;
+	effectsClipboard = std::make_unique< Clip >( stltvj::CopyClip( *selected ) );
+	SetStatus( "Copied the effects of " + selected->name + " (" + std::to_string( selected->effects.size() ) + ")" );
+}
+
+void App::PasteEffects()
+{
+	Clip* selected = composition.SelectedClip();
+	if( !selected || !effectsClipboard )
+		return;
+	Clip copy = stltvj::CopyClip( *effectsClipboard );
+	for( EffectSlot& slot : copy.effects )
+		selected->effects.push_back( std::move( slot ) );
+	registry->Restore( selected->effects );
+	SetStatus( "Pasted effects onto " + selected->name );
+}
+
+int App::ResizeAllClips( FitMode fit )
+{
+	int count = 0;
+	composition.ForEachClip( [ & ]( Clip& clip, int, int, int ) {
+		if( !clip.Empty() )
+		{
+			clip.fit = fit;
+			++count;
+		}
+	} );
+	for( TimelineTrack& track : composition.timeline.tracks )
+		for( TimelineClip& clip : track.clips )
+		{
+			clip.clip.fit = fit;
+			++count;
+		}
+	return count;
+}
+
+void App::SavePreferences()
+{
+	WriteTextFile( ( fs::u8path( configDir ) / "preferences.json" ).u8string(), prefs.Save() );
+}
+
+void App::ApplyPreferences( bool restartAudio )
+{
+	SetHardwareDecoding( prefs.hardwareDecoding );
+	Composition::newLayerBlend          = prefs.layerBlend;
+	Composition::newLayerTransition     = prefs.layerTransition;
+	Composition::newLayerTransitionTime = prefs.layerTransitionTime;
+	if( restartAudio && !std::getenv( "STLTVJ_NO_AUDIO" ) )
+	{
+		audio.Start( prefs.audioDevice, prefs.audioBuffer );
+		SetStatus( "Audio: " + audio.Status() );
+	}
+}
+
 void App::SetView( View v )
 {
 	if( view == v )
@@ -1991,7 +2097,11 @@ void App::PrepareTimelineClip( TimelineClip& tc )
 	if( tc.prepared )
 		return;
 	tc.prepared = true;
-	Clip& clip  = tc.clip;
+	PrepareClip( tc.clip );
+}
+
+void App::PrepareClip( Clip& clip )
+{
 	registry->Restore( clip.effects );
 	if( clip.IsGenerator() && !clip.generator )
 	{
@@ -2060,6 +2170,7 @@ int App::AddTimelineFile( int track, double start, const std::string& path )
 	Clip clip;
 	clip.path = path;
 	clip.name = fs::u8path( path ).stem().u8string();
+	clip.fit  = prefs.clipFit; // on the timeline only the size matters of the clip defaults
 	return AddTimelineClip( track, start, std::move( clip ) );
 }
 
@@ -2179,6 +2290,11 @@ void App::UpdatePreview( double dt )
 
 void App::Frame()
 {
+	if( startViewPending > 0 && ImGui::GetFrameCount() > 2 )
+	{
+		SetView( startViewPending == 2 ? View::Arrangement : View::Session );
+		startViewPending = -1;
+	}
 	workspaces.ApplyPending();
 	double now = glfwGetTime();
 	double measured = std::min( now - lastTime, 0.1 );
@@ -2352,6 +2468,7 @@ void App::DrawUi()
 		DrawPerformancePanel( *this );
 	if( panels.effects )
 		DrawEffectsPanel( *this );
+	DrawPreferences( *this );
 	DrawAdvancedOutputSavePrompt( *this );
 	if( panels.advancedOutput )
 		DrawAdvancedOutputPanel( *this );

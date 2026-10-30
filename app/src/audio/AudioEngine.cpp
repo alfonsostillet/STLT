@@ -154,9 +154,26 @@ void AudioVoice::Mix( float* out, int frames )
 
 struct AudioEngine::Device
 {
+	ma_context context;
 	ma_device device;
-	bool open = false;
+	bool contextOpen = false;
+	bool open        = false;
 };
+
+std::vector< std::string > AudioEngine::OutputDevices()
+{
+	std::vector< std::string > names;
+	ma_context context;
+	if( ma_context_init( nullptr, 0, nullptr, &context ) != MA_SUCCESS )
+		return names;
+	ma_device_info* playback = nullptr;
+	ma_uint32 count          = 0;
+	if( ma_context_get_devices( &context, &playback, &count, nullptr, nullptr ) == MA_SUCCESS )
+		for( ma_uint32 i = 0; i < count; ++i )
+			names.push_back( playback[ i ].name );
+	ma_context_uninit( &context );
+	return names;
+}
 
 AudioEngine::AudioEngine() = default;
 
@@ -165,22 +182,45 @@ AudioEngine::~AudioEngine()
 	Stop();
 }
 
-bool AudioEngine::Start()
+bool AudioEngine::Start( const std::string& wanted, int bufferFrames )
 {
+	int keepRate = sampleRate;
+	if( device )
+	{
+		// Started again: the old output closes; the voices come back with the next SetVoices.
+		if( device->open )
+			ma_device_uninit( &device->device );
+		if( device->contextOpen )
+			ma_context_uninit( &device->context );
+		device.reset();
+	}
 	device                       = std::make_unique< Device >();
 	ma_device_config config      = ma_device_config_init( ma_device_type_playback );
 	config.playback.format       = ma_format_f32;
 	config.playback.channels     = 2;
-	config.sampleRate            = 0; // the device's own
-	config.periodSizeInFrames    = 256; // about 5 ms: the sound keeps up with the picture
+	config.sampleRate            = keepRate > 0 ? keepRate : 0; // the device's own, the first time
+	config.periodSizeInFrames    = (ma_uint32)std::clamp( bufferFrames, 64, 4096 ); // 256: about 5 ms
+	// A named output: found among the context's devices (the default when it is not there).
+	if( ma_context_init( nullptr, 0, nullptr, &device->context ) == MA_SUCCESS )
+	{
+		device->contextOpen      = true;
+		ma_device_info* playback = nullptr;
+		ma_uint32 count          = 0;
+		if( !wanted.empty() && ma_context_get_devices( &device->context, &playback, &count, nullptr, nullptr ) == MA_SUCCESS )
+			for( ma_uint32 i = 0; i < count; ++i )
+				if( wanted == playback[ i ].name )
+					config.playback.pDeviceID = &playback[ i ].id;
+	}
 	config.dataCallback          = []( ma_device* d, void* out, const void*, ma_uint32 frames ) {
 		AudioEngine* engine = (AudioEngine*)d->pUserData;
 		std::memset( out, 0, (size_t)frames * 2 * sizeof( float ) );
 		engine->Render( (float*)out, (int)frames );
 	};
 	config.pUserData = this;
-	if( ma_device_init( nullptr, &config, &device->device ) != MA_SUCCESS )
+	if( ma_device_init( device->contextOpen ? &device->context : nullptr, &config, &device->device ) != MA_SUCCESS )
 	{
+		if( device->contextOpen )
+			ma_context_uninit( &device->context );
 		device.reset();
 		status = "no audio output available";
 		return false;
@@ -193,7 +233,8 @@ bool AudioEngine::Start()
 		status = "the audio output would not start";
 		return false;
 	}
-	status = std::string( device->device.playback.name ) + ", " + std::to_string( sampleRate ) + " Hz";
+	deviceName = device->device.playback.name;
+	status     = deviceName + ", " + std::to_string( sampleRate ) + " Hz, buffer " + std::to_string( (int)config.periodSizeInFrames );
 	return true;
 }
 
@@ -207,6 +248,8 @@ void AudioEngine::Stop()
 {
 	if( device && device->open )
 		ma_device_uninit( &device->device );
+	if( device && device->contextOpen )
+		ma_context_uninit( &device->context );
 	device.reset();
 	std::lock_guard< std::mutex > lock( mutex );
 	voices.clear();

@@ -293,6 +293,101 @@ static void DrawOutputModeItems( App& app )
 		                                                          : "Screens with slices, warps and masks: opens the Advanced Output editor (Ctrl+Shift+A)" );
 }
 
+static void SetBpmSync( Clip& clip, bool on, double bpm );
+
+// The Clip menu, as in Resolume: the selected clip's transport, play mode, trigger, column trigger and size;
+// copy, cut, paste, its effects, rename, clear; and a size for every clip at once.
+static void DrawClipMenu( App& app )
+{
+	Composition& comp = app.composition;
+	Clip* clip        = comp.SelectedClip();
+	static std::string renameText;
+	ImGui::TextDisabled( "%s", clip ? clip->name.c_str() : "No clip selected" );
+	ImGui::BeginDisabled( !clip );
+	if( ImGui::BeginMenu( "Transport" ) && clip )
+	{
+		if( ImGui::MenuItem( "Timeline", nullptr, clip->syncBeats <= 0 ) )
+			SetBpmSync( *clip, false, comp.bpm );
+		if( ImGui::MenuItem( "BPM Sync", nullptr, clip->syncBeats > 0 ) )
+			SetBpmSync( *clip, true, comp.bpm );
+		ImGui::EndMenu();
+	}
+	if( ImGui::BeginMenu( "Play Mode" ) && clip )
+	{
+		for( int m = 0; m < (int)PlayMode::Count; ++m )
+			if( ImGui::MenuItem( PlayModeName( (PlayMode)m ), nullptr, (int)clip->playMode == m ) )
+				clip->playMode = (PlayMode)m;
+		ImGui::EndMenu();
+	}
+	if( ImGui::BeginMenu( "Trigger Style" ) && clip )
+	{
+		for( int s = 0; s < (int)TriggerStyle::Count; ++s )
+			if( ImGui::MenuItem( TriggerStyleName( (TriggerStyle)s ), nullptr, (int)clip->trigger == s ) )
+				clip->trigger = (TriggerStyle)s;
+		ImGui::EndMenu();
+	}
+	if( clip )
+		ImGui::MenuItem( "Ignore Column Trigger", nullptr, &clip->ignoreColumn );
+	else
+		ImGui::MenuItem( "Ignore Column Trigger" );
+	const std::pair< FitMode, const char* > sizes[] = { { FitMode::Fill, "Fill" }, { FitMode::Fit, "Fit" }, { FitMode::Stretch, "Stretch" }, { FitMode::Native, "Original" } };
+	if( ImGui::BeginMenu( "Resize" ) && clip )
+	{
+		for( auto [ fit, name ] : sizes )
+			if( ImGui::MenuItem( name, nullptr, clip->fit == fit ) )
+				clip->fit = fit;
+		ImGui::EndMenu();
+	}
+	ImGui::Separator();
+	if( ImGui::MenuItem( "Cut", "Ctrl+X" ) )
+		app.CopyClip( true );
+	if( ImGui::MenuItem( "Copy", "Ctrl+C" ) )
+		app.CopyClip( false );
+	ImGui::EndDisabled();
+	bool cell = comp.selectedColumn >= 0 && comp.selectedRow >= 0;
+	if( ImGui::MenuItem( "Paste", "Ctrl+V", false, app.HasClipboardClip() && cell ) )
+		app.PasteClip();
+	ImGui::BeginDisabled( !clip );
+	if( ImGui::MenuItem( "Copy Effects", nullptr, false, clip && !clip->effects.empty() ) )
+		app.CopyEffects();
+	ImGui::EndDisabled();
+	if( ImGui::MenuItem( "Paste Effects", nullptr, false, clip && app.HasClipboardEffects() ) )
+		app.PasteEffects();
+	ImGui::BeginDisabled( !clip );
+	if( ImGui::BeginMenu( "Rename" ) && clip )
+	{
+		if( ImGui::IsWindowAppearing() )
+		{
+			renameText = clip->name;
+			ImGui::SetKeyboardFocusHere();
+		}
+		ImGui::SetNextItemWidth( Ui( 200 ) );
+		if( ImGui::InputText( "##rename", &renameText, ImGuiInputTextFlags_EnterReturnsTrue ) && !renameText.empty() )
+		{
+			clip->name = renameText;
+			ImGui::CloseCurrentPopup();
+		}
+		ImGui::EndMenu();
+	}
+	ImGui::Separator();
+	if( ImGui::MenuItem( "Clear" ) )
+		app.RemoveClip( comp.selectedRow, comp.selectedColumn );
+	ImGui::EndDisabled();
+	ImGui::Separator();
+	if( ImGui::BeginMenu( "Resize Every Clip" ) )
+	{
+		for( auto [ fit, name ] : sizes )
+			if( ImGui::MenuItem( name ) )
+			{
+				int count = app.ResizeAllClips( fit );
+				app.SetStatus( "Resized " + std::to_string( count ) + " clips to " + name );
+			}
+		ImGui::EndMenu();
+	}
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "Every clip of every deck, and the timeline's. New clips: Edit > Preferences > Defaults." );
+}
+
 void DrawMainMenu( App& app )
 {
 	bool openComposition = false, saveCompositionAs = false, saveWorkspace = false, openPath = false, savePath = false;
@@ -337,6 +432,9 @@ void DrawMainMenu( App& app )
 				app.Undo();
 			if( ImGui::MenuItem( redo.c_str(), "Ctrl+Shift+Z", false, app.history.CanRedo() ) )
 				app.Redo();
+			ImGui::Separator();
+			if( ImGui::MenuItem( "Preferences...", "Ctrl+," ) )
+				app.showPreferences = true;
 			ImGui::EndMenu();
 		}
 		if( ImGui::BeginMenu( "Layer" ) )
@@ -352,6 +450,11 @@ void DrawMainMenu( App& app )
 		{
 			if( ImGui::MenuItem( "New Column" ) )
 				app.composition.AddColumn();
+			ImGui::EndMenu();
+		}
+		if( ImGui::BeginMenu( "Clip" ) )
+		{
+			DrawClipMenu( app );
 			ImGui::EndMenu();
 		}
 		if( ImGui::BeginMenu( "Output" ) )
@@ -483,6 +586,18 @@ void DrawMainMenu( App& app )
 	}
 	if( io.KeyCtrl && !io.WantTextInput && ImGui::IsKeyPressed( ImGuiKey_Y, false ) )
 		app.Redo();
+	if( io.KeyCtrl && !io.WantTextInput && ImGui::IsKeyPressed( ImGuiKey_Comma, false ) )
+		app.showPreferences = !app.showPreferences;
+	// The deck's clipboard (Session view: the timeline keeps its own keys).
+	if( io.KeyCtrl && !io.KeyShift && !io.WantTextInput && app.view == App::View::Session && !app.learning )
+	{
+		if( ImGui::IsKeyPressed( ImGuiKey_C, false ) )
+			app.CopyClip( false );
+		else if( ImGui::IsKeyPressed( ImGuiKey_X, false ) )
+			app.CopyClip( true );
+		else if( ImGui::IsKeyPressed( ImGuiKey_V, false ) )
+			app.PasteClip();
+	}
 	if( io.KeyCtrl && io.KeyShift && ImGui::IsKeyPressed( ImGuiKey_A, false ) )
 		app.panels.advancedOutput = !app.panels.advancedOutput;
 	if( io.KeyCtrl && ImGui::IsKeyPressed( ImGuiKey_I, false ) )
@@ -2592,6 +2707,8 @@ void DrawPerformancePanel( App& app )
 		bool hardware = HardwareDecoding();
 		if( ImGui::Checkbox( "Hardware decoding (H.264, HEVC, VP9...)", &hardware ) )
 		{
+			app.prefs.hardwareDecoding = hardware;
+			app.SavePreferences();
 			SetHardwareDecoding( hardware );
 			app.SetStatus( hardware ? "Clips loaded from now on use the video hardware when they can" : "Clips loaded from now on decode on the CPU" );
 		}
