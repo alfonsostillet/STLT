@@ -1,0 +1,3 @@
+[submodule "chaser"]
+	path = chaser
+	url = https://github.com/alfonsostillet/stlt-chaser.git

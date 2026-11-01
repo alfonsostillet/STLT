@@ -6,6 +6,8 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <shlobj.h>
+#elif defined( __APPLE__ )
+#include <mach-o/dyld.h>
 #endif
 
 namespace fs = std::filesystem;
@@ -40,6 +42,27 @@ std::string DocumentsDirectory()
 	}
 #endif
 	return ( fs::u8path( HomeDirectory() ) / "Documents" ).u8string();
+}
+
+std::string ExecutableDirectory()
+{
+	std::error_code ignored;
+#if defined( _WIN32 )
+	wchar_t path[ 32768 ];
+	DWORD length = GetModuleFileNameW( nullptr, path, 32768 );
+	if( length > 0 && length < 32768 )
+		return fs::path( std::wstring( path, length ) ).parent_path().u8string();
+#elif defined( __APPLE__ )
+	char path[ 4096 ];
+	uint32_t size = sizeof( path );
+	if( _NSGetExecutablePath( path, &size ) == 0 )
+		return fs::canonical( fs::u8path( path ), ignored ).parent_path().u8string();
+#else
+	fs::path self = fs::read_symlink( "/proc/self/exe", ignored );
+	if( !ignored )
+		return self.parent_path().u8string();
+#endif
+	return fs::current_path( ignored ).u8string();
 }
 
 std::string ConfigDirectory()

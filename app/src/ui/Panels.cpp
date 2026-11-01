@@ -285,18 +285,18 @@ static void DrawOutputModeItems( App& app )
 		ImGui::EndMenu();
 	}
 	// As Resolume's "Advanced...": shows the Advanced Output setup and opens its editor; chosen again, back to the
-	// mode before. Under it the chaser, which plays on the Advanced Output's slices.
+	// mode before. Under it STLT-CHASER's editor, for sequences on the Advanced Output's slices.
 	ImGui::Separator();
 	if( ImGui::MenuItem( "Advanced...", nullptr, app.outputMode == OutputMode::Advanced ) )
 		app.ToggleAdvancedOutput();
 	if( ImGui::IsItemHovered() )
 		ImGui::SetTooltip( app.outputMode == OutputMode::Advanced ? "Advanced is on: choose it again to go back to the output before it"
 		                                                          : "Screens with slices, warps and masks: opens the Advanced Output editor (Ctrl+Shift+A)" );
-	if( ImGui::MenuItem( "Chaser...", nullptr, app.chaser.enabled ) )
-		app.ToggleChaser();
+	if( ImGui::MenuItem( "Chaser..." ) )
+		app.OpenChaser();
 	if( ImGui::IsItemHovered() )
-		ImGui::SetTooltip( app.chaser.enabled ? "The chaser is on: choose it again to turn it off (every slice shows)"
-		                                      : "STLT-CHASER: the Advanced Output's slices light step by step, to the beat; opens its editor" );
+		ImGui::SetTooltip( "Opens STLT-CHASER on the Advanced Output's slices: draw step sequences there, then play them with the\n"
+		                   "STLT-CHASER, STLT-WIPER and STLT-OUTLINER effects (Effects panel) on the composition, a layer or a clip" );
 }
 
 static void SetBpmSync( Clip& clip, bool on, double bpm );
@@ -542,7 +542,6 @@ void DrawMainMenu( App& app )
 		{
 			PanelVisibility& p = app.panels;
 			ImGui::MenuItem( panel::Timeline, nullptr, &p.timeline );
-			ImGui::MenuItem( panel::Chaser, nullptr, &p.chaser );
 			ImGui::MenuItem( panel::Layers, nullptr, &p.layers );
 			ImGui::MenuItem( panel::Clips, nullptr, &p.clips );
 			ImGui::MenuItem( panel::CompositionMonitor, nullptr, &p.compositionMonitor );

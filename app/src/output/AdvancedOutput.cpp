@@ -868,6 +868,36 @@ std::string SaveAdvancedOutput( const AdvancedOutputSetup& setup )
 	return root.dump( 1 );
 }
 
+std::string SaveChaserStage( const AdvancedOutputSetup& setup, int compWidth, int compHeight )
+{
+	json root;
+	root[ "format" ]     = "stlt-vj-chaser-stage";
+	root[ "version" ]    = 1;
+	root[ "compWidth" ]  = compWidth;
+	root[ "compHeight" ] = compHeight;
+	json screens = json::array(), slices = json::array();
+	for( size_t i = 0; i < setup.screens.size(); ++i )
+	{
+		const Screen& screen = setup.screens[ i ];
+		std::string screenId = "screen-" + std::to_string( i + 1 );
+		screens.push_back( { { "id", screenId }, { "name", screen.name }, { "width", screen.width }, { "height", screen.height } } );
+		for( const Slice& slice : screen.slices )
+		{
+			if( slice.mask || slice.input.size() < 3 )
+				continue;
+			std::vector< Vec2 > out;
+			if( slice.polygon )
+				out = slice.output;
+			else
+				out = { slice.Map( 0, 0 ), slice.Map( 1, 0 ), slice.Map( 1, 1 ), slice.Map( 0, 1 ) };
+			slices.push_back( { { "id", slice.id }, { "name", slice.name }, { "screen", screenId }, { "points", Points( slice.input ) }, { "outPoints", Points( out ) } } );
+		}
+	}
+	root[ "screens" ] = screens;
+	root[ "slices" ]  = slices;
+	return root.dump( 1 );
+}
+
 bool LoadAdvancedOutput( const std::string& text, AdvancedOutputSetup& out, std::string& error )
 {
 	json root = json::parse( text, nullptr, false );

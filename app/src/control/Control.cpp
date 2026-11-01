@@ -12,14 +12,12 @@ bool ControlTarget::IsButton() const
 	       || kind == Kind::Stop || kind == Kind::ClipCue || kind == Kind::LayerCue || kind == Kind::LayerNextClip || kind == Kind::LayerPrevClip
 	       || kind == Kind::SelectedNextClip || kind == Kind::SelectedPrevClip || kind == Kind::NextColumn || kind == Kind::PrevColumn
 	       || kind == Kind::DeckSelect || kind == Kind::NextDeck || kind == Kind::PrevDeck || kind == Kind::TimelineCue || kind == Kind::TimelineNextCue
-	       || kind == Kind::TimelinePrevCue || kind == Kind::TimelineStop || kind == Kind::ChaserSequence || kind == Kind::ChaserNextSequence
-	       || kind == Kind::ChaserPrevSequence;
+	       || kind == Kind::TimelinePrevCue || kind == Kind::TimelineStop;
 }
 
 bool ControlTarget::IsSwitch() const
 {
-	return kind == Kind::LayerBypass || kind == Kind::LayerSolo || kind == Kind::Pause || kind == Kind::CompositionBypass || kind == Kind::TimelinePlay
-	       || kind == Kind::ChaserEnabled || kind == Kind::ChaserPlay;
+	return kind == Kind::LayerBypass || kind == Kind::LayerSolo || kind == Kind::Pause || kind == Kind::CompositionBypass || kind == Kind::TimelinePlay;
 }
 
 namespace
@@ -71,29 +69,6 @@ bool ParseControlAddress( const std::string& address, ControlTarget& t )
 	using Kind               = ControlTarget::Kind;
 	std::vector< std::string > p = Split( address );
 	t                        = ControlTarget{};
-	// The chaser: /chaser/enabled, play, nextsequence, prevsequence, sequence/N.
-	if( !p.empty() && p[ 0 ] == "chaser" )
-	{
-		if( p.size() == 2 )
-		{
-			if( p[ 1 ] == "enabled" )
-				t.kind = Kind::ChaserEnabled;
-			else if( p[ 1 ] == "play" )
-				t.kind = Kind::ChaserPlay;
-			else if( p[ 1 ] == "nextsequence" )
-				t.kind = Kind::ChaserNextSequence;
-			else if( p[ 1 ] == "prevsequence" )
-				t.kind = Kind::ChaserPrevSequence;
-			return t.kind != Kind::None;
-		}
-		if( p.size() == 3 && p[ 1 ] == "sequence" )
-		{
-			t.slot = Index( p[ 2 ] );
-			t.kind = Kind::ChaserSequence;
-			return t.slot >= 0;
-		}
-		return false;
-	}
 	// The timeline (Arrangement view): /timeline/play, stop, nextcue, prevcue, cue/N.
 	if( !p.empty() && p[ 0 ] == "timeline" )
 	{

@@ -71,11 +71,6 @@ struct ControlTarget
 		TimelinePrevCue,
 		TimelinePlay, // a switch: play / stop
 		TimelineStop,
-		ChaserEnabled, // a switch
-		ChaserPlay,    // a switch
-		ChaserSequence, // slot: the sequence
-		ChaserNextSequence,
-		ChaserPrevSequence,
 		Crossfader,
 		CompositionBypass,
 		AudioVolume,

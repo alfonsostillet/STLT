@@ -189,7 +189,7 @@ void OutputRenderer::Shutdown()
 	vbo = vao = 0;
 }
 
-void OutputRenderer::DrawSlice( const Slice& slice, int index, const Screen& screen, int compWidth, int compHeight, float gain )
+void OutputRenderer::DrawSlice( const Slice& slice, int index, const Screen& screen, int compWidth, int compHeight )
 {
 	float W = (float)screen.width, H = (float)screen.height;
 	float cw = (float)std::max( compWidth, 1 ), ch = (float)std::max( compHeight, 1 );
@@ -249,7 +249,7 @@ void OutputRenderer::DrawSlice( const Slice& slice, int index, const Screen& scr
 	SliceColour( index, colour );
 	sliceProgram.Use();
 	glUniform1i( sliceProgram.Uniform( "uComposition" ), 0 );
-	glUniform1f( sliceProgram.Uniform( "uOpacity" ), std::clamp( slice.opacity * gain, 0.0f, 1.0f ) );
+	glUniform1f( sliceProgram.Uniform( "uOpacity" ), std::clamp( slice.opacity, 0.0f, 1.0f ) );
 	const SoftEdge& e = slice.edge;
 	glUniform4f( sliceProgram.Uniform( "uEdges" ), e.left, e.right, e.top, e.bottom );
 	glUniform3f( sliceProgram.Uniform( "uRamp" ), e.power, e.luminance, e.gamma );
@@ -359,12 +359,7 @@ void OutputRenderer::Render( const AdvancedOutputSetup& setup, GLuint compositio
 				if( slice.mask )
 					ApplyMask( slice, screen, state.target, composition );
 				else
-				{
-					auto gain = sliceGains.find( slice.id );
-					float g   = gain == sliceGains.end() ? 1.0f : gain->second;
-					if( g > 0 || screen.testPattern )
-						DrawSlice( slice, (int)i, screen, compWidth, compHeight, screen.testPattern ? 1.0f : g );
-				}
+					DrawSlice( slice, (int)i, screen, compWidth, compHeight );
 			}
 			ResetGlState();
 		}

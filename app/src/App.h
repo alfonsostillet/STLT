@@ -6,7 +6,6 @@
 #include <memory>
 #include "Composition.h"
 #include "Preferences.h"
-#include "chaser/Chaser.h"
 #include "History.h"
 #include "audio/AudioEngine.h"
 #include "control/RemoteInputs.h"
@@ -85,13 +84,12 @@ public:
 	void SavePreferences();
 	void ApplyPreferences( bool restartAudio );
 	int startViewPending = -1; // a view to switch to once the first frame is drawn (the start view)
-	// The chaser (Output > Chaser): step sequences over the Advanced Output's slices, kept in chaser.json.
-	ChaserSetup chaser;
-	bool chaserDirty  = false; // saved a moment after the last change
-	double chaserSaved = 0;
-	// Chaser on (with the Advanced Output, which it plays on) and its panel open; or off when it is on.
-	void ToggleChaser();
-	void SaveChaser();
+	// STLT-CHASER (Output > Chaser): opens its editor on the Advanced Output's slices, which are kept written to
+	// chaserStage for it.
+	void OpenChaser();
+	void UpdateChaserStage();
+	std::string chaserStage, chaserStageText;
+	double chaserStageChecked = 0;
 	// Every clip (all decks, and the timeline) to this fit; the number changed.
 	int ResizeAllClips( FitMode fit );
 	// The selected deck clip to the clipboard (Ctrl+C; with `cut`, Ctrl+X, it leaves the deck); pasted into the

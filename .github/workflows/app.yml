@@ -19,27 +19,24 @@ jobs:
         include:
           - os: windows-2022
             artifact: windows
-            files: |
-              app/build/Release/stlt-vj.exe
-              app/build/Release/*.dll
           - os: macos-14
             artifact: macos
-            files: app/build/stlt-vj.app.zip
           - os: ubuntu-24.04
             artifact: linux
-            files: app/build/stlt-vj
     runs-on: ${{ matrix.os }}
     defaults:
       run:
         shell: bash
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-      - name: Install X11, OpenGL, GTK, ALSA and FFmpeg headers
+      - name: Install X11, OpenGL, GLEW, GTK, ALSA and FFmpeg headers
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev libxkbcommon-dev libgtk-3-dev libasound2-dev \
+          sudo apt-get install -y libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl-dev libglew-dev libxkbcommon-dev libgtk-3-dev libasound2-dev \
             libavformat-dev libavcodec-dev libswscale-dev libswresample-dev libavutil-dev
 
       # macOS links a small static FFmpeg built from source; it only changes with the script, so it is cached.
@@ -67,21 +64,64 @@ jobs:
       - name: Test the media engine and effects
         run: ctest --test-dir app/build -C Release --output-on-failure
 
-      - name: Zip the macOS app
-        if: runner.os == 'macOS'
-        run: ditto -c -k --keepParent app/build/stlt-vj.app app/build/stlt-vj.app.zip
+      # STLT-CHASER (the chaser submodule): its effects and its editor, opened from Output > Chaser.
+      - name: Build the STLT-CHASER effects
+        if: runner.os != 'macOS'
+        run: |
+          cmake -S chaser/plugin -B chaser/plugin/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build chaser/plugin/build --config Release --parallel
+          cmake --install chaser/plugin/build --prefix chaser/plugin/dist --config Release
+
+      - uses: actions/setup-node@v4
+        if: runner.os != 'macOS'
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: chaser/editor/package-lock.json
+
+      - name: Build the STLT-CHASER editor
+        if: runner.os != 'macOS'
+        working-directory: chaser/editor
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: |
+          npm ci
+          npm test
+          if [ "$RUNNER_OS" = "Windows" ]; then npx electron-builder --win dir --publish never; else npx electron-builder --linux dir --publish never; fi
+
+      # The folder people unpack: the program, the effects in plugins/, the editor in chaser/.
+      - name: Pack
+        run: |
+          mkdir -p package
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            mkdir -p package/STLT-VJ/plugins
+            cp app/build/Release/stlt-vj.exe app/build/Release/*.dll package/STLT-VJ/
+            cp chaser/plugin/dist/*.dll package/STLT-VJ/plugins/
+            cp -r chaser/editor/release/win-unpacked package/STLT-VJ/chaser
+            test -f package/STLT-VJ/chaser/STLT-CHASER.exe
+            (cd package && 7z a -tzip -bd ../STLT-VJ-windows.zip STLT-VJ > /dev/null)
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            ditto -c -k --keepParent app/build/stlt-vj.app STLT-VJ-macos.zip
+          else
+            mkdir -p package/STLT-VJ/plugins
+            cp app/build/stlt-vj package/STLT-VJ/
+            cp chaser/plugin/dist/*.so package/STLT-VJ/plugins/
+            cp -r chaser/editor/release/linux-unpacked package/STLT-VJ/chaser
+            test -x package/STLT-VJ/chaser/stlt-chaser
+            tar -C package -czf STLT-VJ-linux.tar.gz STLT-VJ
+          fi
+          ls -l STLT-VJ-*
 
       - uses: actions/upload-artifact@v4
         with:
           name: STLT-VJ-${{ matrix.artifact }}
-          path: ${{ matrix.files }}
+          path: STLT-VJ-${{ matrix.artifact }}.*
           if-no-files-found: error
 
-  # A tag v* (or a manual run with a release tag) publishes the three builds as a GitHub Release, with the notes
-  # in docs/releases/<tag>.md; a manual run creates the tag on the commit it built.
+  # A tag v* (or a manual run with a release tag) publishes the builds as a GitHub Release, with the notes in
+  # docs/releases/<tag>.md; a manual run creates the tag on the commit it built. always(): a release still goes
+  # out when one system's build did not run (the macOS runner can be unavailable); Windows and Linux are needed.
   release:
-    # always(): a release still goes out when one system's build did not run (the macOS runner can be unavailable);
-    # the packing step below needs Windows and Linux.
     if: always() && (startsWith(github.ref, 'refs/tags/v') || inputs.release != '')
     needs: build
     runs-on: ubuntu-24.04
@@ -93,14 +133,15 @@ jobs:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
+          merge-multiple: true
 
-      - name: Pack the builds
+      - name: Name the files after the version
         run: |
-          mkdir -p release
           V="${{ inputs.release || github.ref_name }}"
-          (cd artifacts/STLT-VJ-windows && mkdir STLT-VJ && find . -maxdepth 1 -type f -exec mv {} STLT-VJ/ \; && zip -qr "../../release/STLT-VJ-$V-windows.zip" STLT-VJ)
-          if [ -f artifacts/STLT-VJ-macos/stlt-vj.app.zip ]; then cp artifacts/STLT-VJ-macos/stlt-vj.app.zip "release/STLT-VJ-$V-macos.zip"; fi
-          (cd artifacts/STLT-VJ-linux && mkdir STLT-VJ && mv stlt-vj STLT-VJ/ && chmod +x STLT-VJ/stlt-vj && tar -czf "../../release/STLT-VJ-$V-linux.tar.gz" STLT-VJ)
+          mkdir -p release
+          mv artifacts/STLT-VJ-windows.zip "release/STLT-VJ-$V-windows.zip"
+          mv artifacts/STLT-VJ-linux.tar.gz "release/STLT-VJ-$V-linux.tar.gz"
+          if [ -f artifacts/STLT-VJ-macos.zip ]; then mv artifacts/STLT-VJ-macos.zip "release/STLT-VJ-$V-macos.zip"; fi
           ls -l release
 
       - uses: softprops/action-gh-release@v2

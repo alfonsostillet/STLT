@@ -161,6 +161,9 @@ struct AdvancedOutputSetup
 };
 
 std::string SaveAdvancedOutput( const AdvancedOutputSetup& setup );
+// The stage for the STLT-CHASER editor (chaser-stage.json): the composition size, the screens and each slice's
+// id, name, input (composition pixels) and output (screen pixels); masks left out. Ids must be set (EnsureIds).
+std::string SaveChaserStage( const AdvancedOutputSetup& setup, int compWidth, int compHeight );
 bool LoadAdvancedOutput( const std::string& json, AdvancedOutputSetup& setup, std::string& error );
 // Reads Resolume Arena/Avenue's AdvancedOutput.xml: screens, slices (input and output rectangles) and polygons.
 bool ImportResolumeXml( const std::string& xml, AdvancedOutputSetup& setup, std::string& error, int* compWidth = nullptr, int* compHeight = nullptr );

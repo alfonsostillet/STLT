@@ -42,6 +42,14 @@ EffectRegistry::~EffectRegistry() = default;
 std::vector< std::string > EffectRegistry::DefaultFolders( const std::string& configDir )
 {
 	std::vector< std::string > folders;
+	// The effects that come with STLT-VJ (STLT-CHASER, STLT-WIPER, STLT-OUTLINER) first, so they win over
+	// copies installed for Resolume.
+	fs::path here = fs::u8path( ExecutableDirectory() );
+#if defined( __APPLE__ )
+	folders.push_back( ( here.parent_path() / "Resources" / "plugins" ).u8string() );
+#else
+	folders.push_back( ( here / "plugins" ).u8string() );
+#endif
 	folders.push_back( ( fs::u8path( configDir ) / "plugins" ).u8string() );
 	fs::path documents = fs::u8path( DocumentsDirectory() );
 	// Plugins installed for Resolume, such as STLT-CHASER, work here too.

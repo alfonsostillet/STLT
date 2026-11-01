@@ -76,19 +76,16 @@ As in Ableton Live, two views: **Session** (the three upright lines at the top r
 
 Rendering: each slice is a fine triangle mesh that follows the warp, so perspective and curves stay smooth; the composition is sampled once per screen pixel, soft edges are computed per pixel, and each screen gets its own vsynced window.
 
-## Chaser
+## STLT-CHASER
 
-STLT-CHASER, the FFGL plugin, is built in: on the output itself, it lights the Advanced Output's slices step by step, to the beat. *Output → Chaser...* (under the divider, after *Advanced...*) turns it on (switching the output to Advanced if needed) and opens its panel; choose it again to turn it off.
+STLT-CHASER comes with STLT-VJ: the same editor and the same three effects as for Resolume, linked to STLT-VJ.
 
-- **Sequences** at the left: any number, each with its own steps (1 to 1024). Double-click to rename, right-click to duplicate or delete.
-- **Stage**: the slices as they sit in the composition. Click a slice to light it in the step being edited, or sweep across several to light (or darken) them all. The live state shows over them while it plays.
-- **Steps** below: click a step to edit it; Left and Right step through. *->* repeats the steps with something in them over the whole length, *<->* back and forth; *Invert Step*, *Clear Step*, *Copy to Next*; *Follow* keeps the edited step on the one playing.
-- **Factory**: makes the steps from where the slices are: left to right, right to left, top to bottom, bottom to top, centre out, outside in or random, with a tolerance for slices that light together (a column, a ring), several per step, *Mirror* (from both sides), *Fill* (each step keeps the previous ones) and *Ping-pong*.
-- **Playback**: *Chaser* plays the steps in order, *Random* lights a few slices at random each step. The rate goes from one step a bar to eight steps a beat, locked to the BPM. *Sustain* is how many steps a slice stays lit, *Release* how many it takes to fade, *Echoes* keeps the previous steps showing, dimmer and dimmer, and *Unlit* is how much of the picture the dark slices still show.
-- Mappable to keys, MIDI and OSC: `/chaser/enabled`, `/chaser/play`, `/chaser/sequence/N`, `/chaser/nextsequence`, `/chaser/prevsequence`.
-- The chaser is saved on its own (`chaser.json`, next to the Advanced Output setup) and follows slices by an id of their own, so moving or renaming a slice keeps its steps.
+- **Output → Chaser...** (under the divider, after *Advanced...*) opens the STLT-CHASER editor on STLT-VJ's Advanced Output: its slices, kept up to date as you change them in STLT-VJ. Draw the sequences there, slice by slice, with the Factory, views and envelopes (see the [STLT-CHASER guide](https://github.com/alfonsostillet/stlt-chaser)). Everything saves as you go and reaches the effects within half a second.
+- **The effects** STLT-CHASER, STLT-WIPER and STLT-OUTLINER are in the Effects panel: drag one onto the composition, a layer or a clip, pick the *Sequence*, and animate *Step* (right-click it for BPM sync).
+- The release folder holds them: the effects in `plugins`, the editor in `chaser`. STLT-VJ loads its own copies first, before any installed for Resolume.
+- The sequences live in STLT-VJ's settings folder (`chaser`), apart from a Resolume setup's; *File → Load* in the editor opens one made for Resolume and moves it onto STLT-VJ's slices by name.
 
-> 🇮🇹 Il Chaser (STLT-CHASER) ora è dentro il programma: *Output → Chaser...* lo accende e apre il pannello. Clicca o trascina sulle slice per accenderle nello step, usa la Factory per creare gli step dalla posizione delle slice, e regola velocità, sustain, release ed echi; segue il BPM.
+> 🇮🇹 STLT-CHASER è incluso: *Output → Chaser...* apre il suo editor sulle slice dell'Advanced Output di STLT-VJ; gli effetti STLT-CHASER, STLT-WIPER e STLT-OUTLINER sono nel pannello Effects, da mettere sulla composizione, su un layer o su una clip, come in Resolume.
 
 ## Performance: HAP or not
 
@@ -172,9 +169,11 @@ ctest --test-dir app/build -C Release          # media and effect tests
 app/build/decodebench clip.mov --random        # decode speed of any clip, no GPU needed
 ```
 
+STLT-CHASER is the `chaser` submodule (clone with `--recursive`, or `git submodule update --init --recursive`). Its effects build with `cmake -S chaser/plugin -B chaser/plugin/build` (Linux also needs `libglew-dev`) and go into `plugins/` next to `stlt-vj`; its editor (Node 22) with `npm ci` and `npx electron-builder --dir` in `chaser/editor`, and goes into `chaser/` next to `stlt-vj`. `STLTVJ_CHASER_EDITOR` points *Output → Chaser* at another editor executable.
+
 Command line options: `--fresh` (start empty and save nothing), `--clip LAYER,COLUMN,PATH` (load and launch a clip), `--source LAYER,COLUMN,EFFECT-ID` (a generated clip), `--fx comp|layer:L|clip:L,C=EFFECT-ID` (add an effect), `--launch LAYER,COLUMN` (play a clip of the restored session), `--list-effects` (print effect ids and plugins that did not load), `--output-setup FILE.json|AdvancedOutput.xml`, `--advanced-output input|output` (open the editor), `--size WxH`, `--capture FILE.bmp --frames N` (screenshot after N frames, then quit).
 
-FFGL plugins are loaded from `plugins/` in the settings folder, `Documents/Resolume Arena/Extra Effects`, `Documents/Resolume Avenue/Extra Effects` and the folders listed in `plugin-folders.txt`. Only FFGL 2 effects and sources are loaded; mixers and multi-input effects are listed as skipped. A composition that uses a plugin this computer does not have keeps the plugin's settings and shows it as missing.
+FFGL plugins are loaded from `plugins/` next to the program (STLT-CHASER's effects), `plugins/` in the settings folder, `Documents/Resolume Arena/Extra Effects`, `Documents/Resolume Avenue/Extra Effects` and the folders listed in `plugin-folders.txt`. Only FFGL 2 effects and sources are loaded; mixers and multi-input effects are listed as skipped. A composition that uses a plugin this computer does not have keeps the plugin's settings and shows it as missing.
 
 Settings live in `%APPDATA%\STLT-VJ`, `~/Library/Application Support/STLT-VJ` or `~/.config/stlt-vj`: `layout.ini` (current panel layout), `workspaces/` and `last-session.stltvj`.
 
