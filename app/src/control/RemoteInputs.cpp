@@ -152,6 +152,19 @@ std::string RemoteInputs::OscStatus() const
 
 // ---- MIDI
 
+std::string MidiDeviceName( const std::string& name, bool numbered )
+{
+	if( !numbered )
+		return name;
+	size_t space = name.find_last_of( ' ' );
+	if( space == std::string::npos || space == 0 || space + 1 == name.size() )
+		return name;
+	for( size_t i = space + 1; i < name.size(); ++i )
+		if( name[ i ] < '0' || name[ i ] > '9' )
+			return name;
+	return name.substr( 0, space );
+}
+
 void RemoteInputs::OnMidi( double, std::vector< unsigned char >* message, void* user )
 {
 	MidiPort* port = (MidiPort*)user;
@@ -179,13 +192,21 @@ void RemoteInputs::Configure( const ControlSettings& settings, bool retry )
 	// MIDI: open the inputs that are on, close the rest.
 	if( midiUnavailable && !retry )
 		return;
+	// Each input by its name (MidiDeviceName), with the port numbers it shows up at: Windows can list one device
+	// more than once, and only one of them opens.
 	std::vector< std::string > names;
+	std::map< std::string, std::vector< unsigned int > > portsOf;
 	try
 	{
 		RtMidiIn probe;
 		unsigned int count = probe.getPortCount();
 		for( unsigned int i = 0; i < count; ++i )
-			names.push_back( probe.getPortName( i ) );
+		{
+			std::string name = MidiDeviceName( probe.getPortName( i ) );
+			if( !portsOf.count( name ) )
+				names.push_back( name );
+			portsOf[ name ].push_back( i );
+		}
 		midiError.clear();
 		midiUnavailable = false;
 	}
@@ -194,35 +215,47 @@ void RemoteInputs::Configure( const ControlSettings& settings, bool retry )
 		midiError       = "MIDI not available: " + error.getMessage();
 		midiUnavailable = true;
 	}
-	devices = names;
+	devices    = names;
+	auto isOff = [ & ]( const std::string& name ) {
+		for( const std::string& off : settings.midiInputsOff )
+			if( off == name || MidiDeviceName( off ) == name ) // names saved before carried the port number
+				return true;
+		return false;
+	};
 	for( auto it = midiPorts.begin(); it != midiPorts.end(); )
 	{
-		bool off = !settings.midiEnabled || std::find( names.begin(), names.end(), it->first ) == names.end()
-		           || std::find( settings.midiInputsOff.begin(), settings.midiInputsOff.end(), it->first ) != settings.midiInputsOff.end();
-		it = off ? midiPorts.erase( it ) : std::next( it );
+		bool off = !settings.midiEnabled || !portsOf.count( it->first ) || isOff( it->first );
+		it       = off ? midiPorts.erase( it ) : std::next( it );
 	}
 	if( !settings.midiEnabled )
 		return;
-	for( size_t i = 0; i < names.size(); ++i )
+	for( const std::string& name : names )
 	{
-		const std::string& name = names[ i ];
-		if( midiPorts.count( name ) || std::find( settings.midiInputsOff.begin(), settings.midiInputsOff.end(), name ) != settings.midiInputsOff.end() )
+		if( midiPorts.count( name ) || isOff( name ) )
 			continue;
-		try
+		std::string failure;
+		for( unsigned int index : portsOf[ name ] )
 		{
-			auto port   = std::make_unique< MidiPort >();
-			port->owner = this;
-			port->name  = name;
-			port->in    = std::make_unique< RtMidiIn >();
-			port->in->openPort( (unsigned int)i, "STLT-VJ" );
-			port->in->ignoreTypes( true, true, true ); // no system exclusive, clock or active sensing
-			port->in->setCallback( &RemoteInputs::OnMidi, port.get() );
-			midiPorts[ name ] = std::move( port );
+			try
+			{
+				auto port   = std::make_unique< MidiPort >();
+				port->owner = this;
+				port->name  = name;
+				port->in    = std::make_unique< RtMidiIn >();
+				port->in->openPort( index, "STLT-VJ" );
+				port->in->ignoreTypes( true, true, true ); // no system exclusive, clock or active sensing
+				port->in->setCallback( &RemoteInputs::OnMidi, port.get() );
+				midiPorts[ name ] = std::move( port );
+				failure.clear();
+				break;
+			}
+			catch( const RtMidiError& error )
+			{
+				failure = error.getMessage(); // perhaps another listing of the same device: try the next
+			}
 		}
-		catch( const RtMidiError& error )
-		{
-			midiError = name + ": " + error.getMessage();
-		}
+		if( !failure.empty() )
+			midiError = name + ": " + failure;
 	}
 }
 }

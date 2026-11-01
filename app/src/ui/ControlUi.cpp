@@ -109,12 +109,13 @@ bool DrawMidiInputs( App& app )
 	ImGui::BeginDisabled( !c.midiEnabled );
 	for( const std::string& name : devices )
 	{
-		auto off = std::find( c.midiInputsOff.begin(), c.midiInputsOff.end(), name );
-		bool on  = off == c.midiInputsOff.end();
+		// Names saved before carried the port number (see MidiDeviceName).
+		auto same = [ & ]( const std::string& off ) { return off == name || MidiDeviceName( off ) == name; };
+		bool on   = std::none_of( c.midiInputsOff.begin(), c.midiInputsOff.end(), same );
 		if( ImGui::Checkbox( name.c_str(), &on ) )
 		{
 			if( on )
-				c.midiInputsOff.erase( off );
+				c.midiInputsOff.erase( std::remove_if( c.midiInputsOff.begin(), c.midiInputsOff.end(), same ), c.midiInputsOff.end() );
 			else
 				c.midiInputsOff.push_back( name );
 			changed = true;

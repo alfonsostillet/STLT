@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 #include "control/Control.h"
+#include "control/RemoteInputs.h"
 
 using namespace stltvj;
 
@@ -178,8 +179,22 @@ static void TestSettings()
 	CHECK( loaded.Load( s.Save() ) && loaded.preset == "Club" );
 }
 
+// MIDI inputs by name: the number RtMidi adds on Windows goes, so one device listed twice is one input and a
+// different USB socket still finds its settings.
+static void TestMidiDeviceNames()
+{
+	CHECK( MidiDeviceName( "APC mini mk2 0", true ) == "APC mini mk2" );
+	CHECK( MidiDeviceName( "MIDIIN2 (APC mini mk2) 3", true ) == "MIDIIN2 (APC mini mk2)" );
+	CHECK( MidiDeviceName( "APC mini mk2 2", true ) == MidiDeviceName( "APC mini mk2 0", true ) );
+	CHECK( MidiDeviceName( "nanoKONTROL2", true ) == "nanoKONTROL2" ); // nothing to take off
+	CHECK( MidiDeviceName( "Launchpad X 1A", true ) == "Launchpad X 1A" );
+	CHECK( MidiDeviceName( "APC mini mk2 0", false ) == "APC mini mk2 0" ); // other systems name ports themselves
+	CHECK( MidiDeviceName( "Midi Through:Midi Through Port-0 14:0", false ) == "Midi Through:Midi Through Port-0 14:0" );
+}
+
 int main()
 {
+	TestMidiDeviceNames();
 	TestAddresses();
 	TestOsc();
 	TestMidi();

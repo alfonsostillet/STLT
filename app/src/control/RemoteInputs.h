@@ -12,6 +12,15 @@ class RtMidiIn;
 
 namespace stltvj
 {
+#ifdef _WIN32
+constexpr bool kRtMidiNumbersPorts = true; // RtMidi's Windows (WinMM) port names end in the port's number
+#else
+constexpr bool kRtMidiNumbersPorts = false;
+#endif
+// A MIDI input's name as the user knows it: the number RtMidi adds on Windows ("APC mini mk2 0") changes with
+// the USB socket and makes one device listed twice look like two, so it goes.
+std::string MidiDeviceName( const std::string& rtmidiName, bool numbered = kRtMidiNumbersPorts );
+
 // The live control inputs: an OSC server on a UDP port and every MIDI input, each delivering on its own thread.
 // The main loop collects what arrived with Poll().
 class RemoteInputs
