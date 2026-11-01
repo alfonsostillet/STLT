@@ -112,11 +112,54 @@ jobs:
           fi
           ls -l STLT-VJ-*
 
+      # The real program on clips of each kind (HAP, DXV, H.264) and with STLT-CHASER's effects: it must draw the
+      # right picture and quit by itself. Windows runners have no GPU, so Mesa's software OpenGL stands in, next
+      # to a copy of the program (never in the package).
+      - name: Smoke test (Windows, software OpenGL)
+        if: runner.os == 'Windows'
+        run: |
+          curl -sSL https://api.github.com/repos/pal1000/mesa-dist-win/releases/latest -o mesa.json
+          URL=$(python -c "import json; d = json.load(open('mesa.json')); print(next(a['browser_download_url'] for a in d['assets'] if a['name'].endswith('release-msvc.7z')))")
+          curl -sSL "$URL" -o mesa.7z
+          7z x -y -omesa mesa.7z > /dev/null
+          mkdir -p smoke
+          cp -r package/STLT-VJ smoke/
+          cp mesa/x64/*.dll smoke/STLT-VJ/
+          python app/tests/smoke.py smoke/STLT-VJ/stlt-vj.exe app/tests/fixtures
+
+      - name: Smoke test (Linux, virtual screen)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y xvfb
+          xvfb-run -a -s "-screen 0 1920x1080x24" python3 app/tests/smoke.py package/STLT-VJ/stlt-vj app/tests/fixtures
+
       - uses: actions/upload-artifact@v4
         with:
           name: STLT-VJ-${{ matrix.artifact }}
           path: STLT-VJ-${{ matrix.artifact }}.*
           if-no-files-found: error
+
+  # The tests on Windows under AddressSanitizer (MSVC): reads past a buffer, use after free and the like stop the
+  # run with a report. Not packaged.
+  windows-asan:
+    runs-on: windows-2022
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build with AddressSanitizer
+        run: |
+          cmake -S app -B app/build-asan -DCMAKE_C_FLAGS_INIT="/fsanitize=address" -DCMAKE_CXX_FLAGS_INIT="/fsanitize=address"
+          cmake --build app/build-asan --config RelWithDebInfo --parallel
+
+      - name: Tests under AddressSanitizer
+        run: |
+          ASAN_DLL=$(find "/c/Program Files/Microsoft Visual Studio/2022" -name clang_rt.asan_dynamic-x86_64.dll -path '*Hostx64/x64*' | head -1)
+          echo "ASan runtime: $ASAN_DLL"
+          export PATH="$(dirname "$ASAN_DLL"):$PATH"
+          ctest --test-dir app/build-asan -C RelWithDebInfo --output-on-failure
 
   # A tag v* (or a manual run with a release tag) publishes the builds as a GitHub Release, with the notes in
   # docs/releases/<tag>.md; a manual run creates the tag on the commit it built. always(): a release still goes

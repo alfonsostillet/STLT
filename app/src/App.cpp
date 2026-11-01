@@ -2419,10 +2419,18 @@ void App::Frame()
 void App::Capture()
 {
 	int width = 0, height = 0;
-	glfwGetFramebufferSize( window, &width, &height );
+	if( options.captureComposition )
+	{
+		width  = composition.width;
+		height = composition.height;
+		glBindFramebuffer( GL_FRAMEBUFFER, compositor.CompositionFramebuffer() );
+	}
+	else
+		glfwGetFramebufferSize( window, &width, &height );
 	std::vector< uint8_t > pixels( (size_t)width * height * 3 );
 	glPixelStorei( GL_PACK_ALIGNMENT, 1 );
 	glReadPixels( 0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.data() );
+	glBindFramebuffer( GL_FRAMEBUFFER, 0 );
 	if( WriteBmp( options.capturePath, width, height, pixels ) )
 		std::printf( "Captured %dx%d to %s\n", width, height, options.capturePath.c_str() );
 	quitRequested = true;

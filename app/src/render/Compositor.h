@@ -28,6 +28,7 @@ public:
 	// `timelineView`: the timeline's video tracks at its playhead instead of the deck's layers.
 	void Render( Composition& composition, const FrameInfo& frame, bool timelineView = false );
 	GLuint CompositionTexture() const { return final.Texture(); }
+	GLuint CompositionFramebuffer() const { return final.Framebuffer(); }
 
 	// Main context. Draws one clip with its effects on black, fitted to the target (preview monitor).
 	void RenderClipAlone( Clip& clip, Fbo& target, int compWidth, int compHeight, const FrameInfo& frame );

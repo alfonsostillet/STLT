@@ -27,6 +27,8 @@ int main( int argc, char** argv )
 			options.advancedOutputTab = std::strcmp( argv[ ++i ], "output" ) == 0 ? 1 : 0;
 		else if( arg == "--capture" && hasValue )
 			options.capturePath = argv[ ++i ];
+		else if( arg == "--capture-composition" )
+			options.captureComposition = true;
 		else if( arg == "--frames" && hasValue )
 			options.captureFrames = std::max( 1, std::atoi( argv[ ++i ] ) );
 		else if( arg == "--osc" && hasValue )

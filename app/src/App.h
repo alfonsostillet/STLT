@@ -25,6 +25,7 @@ struct LaunchOptions
 {
 	std::string capturePath; // write the window to this .bmp after `captureFrames` frames, then quit
 	int captureFrames = 60;
+	bool captureComposition = false; // the composition (at its own size) rather than the window
 	struct ClipArg
 	{
 		int layer, column;
