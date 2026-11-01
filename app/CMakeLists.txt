@@ -162,6 +162,10 @@ add_library(stltvj-media STATIC
     src/media/FrameSource.h
     src/media/HapFrame.cpp
     src/media/HapFrame.h
+    src/media/DxvFrame.cpp
+    src/media/DxvFrame.h
+    src/media/DxvSource.cpp
+    src/media/DxvSource.h
     src/media/HapSource.cpp
     src/media/HapSource.h
     src/media/MovFile.cpp
@@ -409,7 +413,7 @@ stltvj_ffmpeg_runtime(history_test)
 endif()
 
 # Headless tools: decode benchmark and tests for the media engine.
-add_executable(decodebench tools/decodebench.cpp)
+add_executable(decodebench tools/decodebench.cpp tools/BcDecode.h)
 target_link_libraries(decodebench PRIVATE stltvj-media)
 stltvj_ffmpeg_runtime(decodebench)
 

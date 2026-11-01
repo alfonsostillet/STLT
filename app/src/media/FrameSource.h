@@ -35,6 +35,9 @@ enum class Shading
 	AlphaOnly,  // HAP Alpha-Only (RGTC1)
 	Yuv,        // Y, U, V planes (H.264 and most other video): converted on the GPU
 	Nv12,       // a Y plane and an interleaved UV plane (what hardware decoders give)
+	RgbaPremultiplied, // DXV with alpha (DXT5, colour premultiplied)
+	DxvYCoCg,          // DXV High Quality: Y (RGTC1) and half-size Co, Cg (RGTC2)
+	DxvYCoCgAlpha,     // DXV High Quality with alpha: Y and alpha (RGTC2) and half-size Co, Cg (RGTC2)
 };
 
 struct FrameLayout
@@ -82,6 +85,8 @@ public:
 	virtual std::string CodecName() const = 0;
 	virtual std::string Details() const { return {}; }
 	virtual bool IsHap() const { return false; }
+	// Frames go to the GPU as compressed textures and decode in any order (HAP, DXV).
+	virtual bool IsGpuTexture() const { return IsHap(); }
 	virtual bool IsHardwareDecoded() const { return false; } // by the graphics chip (VideoToolbox, D3D11, VA-API...)
 	virtual bool IsStill() const { return false; }
 

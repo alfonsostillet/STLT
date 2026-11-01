@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cctype>
 #include <vector>
+#include "media/DxvSource.h"
 #include "media/ThreadPool.h"
 
 namespace stltvj
@@ -114,12 +115,23 @@ std::unique_ptr< FrameSource > OpenFfmpegSource( const std::string& path, std::s
 std::unique_ptr< FrameSource > OpenFrameSource( const std::string& path, std::string& error )
 {
 	auto movie = std::make_unique< MovFile >();
-	if( movie->Open( path ) && IsHapCodec( movie->Video().codec ) )
+	bool opened = movie->Open( path );
+	if( opened && IsHapCodec( movie->Video().codec ) )
 	{
 		auto source = std::make_unique< HapSource >();
 		if( source->Open( std::move( movie ), error ) )
 			return source;
 		return nullptr;
+	}
+	if( opened && IsDxvCodec( movie->Video().codec ) )
+	{
+		// Resolume's DXV 3 straight to the GPU; anything this does not read goes through FFmpeg below.
+		auto source = std::make_unique< DxvSource >();
+		std::string dxvError;
+		if( source->Open( std::move( movie ), dxvError ) )
+			return source;
+		movie = std::make_unique< MovFile >();
+		movie->Open( path );
 	}
 #ifdef STLTVJ_WITH_FFMPEG
 	return OpenFfmpegSource( path, error );

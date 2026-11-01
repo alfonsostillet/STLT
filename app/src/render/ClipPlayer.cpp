@@ -116,7 +116,7 @@ bool ClipPlayer::Activate()
 	lastWanted = -1;
 	stopping   = false;
 	lastJump   = -1e9;
-	int decoders = source->IsHap() ? 2 : 1; // other formats decode one frame at a time
+	int decoders = source->IsGpuTexture() ? 2 : 1; // other formats decode one frame at a time
 	for( int i = 0; i < decoders; ++i )
 		threads.emplace_back( [ this ] { DecodeLoop(); } );
 	return true;

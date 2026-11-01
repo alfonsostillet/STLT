@@ -715,6 +715,9 @@ STLT-VJ sends NDI through the NDI runtime installed on the user's computer (with
 https://ffmpeg.org
 
 STLT-VJ uses FFmpeg's libavformat, libavcodec, libswscale and libavutil to decode files that are not HAP.
+`app/src/media/DxvFrame.cpp` is a port of FFmpeg's DXV decoder (`libavcodec/dxv.c`, Copyright (C) 2015 Vittorio
+Giovara, Copyright (C) 2018 Paul B Mahol) and LZF decompression (`libavcodec/lzf.c`, Copyright (C) 2015 Luca
+Barbato), under the same LGPL 2.1 or later, distributed here under the GPL 3 that it permits.
 FFmpeg is licensed under the GNU Lesser General Public License version 2.1 or later; some optional parts, enabled in
 some builds, are under the GNU General Public License version 2 or later. The source code is at https://ffmpeg.org/download.html.
 

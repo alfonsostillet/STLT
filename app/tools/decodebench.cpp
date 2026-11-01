@@ -1,10 +1,11 @@
 // Measures how fast the media engine decodes a file, front to back, without a GPU: what the decode thread
 // of a playing clip does. HAP decompresses its chunks on all cores; other formats go through FFmpeg.
-// usage: decodebench <file> [--loops N] [--random] [--scratch [--exact]]
+// usage: decodebench <file> [--loops N] [--random] [--scratch [--exact]] [--dump FRAME OUT.rgba]
 //   --random: frames in random order, like scrubbing or jumping cue points
 //   --scratch: a hand scratching back and forth over 4 seconds of the clip's middle for 6 seconds, as the player asks for frames (giving up on frames
 //              left behind, nearest frame while moving); prints how far behind the hand the picture was.
 //              --exact: every frame decoded exactly, the old way, for comparison
+//   --dump: writes the picture of FRAME, as the GPU would draw it, as raw RGBA (HAP and DXV)
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -14,6 +15,7 @@
 #include <numeric>
 #include <random>
 #include <vector>
+#include "BcDecode.h"
 #include "media/FrameSource.h"
 
 using namespace stltvj;
@@ -100,6 +102,8 @@ int main( int argc, char** argv )
 	int loops    = 1;
 	bool random  = false;
 	bool scratch = false, exact = false;
+	long dumpFrame = -1;
+	const char* dumpPath = nullptr;
 	for( int i = 2; i < argc; ++i )
 	{
 		if( !std::strcmp( argv[ i ], "--loops" ) && i + 1 < argc )
@@ -110,6 +114,11 @@ int main( int argc, char** argv )
 			scratch = true;
 		else if( !std::strcmp( argv[ i ], "--exact" ) )
 			exact = true;
+		else if( !std::strcmp( argv[ i ], "--dump" ) && i + 2 < argc )
+		{
+			dumpFrame = std::atol( argv[ ++i ] );
+			dumpPath  = argv[ ++i ];
+		}
 	}
 
 	std::string error;
@@ -125,6 +134,22 @@ int main( int argc, char** argv )
 
 	if( scratch )
 		return Scratch( *source, exact );
+	if( dumpPath )
+	{
+		std::vector< uint8_t > bytes( layout.totalBytes );
+		std::vector< uint8_t > rgba;
+		if( !source->Decode( (size_t)dumpFrame, bytes.data() ) || ( rgba = bc::PictureRgba( layout, bytes.data() ) ).empty() )
+		{
+			std::fprintf( stderr, "cannot dump frame %ld\n", dumpFrame );
+			return 1;
+		}
+		FILE* out = std::fopen( dumpPath, "wb" );
+		if( !out || std::fwrite( rgba.data(), 1, rgba.size(), out ) != rgba.size() )
+			return 1;
+		std::fclose( out );
+		std::printf( "wrote %dx%d RGBA to %s\n", layout.width, layout.height, dumpPath );
+		return 0;
+	}
 
 	std::vector< size_t > order( source->FrameCount() );
 	std::iota( order.begin(), order.end(), 0 );

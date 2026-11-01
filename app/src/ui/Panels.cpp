@@ -2261,9 +2261,9 @@ void DrawClipPanel( App& app )
 		else
 			ImGui::TextDisabled( "%s  %dx%d  %.2f fps  %zu frames  %s", source.CodecName().c_str(), clip->player->Width(), clip->player->Height(),
 			                     source.FrameRate(), source.FrameCount(), source.Details().c_str() );
-		if( !source.IsHap() && !source.IsStill() && source.IsHardwareDecoded() )
+		if( !source.IsGpuTexture() && !source.IsStill() && source.IsHardwareDecoded() )
 			ImGui::TextColored( ImVec4( 0.95f, 0.7f, 0.3f, 1 ), "Not HAP: decoded by the graphics chip. HAP is still faster to jump around and layer." );
-		else if( !source.IsHap() && !source.IsStill() )
+		else if( !source.IsGpuTexture() && !source.IsStill() )
 			ImGui::TextColored( ImVec4( 0.95f, 0.7f, 0.3f, 1 ), "Not HAP: decoded on the CPU. Convert to HAP for the best performance." );
 	}
 

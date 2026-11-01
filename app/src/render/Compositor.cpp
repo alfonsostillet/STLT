@@ -30,6 +30,13 @@ vec3 YCoCgToRgb( vec4 c )
 	return vec3( y + co - cg, y + cg, y - co - cg );
 }
 
+// DXV High Quality: Co and Cg at half scale, with 127 for zero.
+vec3 DxvYCoCgToRgb( float y, vec2 cocg )
+{
+	vec2 c = ( cocg - 127.0 / 255.0 ) * 2.0;
+	return vec3( y + c.x - c.y, y + c.y, y - c.x - c.y );
+}
+
 // Planar YUV (H.264 and most video) to RGB, with the levels and matrix the file declares.
 vec3 YuvToRgb( float y, float u, float v )
 {
@@ -65,6 +72,12 @@ void main()
 		rgba = vec4( YCoCgToRgb( c ), 1.0 );
 	else if( uShading == 3 )
 		rgba = vec4( YCoCgToRgb( c ), texture( uTex1, vUv ).r );
+	else if( uShading == 7 )
+		rgba = vec4( c.a > 0.0 ? c.rgb / c.a : vec3( 0.0 ), c.a );
+	else if( uShading == 8 )
+		rgba = vec4( DxvYCoCgToRgb( c.r, texture( uTex1, vUv ).rg ), 1.0 );
+	else if( uShading == 9 )
+		rgba = vec4( DxvYCoCgToRgb( c.r, texture( uTex1, vUv ).rg ), c.g );
 	else
 		rgba = vec4( c.rrr, 1.0 );
 	rgba = clamp( rgba, 0.0, 1.0 );
