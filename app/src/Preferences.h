@@ -15,6 +15,8 @@ struct Preferences
 	// Audio.
 	std::string audioDevice; // empty: the system's default
 	int audioBuffer = 256;   // frames per buffer
+	std::string audioInput;  // what animations listen to (Audio modes); empty: the system's default input
+	float audioInputGain = 1; // amplification of that input before it is measured
 
 	// Video.
 	bool hardwareDecoding = true;

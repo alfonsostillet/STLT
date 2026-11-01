@@ -49,6 +49,50 @@ static void TestAnimation()
 	float r = a.Evaluate( 1 );
 	CHECK( r >= 0.2f && r <= 0.6f );
 	CHECK( Near( a.Evaluate( 1 ), a.Evaluate( 3.9 ) ) ); // one value per period
+
+	// Smooth Random glides from one random value to the next: at the period's start it is Random's value.
+	Animation smooth = a;
+	smooth.mode      = AnimMode::SmoothRandom;
+	CHECK( Near( smooth.Evaluate( 4 ), a.Evaluate( 4 ) ) && Near( smooth.Evaluate( 8 ), a.Evaluate( 8 ) ) );
+	float previous = smooth.Evaluate( 4 );
+	for( double beat = 4.1; beat < 8; beat += 0.1 )
+	{
+		float v = smooth.Evaluate( beat );
+		CHECK( v >= 0.2f && v <= 0.6f && std::fabs( v - previous ) < 0.05f ); // no jumps
+		previous = v;
+	}
+
+	// A period in seconds follows the clock, whatever the beat.
+	AnimationClock clock;
+	clock.seconds = 1.5;
+	SetAnimationClock( clock );
+	Animation timed;
+	timed.mode    = AnimMode::Saw;
+	timed.seconds = true;
+	timed.beats   = 2; // seconds here
+	CHECK( Near( timed.Evaluate( 0 ), 0.75f ) && Near( timed.Evaluate( 123 ), 0.75f ) );
+
+	// The sound coming in: the band's level mapped onto from..to, and the input asked for while it is used.
+	clock.seconds    = 100;
+	clock.audio[ 1 ] = 0.5f; // bass
+	SetAnimationClock( clock );
+	CHECK( !AudioAnimationWanted( 10 ) );
+	Animation bass;
+	bass.mode = AnimMode::AudioBass;
+	bass.from = 0.2f;
+	bass.to   = 1.0f;
+	CHECK( Near( bass.Evaluate( 0 ), 0.6f ) );
+	CHECK( AudioAnimationWanted( 10 ) );
+	bass.reverse = true;
+	CHECK( Near( bass.Evaluate( 0 ), 0.6f ) );
+	bass.mode = AnimMode::AudioTreble;
+	CHECK( Near( bass.Evaluate( 0 ), 1.0f ) ); // reversed silence
+	clock.seconds = 111;
+	SetAnimationClock( clock );
+	CHECK( !AudioAnimationWanted( 10 ) ); // nobody listened for 11 seconds
+	for( int m = 0; m < (int)AnimMode::Count; ++m )
+		CHECK( AnimModeName( (AnimMode)m ) != nullptr && IsAudioMode( (AnimMode)m ) == ( m >= (int)AnimMode::AudioLevel ) );
+	SetAnimationClock( AnimationClock() );
 }
 
 static void TestBuiltins()

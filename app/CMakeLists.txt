@@ -234,6 +234,8 @@ add_library(stltvj-core STATIC
     src/control/RemoteInputs.h
     src/audio/AudioEngine.cpp
     src/audio/AudioEngine.h
+    src/audio/AudioInput.cpp
+    src/audio/AudioInput.h
     src/audio/Miniaudio.c
 )
 target_include_directories(stltvj-core PUBLIC src third_party/khronos "${THIRD_PARTY}/nlohmann")

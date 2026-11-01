@@ -148,6 +148,9 @@ static void TestSaving()
 	layer.transitionDuration = 4;
 	layer.transitionInBeats  = true;
 	layer.opacityAnimation.mode = AnimMode::Sine;
+	layer.clips[ 2 ].animations[ (int)ClipProperty::Rotation ].mode    = AnimMode::SmoothRandom;
+	layer.clips[ 2 ].animations[ (int)ClipProperty::Rotation ].seconds = true;
+	layer.clips[ 2 ].animations[ (int)ClipProperty::Opacity ].mode     = AnimMode::AudioBass;
 	Clip& clip    = layer.clips[ 2 ];
 	clip.path     = "movie.mov";
 	clip.inPoint  = 1.5;
@@ -172,7 +175,10 @@ static void TestSaving()
 	CHECK( k.syncBeats == 8 );
 	const Animation& s = k.animations[ (int)ClipProperty::Scale ];
 	CHECK( s.mode == AnimMode::PingPong && s.beats == 2 && s.to == 0.75f );
-	CHECK( k.animations[ (int)ClipProperty::Opacity ].mode == AnimMode::Off );
+	CHECK( !s.seconds );
+	CHECK( k.animations[ (int)ClipProperty::Rotation ].mode == AnimMode::SmoothRandom && k.animations[ (int)ClipProperty::Rotation ].seconds );
+	CHECK( k.animations[ (int)ClipProperty::Opacity ].mode == AnimMode::AudioBass );
+	CHECK( loaded.layers[ 1 ].clips[ 1 ].animations[ (int)ClipProperty::Opacity ].mode == AnimMode::Off );
 
 	// A clip saved before any of this keeps the defaults.
 	const Clip& plain = loaded.layers[ 0 ].clips[ 0 ];

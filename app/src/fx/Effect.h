@@ -44,7 +44,8 @@ struct ParamInfo
 	bool IsAnimatable() const;
 };
 
-// Movement a parameter can have on its own, locked to the composition's beat.
+// Movement a parameter can have on its own: locked to the composition's beat or timed in seconds, or following
+// the sound coming in (AnimationClock's audio levels).
 enum class AnimMode
 {
 	Off,
@@ -52,21 +53,39 @@ enum class AnimMode
 	PingPong, // min to max and back
 	Sine,
 	Square,
-	Random,   // a new random value on every period
+	Random,       // a new random value on every period
+	SmoothRandom, // from one random value to the next over each period
+	AudioLevel,   // the sound's level, 0 (silence) to 1 (full)
+	AudioBass,
+	AudioMid,
+	AudioTreble,
 	Count
 };
 const char* AnimModeName( AnimMode mode );
+bool IsAudioMode( AnimMode mode );
 
 struct Animation
 {
 	AnimMode mode = AnimMode::Off;
-	float beats   = 4;   // one period in beats
+	float beats   = 4;   // one period, in beats (or seconds when `seconds`)
+	bool seconds  = false;
 	float from    = 0;   // 0..1 of the parameter's range
 	float to      = 1;
 	bool reverse  = false;
-	// Position 0..1 within the range for this beat count.
+	// Position 0..1 within the range at this beat (and the AnimationClock's time and sound).
 	float Evaluate( double beat ) const;
 };
+
+// What animations follow besides the beat: the time and the sound coming in, set once a frame by the app.
+struct AnimationClock
+{
+	double seconds = 0;
+	float audio[ 4 ] = {}; // level, bass, mid, treble, 0..1 (AudioInput's bands)
+};
+void SetAnimationClock( const AnimationClock& clock );
+const AnimationClock& CurrentAnimationClock();
+// Whether an animation asked for the sound within the last `seconds` (the app opens the input only then).
+bool AudioAnimationWanted( double seconds );
 
 // Timing shared by every effect in a frame.
 struct FrameInfo

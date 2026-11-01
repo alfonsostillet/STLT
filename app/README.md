@@ -43,7 +43,8 @@ It is an independent project, written from public specifications (HAP, FFGL, Ope
 - **Built-in effects**: Brightness & Contrast, Hue & Saturation, Invert, Colorize, Threshold, Mirror, Kaleidoscope, Tile, Pixelate, RGB Split, Blur, Edge Detect, Strobe (beat-synced), Trails.
 - **Sources** (generated clips, at the composition size): Solid Color, Gradient, Lines, Checker, and FFGL source plugins. Drop one on an empty cell.
 - **FFGL 2 host**: loads `.dll` (Windows) and `.bundle` (macOS) effect and source plugins from the app's plugin folder, Resolume's *Extra Effects* folders and any folder you add (Effects → Plugin Folders). Parameters show as sliders, checkboxes, buttons, menus, text and colour pickers, grouped as the plugin asks; menus, names and visibility that change live (FFGL 2.2/2.3) update in the panel. Plugins get the BPM, bar phase and time. STLT-CHASER, STLT-WIPER and STLT-OUTLINER run here as they do in Resolume.
-- **Beat-synced parameters**: click a parameter's name → Animate: saw, ping-pong, sine, square or random, over 1/4 to 64 beats, between two values. Works on effect parameters, a clip's opacity, position, scale and rotation, and a layer's opacity; a moving setting's name lights up. RESYNC restarts the beat.
+- **Animated parameters**: click a parameter's name → Animate: saw, ping-pong, sine, square, random or smooth random, between two values, over 1/4 to 64 beats or over a period in seconds (0.05 s to 10 minutes, free of the tempo). Works on effect parameters, a clip's opacity, position, scale and rotation, and a layer's opacity; a moving setting's name lights up. RESYNC restarts the beat.
+- **Parameters that follow the sound**: Animate → *Audio Level*, *Bass* (20-200 Hz), *Mid* (200-2000 Hz) or *Treble* (2-12 kHz) moves the parameter between its two values with the sound coming in (a microphone, a line in, the mixer's feed), measured as a VU meter does (-60 to 0 dB, falling back in a third of a second). Choose the input and its gain in *Preferences → Audio → Audio Input*, where meters show what comes in; the input is opened only while something listens.
 
 ## Arrangement view: the timeline
 
@@ -188,10 +189,10 @@ Settings live in `%APPDATA%\STLT-VJ`, `~/Library/Application Support/STLT-VJ` or
 | `src/media` | QuickTime/MP4 demuxer, HAP frame decoding, thread pool, positional file reads. No OpenGL: tested headless. |
 | `src/render` | Clip player (decode thread + pixel buffers + textures), GPU compositor with effect chains, output window. |
 | `src/output` | Advanced output: screens, slices, warps, contours, masks, soft edges, Resolume import, and the renderer with its output windows. |
-| `src/fx` | Effect parameters and beat animations, built-in GLSL effects and sources, the FFGL 2 host, the effect registry. |
+| `src/fx` | Effect parameters and animations (beats, seconds, sound), built-in GLSL effects and sources, the FFGL 2 host, the effect registry. |
 | `src/ui` | Panels, theme and fonts, widgets (filled sliders), workspaces. |
 | `src/App.*` | Main loop and the actions panels share (load, launch, move, save, undo). |
-| `src/audio` | Clip sound: voices that follow their clip's playhead, and the mix on the audio device (miniaudio). |
+| `src/audio` | Clip sound: voices that follow their clip's playhead, and the mix on the audio device (miniaudio); the sound coming in, measured in bands for parameters to follow. |
 | `src/control` | Remote control: the OSC/MIDI address space, OSC parsing, MIDI messages and mappings, the UDP and MIDI inputs. |
 | `src/History.*` | Undo and redo by snapshots of the composition and the output setup. |
 

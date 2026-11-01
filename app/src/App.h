@@ -8,6 +8,7 @@
 #include "Preferences.h"
 #include "History.h"
 #include "audio/AudioEngine.h"
+#include "audio/AudioInput.h"
 #include "control/Feedback.h"
 #include "control/RemoteInputs.h"
 #include "fx/EffectRegistry.h"
@@ -214,6 +215,13 @@ public:
 	ControlSettings control;
 	RemoteInputs remote;
 	AudioEngine audio;
+	// The sound coming in, for parameters that follow it: opened while an animation listens (and closed ten seconds
+	// after the last stops), measured every frame into the animations' clock.
+	AudioInput audioInput;
+	double audioInputTried = -1e9;
+	int audioInputViewed   = 0; // frames for which the input stays open because its meters are on screen
+	void UpdateAudioInput( double now, double dt );
+	void RestartAudioInput() { audioInput.Stop(); audioInputTried = -1e9; }
 	bool learning  = false; // mapping mode: a click picks a control, the next key or MIDI message maps it
 	bool learnKeys = false; // mapping keys of the computer's keyboard (Ctrl+K), else MIDI (Ctrl+M)
 	// Turns keyboard or MIDI mapping on, or off when it is the one on.

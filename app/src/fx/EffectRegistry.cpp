@@ -172,7 +172,11 @@ std::string SaveEffectState( const Effect& effect )
 			values[ p.name ] = effect.Value( (int)i );
 		const Animation& a = effect.Anim( (int)i );
 		if( a.mode != AnimMode::Off )
+		{
 			anims[ p.name ] = { { "mode", AnimModeName( a.mode ) }, { "beats", a.beats }, { "from", a.from }, { "to", a.to }, { "reverse", a.reverse } };
+			if( a.seconds )
+				anims[ p.name ][ "seconds" ] = true;
+		}
 	}
 	state[ "params" ] = values;
 	if( !anims.empty() )
@@ -212,6 +216,7 @@ void LoadEffectState( Effect& effect, const std::string& text )
 			anim.from    = a.value( "from", 0.0f );
 			anim.to      = a.value( "to", 1.0f );
 			anim.reverse = a.value( "reverse", false );
+			anim.seconds = a.value( "seconds", false );
 		}
 }
 }

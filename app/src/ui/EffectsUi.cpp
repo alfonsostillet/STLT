@@ -84,22 +84,64 @@ void ParamMenu( Effect& effect, int i )
 
 void AnimationControls( Animation& a, float min, float max )
 {
-	ImGui::SeparatorText( "Animate to the beat" );
+	ImGui::SeparatorText( "Animate" );
 	ImGui::SetNextItemWidth( Ui( 140 ) );
 	if( ImGui::BeginCombo( "Mode", AnimModeName( a.mode ) ) )
 	{
 		for( int m = 0; m < (int)AnimMode::Count; ++m )
+		{
+			if( m == (int)AnimMode::AudioLevel )
+				ImGui::SeparatorText( "The sound coming in" );
 			if( ImGui::Selectable( AnimModeName( (AnimMode)m ), (int)a.mode == m ) )
 				a.mode = (AnimMode)m;
+		}
 		ImGui::EndCombo();
 	}
-	int beatIndex = 4;
-	for( int b = 0; b < (int)std::size( kBeatChoices ); ++b )
-		if( std::fabs( kBeatChoices[ b ] - a.beats ) < 1e-3f )
-			beatIndex = b;
-	ImGui::SetNextItemWidth( Ui( 140 ) );
-	if( ImGui::Combo( "Period", &beatIndex, kBeatChoiceNames, (int)std::size( kBeatChoiceNames ) ) )
-		a.beats = kBeatChoices[ beatIndex ];
+	if( IsAudioMode( a.mode ) )
+	{
+		// What the input gives now: the parameter follows it between From and To.
+		float level = CurrentAnimationClock().audio[ (int)a.mode - (int)AnimMode::AudioLevel ];
+		ImGui::SetNextItemWidth( Ui( 140 ) );
+		ImGui::ProgressBar( level, ImVec2( Ui( 140 ), 0 ), "" );
+		ImGui::SameLine();
+		ImGui::TextUnformatted( "Input" );
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "The sound coming in (Preferences > Audio > Audio Input), where its gain is set too." );
+	}
+	else if( a.mode != AnimMode::Off )
+	{
+		// The period, in beats (locked to the tempo) or in seconds (its own pace).
+		ImGui::SetNextItemWidth( Ui( 66 ) );
+		int unit = a.seconds ? 1 : 0;
+		if( ImGui::Combo( "##unit", &unit, "Beats\0Seconds\0" ) )
+		{
+			a.seconds = unit == 1;
+			if( !a.seconds ) // back to beats: the nearest period on the beat
+			{
+				float best = kBeatChoices[ 0 ];
+				for( float b : kBeatChoices )
+					if( std::fabs( std::log( b / std::max( a.beats, 0.01f ) ) ) < std::fabs( std::log( best / std::max( a.beats, 0.01f ) ) ) )
+						best = b;
+				a.beats = best;
+			}
+		}
+		ImGui::SameLine();
+		if( a.seconds )
+		{
+			ImGui::SetNextItemWidth( Ui( 70 ) );
+			ImGui::DragFloat( "Period", &a.beats, 0.05f, 0.05f, 600.0f, "%.2f s", ImGuiSliderFlags_AlwaysClamp | ImGuiSliderFlags_Logarithmic );
+		}
+		else
+		{
+			int beatIndex = 4;
+			for( int b = 0; b < (int)std::size( kBeatChoices ); ++b )
+				if( std::fabs( kBeatChoices[ b ] - a.beats ) < 1e-3f )
+					beatIndex = b;
+			ImGui::SetNextItemWidth( Ui( 70 ) );
+			if( ImGui::Combo( "Period", &beatIndex, kBeatChoiceNames, (int)std::size( kBeatChoiceNames ) ) )
+				a.beats = kBeatChoices[ beatIndex ];
+		}
+	}
 	float lo = min + ( max - min ) * a.from, hi = min + ( max - min ) * a.to;
 	ImGui::SetNextItemWidth( Ui( 140 ) );
 	if( FilledSlider( "From", &lo, min, max ) && max != min )

@@ -1322,6 +1322,31 @@ void App::PollRemote()
 	}
 }
 
+void App::UpdateAudioInput( double now, double dt )
+{
+	bool wanted = ( AudioAnimationWanted( 10 ) || audioInputViewed > 0 ) && !std::getenv( "STLTVJ_NO_AUDIO" );
+	if( audioInputViewed > 0 )
+		--audioInputViewed;
+	if( wanted && !audioInput.Running() && now - audioInputTried > 10 )
+	{
+		audioInputTried = now; // one try every ten seconds while it cannot open
+		if( !audioInput.Start( prefs.audioInput ) )
+			SetStatus( "Audio input: " + audioInput.Status(), true );
+	}
+	else if( !wanted && audioInput.Running() )
+		audioInput.Stop();
+	audioInput.gain = prefs.audioInputGain;
+	AnimationClock clock;
+	clock.seconds = now - startTime;
+	if( audioInput.Running() )
+	{
+		audioInput.Analyse( dt );
+		for( int b = 0; b < AudioInput::BandCount; ++b )
+			clock.audio[ b ] = audioInput.Value( (AudioInput::Band)b );
+	}
+	SetAnimationClock( clock );
+}
+
 Light App::LightFor( const std::string& address )
 {
 	using Kind = ControlTarget::Kind;
@@ -2458,6 +2483,7 @@ void App::Frame()
 	PollRemote();
 	if( control.midiEnabled )
 		UpdateLights( !control.midiLights );
+	UpdateAudioInput( now, dt );
 	UpdatePlayback( dt );
 	UpdateTimeline( dt );
 	UpdateAudio();

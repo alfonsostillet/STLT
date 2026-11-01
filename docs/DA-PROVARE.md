@@ -18,3 +18,11 @@ Correzioni già fatte e verificate dai test automatici, da provare sul PC vero p
 - [ ] **APC mini mk2**: i pad mappati sulle clip si accendono **blu** se c'è una clip, **verde** quando suona, **verde pulsante** se parte al prossimo beat (Launch su Beat o Bar); i pulsanti delle tracce e delle scene si accendono o lampeggiano (per esempio su Bypass, Solo, colonne); il pad mappato su TAP lampeggia col tempo. Chiudendo STLT-VJ si spengono.
   - Le mappature fatte prima di questa versione non sanno da quale controller vengono: le luci vanno a tutti i controller collegati. Rimappando un pad, va solo al suo.
   - Se un controller si comporta male, *Preferences → MIDI → Controller lights* le spegne.
+
+## Parametri che seguono l'audio e nuove animazioni (nuovo)
+
+- [ ] **Ingresso audio**: in *Preferences → Audio → Audio Input* scegli il microfono, la scheda audio o l'ingresso del mixer. Le quattro barre (Level, Bass, Mid, Treble) devono muoversi con il suono; *Input Gain* le alza o le abbassa (doppio clic: 0 dB).
+- [ ] **Un parametro che segue il suono**: clic sul nome di un parametro (per esempio l'Opacity di una clip o un parametro di un effetto) → *Animate* → *Audio Bass*: il parametro deve muoversi tra From e To insieme alla cassa. Prova anche Level, Mid e Treble, e *Reverse*.
+- [ ] **Periodo in secondi**: in *Animate*, accanto a *Period*, scegli *Seconds* al posto di *Beats*: l'animazione deve andare al suo passo anche cambiando il BPM.
+- [ ] **Smooth Random**: come Random ma scivola da un valore all'altro invece di saltare.
+- [ ] Il progetto salvato e riaperto deve ricordare tutte queste impostazioni.

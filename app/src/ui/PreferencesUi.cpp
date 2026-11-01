@@ -2,9 +2,11 @@
 #include <imgui.h>
 #include <algorithm>
 #include <cfloat>
+#include <cmath>
 #include <cstdio>
 #include "App.h"
 #include "audio/AudioEngine.h"
+#include "audio/AudioInput.h"
 #include "gl/Gl.h"
 #include "media/FrameSource.h"
 #include "ui/ControlUi.h"
@@ -166,9 +168,74 @@ bool Audio( App& app )
 	float percent = app.composition.audioVolume * 100;
 	if( ImGui::SliderFloat( "##master", &percent, 0, 100, "%.0f %%" ) )
 		app.composition.audioVolume = percent / 100;
+
+	// The sound coming in, for parameters that follow it (Animate → Audio Level, Bass, Mid, Treble).
+	static std::vector< std::string > inputs;
+	static bool inputsListed = false;
+	if( !inputsListed )
+	{
+		inputs       = AudioInput::Devices();
+		inputsListed = true;
+	}
+	bool inputChanged = false, deviceChanged = false;
+	ImGui::Spacing();
+	ImGui::SeparatorText( "Audio Input" );
+	ImGui::SetNextItemWidth( Ui( 360 ) );
+	shown = p.audioInput.empty() ? "System default" : p.audioInput;
+	if( ImGui::BeginCombo( "##input", shown.c_str() ) )
+	{
+		if( ImGui::Selectable( "System default", p.audioInput.empty() ) && !p.audioInput.empty() )
+		{
+			p.audioInput.clear();
+			inputChanged = deviceChanged = true;
+		}
+		for( const std::string& name : inputs )
+			if( ImGui::Selectable( name.c_str(), p.audioInput == name ) && p.audioInput != name )
+			{
+				p.audioInput = name;
+				inputChanged = deviceChanged = true;
+			}
+		if( inputs.empty() )
+			ImGui::TextDisabled( "No inputs found" );
+		ImGui::EndCombo();
+	}
+	ImGui::SameLine();
+	if( ImGui::Button( "Refresh##inputs" ) )
+		inputs = AudioInput::Devices();
+	Help( "A microphone, a line in or the mixer's feed. It is opened only while a parameter follows the sound "
+	      "(Animate → Audio Level, Bass, Mid or Treble) or while this page is open." );
+	Caption( "Input Gain" );
+	ImGui::SetNextItemWidth( Ui( 260 ) );
+	float db = 20 * std::log10( std::max( p.audioInputGain, 0.001f ) );
+	if( ImGui::SliderFloat( "##inputGain", &db, -20, 24, "%+.1f dB" ) )
+	{
+		p.audioInputGain = std::pow( 10.0f, db / 20 );
+		inputChanged     = true; // only saved: the gain applies to the running input at once
+	}
+	if( ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
+	{
+		p.audioInputGain = 1;
+		inputChanged     = true;
+	}
+	Help( "Raise it when the meters stay low, lower it when they stay full. Double-click: 0 dB." );
+	app.audioInputViewed = 30; // keeps the input open while the meters are shown
+	if( app.audioInput.Running() )
+	{
+		for( int b = 0; b < AudioInput::BandCount; ++b )
+		{
+			ImGui::ProgressBar( app.audioInput.Value( (AudioInput::Band)b ), ImVec2( Ui( 260 ), Ui( 14 ) ), "" );
+			ImGui::SameLine();
+			ImGui::TextUnformatted( AudioInput::BandName( (AudioInput::Band)b ) );
+		}
+		ImGui::TextDisabled( "%s", app.audioInput.Status().c_str() );
+	}
+	else
+		ImGui::TextDisabled( "%s", app.audioInput.Status().empty() ? "Not listening" : app.audioInput.Status().c_str() );
+	if( deviceChanged )
+		app.RestartAudioInput();
 	if( restart )
 		app.ApplyPreferences( true );
-	return restart;
+	return restart || inputChanged;
 }
 
 bool Video( App& app )

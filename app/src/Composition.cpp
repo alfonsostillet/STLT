@@ -451,7 +451,10 @@ static EffectChain LoadChain( const nlohmann::json& list )
 
 static nlohmann::json SaveAnimation( const Animation& a )
 {
-	return { { "mode", AnimModeName( a.mode ) }, { "beats", a.beats }, { "from", a.from }, { "to", a.to }, { "reverse", a.reverse } };
+	nlohmann::json j = { { "mode", AnimModeName( a.mode ) }, { "beats", a.beats }, { "from", a.from }, { "to", a.to }, { "reverse", a.reverse } };
+	if( a.seconds )
+		j[ "seconds" ] = true;
+	return j;
 }
 
 static Animation LoadAnimation( const nlohmann::json& j )
@@ -467,6 +470,7 @@ static Animation LoadAnimation( const nlohmann::json& j )
 	a.from    = j.value( "from", 0.0f );
 	a.to      = j.value( "to", 1.0f );
 	a.reverse = j.value( "reverse", false );
+	a.seconds = j.value( "seconds", false );
 	return a;
 }
 

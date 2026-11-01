@@ -5,6 +5,7 @@
 #include <thread>
 #include <vector>
 #include "audio/AudioEngine.h"
+#include "audio/AudioInput.h"
 #include "media/AudioDecoder.h"
 #include "media/FrameSource.h"
 
@@ -154,12 +155,54 @@ static void TestVoices()
 	CHECK( Peak( out, 4800 ) == 0.0f );
 }
 
+// The sound coming in, measured for parameters to follow: a tone lands in its band and the meters fall back.
+static void TestInputBands()
+{
+	auto tone = []( float hz, float amplitude ) {
+		std::vector< float > samples( 4096 );
+		for( size_t i = 0; i < samples.size(); ++i )
+			samples[ i ] = amplitude * (float)std::sin( 6.283185307 * hz * (double)i / 48000 );
+		return samples;
+	};
+	AudioInput input; // no device: the sound is handed in
+	CHECK( !input.Running() );
+	std::vector< float > bass = tone( 60, 0.5f );
+	input.Feed( bass.data(), (int)bass.size(), 48000 );
+	input.Analyse( 0 );
+	// Half of full scale is -6 dB: 0.9 on the meter's -60..0 dB.
+	CHECK( std::fabs( input.Value( AudioInput::Bass ) - 0.9f ) < 0.03f );
+	CHECK( std::fabs( input.Value( AudioInput::Level ) - 0.9f ) < 0.03f );
+	CHECK( input.Value( AudioInput::Mid ) < 0.2f );
+	CHECK( input.Value( AudioInput::Treble ) < 0.05f );
+
+	std::vector< float > high = tone( 5000, 1 );
+	input.Feed( high.data(), (int)high.size(), 48000 );
+	input.Analyse( 0.1 );
+	CHECK( input.Value( AudioInput::Treble ) > 0.97f );
+	CHECK( std::fabs( input.Value( AudioInput::Bass ) - 0.6f ) < 0.03f ); // falling: 0.3 in a tenth of a second
+	input.Analyse( 1 );
+	CHECK( input.Value( AudioInput::Bass ) < 0.05f );
+
+	std::vector< float > silence( 4096, 0.0f );
+	input.Feed( silence.data(), (int)silence.size(), 48000 );
+	input.Analyse( 1 );
+	for( int b = 0; b < AudioInput::BandCount; ++b )
+		CHECK( input.Value( (AudioInput::Band)b ) == 0 );
+	// Gain: -12 dB of signal raised by 12 dB reads as full scale.
+	input.gain               = 3.98f;
+	std::vector< float > low = tone( 1000, 0.25f );
+	input.Feed( low.data(), (int)low.size(), 48000 );
+	input.Analyse( 0 );
+	CHECK( input.Value( AudioInput::Mid ) > 0.97f );
+}
+
 int main()
 {
+	TestInputBands();
 	if( !HasFfmpeg() )
 	{
-		std::printf( "built without FFmpeg: no sound to test\n" );
-		return 0;
+		std::printf( "built without FFmpeg: no clip sound to test\n" );
+		return failures ? 1 : 0;
 	}
 	TestDecoder();
 	TestVoices();

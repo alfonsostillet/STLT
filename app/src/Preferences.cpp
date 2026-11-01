@@ -26,6 +26,8 @@ std::string Preferences::Save() const
 	root[ "startView" ]         = startView;
 	root[ "audioDevice" ]       = audioDevice;
 	root[ "audioBuffer" ]       = audioBuffer;
+	root[ "audioInput" ]        = audioInput;
+	root[ "audioInputGain" ]    = audioInputGain;
 	root[ "hardwareDecoding" ]  = hardwareDecoding;
 	root[ "frameCacheMegabytes" ] = frameCacheMegabytes;
 	root[ "clipFit" ]           = FitModeName( clipFit );
@@ -49,6 +51,8 @@ bool Preferences::Load( const std::string& text )
 	p.startView         = std::clamp( root.value( "startView", 0 ), 0, 2 );
 	p.audioDevice       = root.value( "audioDevice", "" );
 	p.audioBuffer       = std::clamp( root.value( "audioBuffer", 256 ), 64, 4096 );
+	p.audioInput        = root.value( "audioInput", "" );
+	p.audioInputGain    = std::clamp( root.value( "audioInputGain", 1.0f ), 0.0f, 16.0f );
 	p.hardwareDecoding  = root.value( "hardwareDecoding", true );
 	p.frameCacheMegabytes = std::clamp( root.value( "frameCacheMegabytes", 256 ), 0, 4096 );
 	p.clipFit           = ByName( root.value( "clipFit", nlohmann::json() ), FitModeName, FitMode::Fit );

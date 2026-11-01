@@ -1,13 +1,41 @@
 #include "Effect.h"
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 
 namespace stltvj
 {
 const char* AnimModeName( AnimMode mode )
 {
-	static const char* names[] = { "Off", "Saw", "Ping Pong", "Sine", "Square", "Random" };
+	static const char* names[] = { "Off", "Saw", "Ping Pong", "Sine", "Square", "Random", "Smooth Random", "Audio Level", "Audio Bass", "Audio Mid", "Audio Treble" };
+	static_assert( sizeof( names ) / sizeof( names[ 0 ] ) == (size_t)AnimMode::Count, "a name for every mode" );
 	return names[ std::clamp( (int)mode, 0, (int)AnimMode::Count - 1 ) ];
+}
+
+bool IsAudioMode( AnimMode mode )
+{
+	return mode >= AnimMode::AudioLevel && mode <= AnimMode::AudioTreble;
+}
+
+namespace
+{
+AnimationClock animationClock;
+std::atomic< double > audioAskedAt{ -1e9 };
+}
+
+void SetAnimationClock( const AnimationClock& clock )
+{
+	animationClock = clock;
+}
+
+const AnimationClock& CurrentAnimationClock()
+{
+	return animationClock;
+}
+
+bool AudioAnimationWanted( double seconds )
+{
+	return animationClock.seconds - audioAskedAt.load() < seconds;
 }
 
 bool ParamInfo::IsAnimatable() const
@@ -31,11 +59,23 @@ static float Hash( double n )
 float Animation::Evaluate( double beat ) const
 {
 	double period = std::max( 1.0 / 64, (double)beats );
-	double cycles = beat / period;
+	double cycles = ( seconds ? animationClock.seconds : beat ) / period;
 	float phase   = (float)( cycles - std::floor( cycles ) );
 	float t       = 0;
+	if( IsAudioMode( mode ) )
+		audioAskedAt = animationClock.seconds;
 	switch( mode )
 	{
+	case AnimMode::SmoothRandom:
+	{
+		float a = Hash( std::floor( cycles ) ), b = Hash( std::floor( cycles ) + 1 );
+		t       = a + ( b - a ) * ( phase * phase * ( 3 - 2 * phase ) );
+		break;
+	}
+	case AnimMode::AudioLevel:
+	case AnimMode::AudioBass:
+	case AnimMode::AudioMid:
+	case AnimMode::AudioTreble: t = std::clamp( animationClock.audio[ (int)mode - (int)AnimMode::AudioLevel ], 0.0f, 1.0f ); break;
 	case AnimMode::Saw: t = phase; break;
 	case AnimMode::PingPong: t = phase < 0.5f ? phase * 2 : 2 - phase * 2; break;
 	case AnimMode::Sine: t = 0.5f - 0.5f * std::cos( phase * 6.2831853f ); break;
