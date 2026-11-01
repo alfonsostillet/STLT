@@ -1,5 +1,6 @@
 #include "control/RemoteInputs.h"
 #include <RtMidi.h>
+#include "control/Feedback.h"
 #include <algorithm>
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -53,7 +54,73 @@ RemoteInputs::MidiPort::~MidiPort() = default;
 RemoteInputs::~RemoteInputs()
 {
 	StopOsc();
+	midiOuts.clear();
 	midiPorts.clear();
+}
+
+bool RemoteInputs::SendMidi( const std::string& inputDevice, const std::vector< unsigned char >& message )
+{
+	auto out = midiOuts.find( inputDevice );
+	if( out == midiOuts.end() || message.empty() )
+		return false;
+	try
+	{
+		out->second->sendMessage( &message );
+		return true;
+	}
+	catch( const RtMidiError& )
+	{
+		return false;
+	}
+}
+
+std::vector< std::string > RemoteInputs::OpenInputs() const
+{
+	std::vector< std::string > names;
+	for( const auto& port : midiPorts )
+		names.push_back( port.first );
+	return names;
+}
+
+// An output for each input in use, found by name (MidiOutputNameFor); those of inputs that closed go.
+void RemoteInputs::ConfigureOutputs()
+{
+	for( auto it = midiOuts.begin(); it != midiOuts.end(); )
+		it = midiPorts.count( it->first ) ? std::next( it ) : midiOuts.erase( it );
+	bool missing = false;
+	for( const auto& port : midiPorts )
+		missing = missing || !midiOuts.count( port.first );
+	if( !missing )
+		return;
+	try
+	{
+		RtMidiOut probe;
+		std::map< std::string, unsigned int > outputs;
+		for( unsigned int i = 0, count = probe.getPortCount(); i < count; ++i )
+			outputs.emplace( MidiDeviceName( probe.getPortName( i ) ), i ); // the first of a name, as for inputs
+		for( const auto& port : midiPorts )
+		{
+			if( midiOuts.count( port.first ) )
+				continue;
+			auto found = outputs.find( MidiOutputNameFor( port.first ) );
+			if( found == outputs.end() )
+				continue;
+			try
+			{
+				auto out = std::make_unique< RtMidiOut >();
+				out->openPort( found->second, "STLT-VJ" );
+				midiOuts[ port.first ] = std::move( out );
+				outputsVersion++;
+			}
+			catch( const RtMidiError& )
+			{
+				// A controller without lights, or one another program holds: it just stays dark.
+			}
+		}
+	}
+	catch( const RtMidiError& )
+	{
+	}
 }
 
 void RemoteInputs::Push( Event event )
@@ -225,7 +292,10 @@ void RemoteInputs::Configure( const ControlSettings& settings, bool retry )
 		it       = off ? midiPorts.erase( it ) : std::next( it );
 	}
 	if( !settings.midiEnabled )
+	{
+		midiOuts.clear();
 		return;
+	}
 	for( const std::string& name : names )
 	{
 		if( midiPorts.count( name ) || isOff( name ) )
@@ -254,5 +324,6 @@ void RemoteInputs::Configure( const ControlSettings& settings, bool retry )
 		if( !failure.empty() )
 			midiError = name + ": " + failure;
 	}
+	ConfigureOutputs();
 }
 }

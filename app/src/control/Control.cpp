@@ -400,13 +400,19 @@ std::string ControlSettings::Save() const
 	root[ "midiEnabled" ]  = midiEnabled;
 	root[ "midiInputsOff" ] = midiInputsOff;
 	root[ "midiNames" ]     = 2; // without RtMidi's port numbers (MidiDeviceName)
+	root[ "midiLights" ]    = midiLights;
 	root[ "preset" ]        = preset;
 	json mappings          = json::array();
 	for( const MidiMapping& m : midi )
-		mappings.push_back( { { "type", m.key.type == MidiKey::Type::Note ? "note" : "cc" },
-		                      { "channel", m.key.channel + 1 },
-		                      { "number", m.key.number },
-		                      { "address", m.address } } );
+	{
+		json mapping = { { "type", m.key.type == MidiKey::Type::Note ? "note" : "cc" },
+			             { "channel", m.key.channel + 1 },
+			             { "number", m.key.number },
+			             { "address", m.address } };
+		if( !m.device.empty() )
+			mapping[ "device" ] = m.device;
+		mappings.push_back( mapping );
+	}
 	root[ "midi" ] = mappings;
 	json keyMappings = json::array();
 	for( const KeyMapping& k : keys )
@@ -455,6 +461,7 @@ bool ControlSettings::Load( const std::string& text )
 	s.oscPort     = std::clamp( root.value( "oscPort", 7000 ), 1, 65535 );
 	s.midiEnabled = root.value( "midiEnabled", true );
 	s.preset      = root.value( "preset", "" );
+	s.midiLights  = root.value( "midiLights", true );
 	// Saved before names lost RtMidi's port number (Windows): taken off once, here.
 	bool numbered = root.value( "midiNames", 1 ) < 2;
 	if( root.contains( "midiInputsOff" ) && root[ "midiInputsOff" ].is_array() )
@@ -475,6 +482,7 @@ bool ControlSettings::Load( const std::string& text )
 			mapping.key.channel = std::clamp( m.value( "channel", 1 ), 1, 16 ) - 1;
 			mapping.key.number  = std::clamp( m.value( "number", 0 ), 0, 127 );
 			mapping.address     = m.value( "address", "" );
+			mapping.device      = m.value( "device", "" );
 			s.midi.push_back( mapping );
 		}
 	if( root.contains( "keys" ) && root[ "keys" ].is_array() )

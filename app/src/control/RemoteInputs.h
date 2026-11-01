@@ -9,6 +9,7 @@
 #include "control/Control.h"
 
 class RtMidiIn;
+class RtMidiOut;
 
 namespace stltvj
 {
@@ -48,6 +49,12 @@ public:
 	// is only tried again on `retry` (the user changed something), as each failed try prints a message.
 	void Configure( const ControlSettings& settings, bool retry = false );
 	std::vector< Event > Poll();
+	// Sends to the output that belongs to an input in use (MidiOutputNameFor): the controllers' lights. False when
+	// it has none.
+	bool SendMidi( const std::string& inputDevice, const std::vector< unsigned char >& message );
+	std::vector< std::string > OpenInputs() const; // the MIDI inputs in use
+	// Changes whenever an output opens: lights sent before did not reach it.
+	int OutputsVersion() const { return outputsVersion; }
 
 	std::vector< std::string > MidiDevices() const { return devices; } // every input there is, on or off
 	std::string OscStatus() const;
@@ -76,6 +83,9 @@ private:
 		~MidiPort(); // where RtMidiIn is known
 	};
 	std::map< std::string, std::unique_ptr< MidiPort > > midiPorts; // open inputs by name
+	std::map< std::string, std::unique_ptr< RtMidiOut > > midiOuts; // their outputs, by input name
+	int outputsVersion = 0;
+	void ConfigureOutputs();
 	std::vector< std::string > devices;
 	std::string midiError;
 	bool midiUnavailable = false;

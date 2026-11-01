@@ -4,6 +4,7 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <algorithm>
+#include <set>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -320,6 +321,7 @@ void App::Shutdown()
 {
 	if( !window )
 		return;
+	UpdateLights( true ); // the controllers' lights off
 	if( !options.fresh )
 		WriteTextFile( ( fs::u8path( configDir ) / "last-session.stltvj" ).u8string(), SaveComposition( composition ) );
 	WriteTextFile( ( fs::u8path( configDir ) / "advanced-output.json" ).u8string(), savedOutput );
@@ -1308,7 +1310,7 @@ void App::PollRemote()
 			// One control per key: learning again moves it.
 			control.midi.erase( std::remove_if( control.midi.begin(), control.midi.end(), [ & ]( const MidiMapping& m ) { return m.key == e.key; } ),
 			                    control.midi.end() );
-			control.midi.push_back( { e.key, learnTarget } );
+			control.midi.push_back( { e.key, learnTarget, e.device } );
 			SetStatus( "Mapped " + MidiKeyName( e.key ) + " to " + learnTarget );
 			learnTarget.clear();
 			SaveControlSettings();
@@ -1317,6 +1319,111 @@ void App::PollRemote()
 		for( const MidiMapping& m : control.midi )
 			if( m.key == e.key )
 				ApplyControl( m.address, true, e.value, e.key.type == MidiKey::Type::Note, previous );
+	}
+}
+
+Light App::LightFor( const std::string& address )
+{
+	using Kind = ControlTarget::Kind;
+	ControlTarget t;
+	if( !ParseControlAddress( address, t ) )
+		return Light::Off;
+	auto queued = [ & ]( int row, int column ) {
+		for( const QueuedLaunch& q : queuedLaunches )
+			if( q.column == column && ( row < 0 ? q.layer < 0 : q.row == row ) )
+				return true;
+		return false;
+	};
+	switch( t.kind )
+	{
+	case Kind::ClipConnect:
+	{
+		Clip* clip = composition.ClipAt( t.layer, t.column );
+		if( !clip || !clip->Playable() )
+			return Light::Off;
+		if( queued( t.layer, t.column ) )
+			return Light::Waiting;
+		return composition.LayerShowing( t.layer, t.column ) >= 0 ? Light::On : Light::Ready;
+	}
+	case Kind::ColumnConnect:
+	{
+		if( queued( -1, t.column ) )
+			return Light::Waiting;
+		if( composition.activeColumn == t.column )
+			return Light::On;
+		for( int row = 0; row < (int)composition.layers.size(); ++row )
+			if( Clip* clip = composition.ClipAt( row, t.column ); clip && clip->Playable() )
+				return Light::Ready;
+		return Light::Off;
+	}
+	case Kind::LayerClear:
+		return t.layer >= 0 && t.layer < (int)composition.layers.size() && composition.layers[ t.layer ].active >= 0 ? Light::Ready : Light::Off;
+	case Kind::LayerBypass:
+		return t.layer >= 0 && t.layer < (int)composition.layers.size() && composition.layers[ t.layer ].bypass ? Light::On : Light::Off;
+	case Kind::LayerSolo:
+		return t.layer >= 0 && t.layer < (int)composition.layers.size() && composition.layers[ t.layer ].solo ? Light::On : Light::Off;
+	case Kind::CompositionBypass: return composition.bypass ? Light::On : Light::Off;
+	case Kind::Pause: return composition.paused ? Light::On : Light::Off;
+	case Kind::TimelinePlay: return composition.timeline.playing ? Light::On : Light::Off;
+	case Kind::DeckSelect:
+		return t.slot == composition.deck ? Light::On : t.slot >= 0 && t.slot < (int)composition.decks.size() ? Light::Ready : Light::Off;
+	case Kind::TimelineCue:
+		if( t.slot < 0 || t.slot >= (int)composition.timeline.blocks.size() )
+			return Light::Off;
+		return composition.timeline.BlockAt( composition.timeline.position ) == t.slot ? Light::On : Light::Ready;
+	case Kind::ClipCue:
+	{
+		Clip* clip = composition.ClipAt( t.layer, t.column );
+		return clip && t.slot >= 0 && t.slot < kCuePoints && clip->cues[ t.slot ] >= 0 ? Light::Ready : Light::Off;
+	}
+	case Kind::TempoTap: // blinks with the beat
+		return composition.beat - std::floor( composition.beat ) < 0.15 ? Light::On : Light::Off;
+	default:
+	{
+		// Other buttons are there to press: lit dimly; faders have no light.
+		return t.IsButton() || t.IsSwitch() ? Light::Ready : Light::Off;
+	}
+	}
+}
+
+void App::UpdateLights( bool off )
+{
+	if( remote.OutputsVersion() != lightsVersion )
+	{
+		lightsSent.clear(); // an output (re)opened: everything again
+		lightsVersion = remote.OutputsVersion();
+	}
+	std::vector< std::string > inputs = remote.OpenInputs();
+	std::set< std::string > mapped;
+	for( const MidiMapping& m : control.midi )
+	{
+		Light light = off ? Light::Off : LightFor( m.address );
+		for( const std::string& device : inputs )
+		{
+			if( !m.device.empty() && m.device != device )
+				continue;
+			std::vector< unsigned char > message = LightMessage( device, m.key, light );
+			if( message.empty() )
+				continue;
+			std::string at = device + "|" + std::to_string( (int)m.key.type ) + ":" + std::to_string( m.key.channel ) + ":" + std::to_string( m.key.number );
+			mapped.insert( at );
+			auto sent = lightsSent.find( at );
+			if( sent != lightsSent.end() && sent->second.message == message )
+				continue;
+			if( remote.SendMidi( device, message ) )
+				lightsSent[ at ] = { device, m.key, message };
+		}
+	}
+	// Keys no longer mapped (or on an input that went) go dark.
+	for( auto it = lightsSent.begin(); it != lightsSent.end(); )
+	{
+		if( mapped.count( it->first ) )
+		{
+			++it;
+			continue;
+		}
+		remote.SendMidi( it->second.device, LightMessage( it->second.device, it->second.key, Light::Off ) );
+		it = lightsSent.erase( it );
 	}
 }
 
@@ -2349,6 +2456,8 @@ void App::Frame()
 		frameTimes.pop_front();
 
 	PollRemote();
+	if( control.midiEnabled )
+		UpdateLights( !control.midiLights );
 	UpdatePlayback( dt );
 	UpdateTimeline( dt );
 	UpdateAudio();

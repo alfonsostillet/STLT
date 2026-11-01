@@ -130,6 +130,7 @@ struct MidiMapping
 {
 	MidiKey key;
 	std::string address;
+	std::string device; // the input it was learnt on, which gets its light ("": every input in use)
 };
 
 // A key of the computer's keyboard, with the modifiers held with it. `key` is the key's name as the interface
@@ -155,6 +156,7 @@ struct ControlSettings
 	int oscPort     = 7000;
 	bool midiEnabled = true;
 	std::vector< std::string > midiInputsOff; // input names the user switched off (new devices are on)
+	bool midiLights = true; // light the mapped pads and buttons of the controllers (control/Feedback.h)
 	std::vector< MidiMapping > midi;
 	std::vector< KeyMapping > keys;
 	std::string preset; // the shortcut preset the maps came from ("": none)

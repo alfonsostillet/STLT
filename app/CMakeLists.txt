@@ -227,6 +227,8 @@ add_library(stltvj-core STATIC
     src/output/NdiSender.cpp
     src/output/Sharing.h
     src/control/Control.cpp
+    src/control/Feedback.cpp
+    src/control/Feedback.h
     src/control/Control.h
     src/control/RemoteInputs.cpp
     src/control/RemoteInputs.h

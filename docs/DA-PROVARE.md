@@ -13,6 +13,8 @@ Correzioni già fatte e verificate dai test automatici, da provare sul PC vero p
 
 - [ ] **Spout e NDI**: uno screen dell'Advanced Output mandato in Spout e in NDI deve vedersi in un altro programma.
 
-## In arrivo (non ancora fatto)
+## Luci dei controller (nuovo)
 
-- **Luci dell'APC mini** (feedback MIDI): il controller riceve ancora niente da STLT-VJ.
+- [ ] **APC mini mk2**: i pad mappati sulle clip si accendono **blu** se c'è una clip, **verde** quando suona, **verde pulsante** se parte al prossimo beat (Launch su Beat o Bar); i pulsanti delle tracce e delle scene si accendono o lampeggiano (per esempio su Bypass, Solo, colonne); il pad mappato su TAP lampeggia col tempo. Chiudendo STLT-VJ si spengono.
+  - Le mappature fatte prima di questa versione non sanno da quale controller vengono: le luci vanno a tutti i controller collegati. Rimappando un pad, va solo al suo.
+  - Se un controller si comporta male, *Preferences → MIDI → Controller lights* le spegne.

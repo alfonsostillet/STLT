@@ -3,6 +3,7 @@
 #include <cstdio>
 #include <cstring>
 #include "control/Control.h"
+#include "control/Feedback.h"
 #include "control/RemoteInputs.h"
 
 using namespace stltvj;
@@ -152,12 +153,14 @@ static void TestSettings()
 	s.oscEnabled = true;
 	s.oscPort    = 9000;
 	s.midiInputsOff = { "Launchpad" };
-	s.midi.push_back( { { MidiKey::Type::Controller, 2, 14 }, "/composition/master" } );
-	s.midi.push_back( { { MidiKey::Type::Note, 0, 36 }, "/composition/layers/1/clips/1/connect" } );
+	s.midi.push_back( { { MidiKey::Type::Controller, 2, 14 }, "/composition/master", "" } );
+	s.midi.push_back( { { MidiKey::Type::Note, 0, 36 }, "/composition/layers/1/clips/1/connect", "APC mini mk2" } );
 	KeyChord chord{ "Q", true, true, false };
 	s.keys.push_back( { chord, "/composition/layers/2/clear" } );
 	s.keys.push_back( { { "F5" }, "/composition/tempocontroller/tempotap" } );
 	ControlSettings loaded;
+	CHECK( loaded.Load( s.Save() ) && loaded.midi.size() == 2 && loaded.midi[ 1 ].device == "APC mini mk2" && loaded.midi[ 0 ].device.empty() );
+	loaded = ControlSettings{};
 	CHECK( loaded.Load( s.Save() ) );
 	CHECK( loaded.keys.size() == 2 && loaded.keys[ 0 ].chord == chord && loaded.keys[ 0 ].address == "/composition/layers/2/clear" );
 	CHECK( loaded.keys.size() == 2 && loaded.keys[ 1 ].chord == KeyChord{ "F5" } );
@@ -203,8 +206,32 @@ static void TestMidiDeviceNames()
 	       && back.midiInputsOff[ 0 ] == MidiDeviceName( "APC mini mk2 0" ) );
 }
 
+// Controllers' lights: the APC mini mk2's pads by colour and brightness, its buttons on, off or blinking; other
+// controllers a note on of 127 or 0; faders none. Outputs found by the inputs' names.
+static void TestLights()
+{
+	using V = std::vector< unsigned char >;
+	MidiKey pad{ MidiKey::Type::Note, 0, 12 };
+	CHECK( LightMessage( "APC mini mk2", pad, Light::Off ) == V( { 0x90, 12, 0 } ) );
+	CHECK( LightMessage( "APC mini mk2", pad, Light::Ready ) == V( { 0x92, 12, 45 } ) );   // blue, half bright
+	CHECK( LightMessage( "APC mini mk2", pad, Light::On ) == V( { 0x96, 12, 21 } ) );      // green, full
+	CHECK( LightMessage( "APC mini mk2", pad, Light::Waiting ) == V( { 0x99, 12, 21 } ) ); // green, pulsing
+	MidiKey track{ MidiKey::Type::Note, 0, 100 }, scene{ MidiKey::Type::Note, 0, 119 };
+	CHECK( LightMessage( "APC mini mk2", track, Light::On ) == V( { 0x90, 100, 1 } ) );
+	CHECK( LightMessage( "APC mini mk2", scene, Light::Waiting ) == V( { 0x90, 119, 2 } ) );
+	CHECK( LightMessage( "APC mini mk2", scene, Light::Ready ) == V( { 0x90, 119, 0 } ) );
+	CHECK( LightMessage( "APC mini mk2", MidiKey{ MidiKey::Type::Note, 0, 80 }, Light::On ).empty() ); // no light there
+	CHECK( LightMessage( "MIDIIN2 (APC mini mk2)", pad, Light::On ) == V( { 0x96, 12, 21 } ) );
+	CHECK( LightMessage( "Launchpad", MidiKey{ MidiKey::Type::Note, 3, 40 }, Light::On ) == V( { 0x93, 40, 127 } ) );
+	CHECK( LightMessage( "Launchpad", MidiKey{ MidiKey::Type::Note, 3, 40 }, Light::Ready ) == V( { 0x93, 40, 0 } ) );
+	CHECK( LightMessage( "APC mini mk2", MidiKey{ MidiKey::Type::Controller, 0, 48 }, Light::On ).empty() );
+	CHECK( MidiOutputNameFor( "MIDIIN2 (APC mini mk2)" ) == "MIDIOUT2 (APC mini mk2)" );
+	CHECK( MidiOutputNameFor( "APC mini mk2" ) == "APC mini mk2" );
+}
+
 int main()
 {
+	TestLights();
 	TestMidiDeviceNames();
 	TestAddresses();
 	TestOsc();

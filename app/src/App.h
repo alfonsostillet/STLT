@@ -8,6 +8,7 @@
 #include "Preferences.h"
 #include "History.h"
 #include "audio/AudioEngine.h"
+#include "control/Feedback.h"
 #include "control/RemoteInputs.h"
 #include "fx/EffectRegistry.h"
 #include "render/Compositor.h"
@@ -266,6 +267,18 @@ private:
 	void SavePluginFolders() const;
 	History::State Snapshot() const;
 	void PollRemote();
+	// Controllers' lights for the MIDI mappings (control/Feedback.h): what each mapped pad shows, sent when it
+	// changes; `off` turns them all off (when the app closes).
+	void UpdateLights( bool off = false );
+	Light LightFor( const std::string& address );
+	struct LightSent
+	{
+		std::string device;
+		MidiKey key;
+		std::vector< unsigned char > message;
+	};
+	std::map< std::string, LightSent > lightsSent; // by device and key
+	int lightsVersion = -1;
 	void PollKeyboard();
 	void UpdateAudio();
 	// The Preview Monitor plays the selected clip even when it is not playing on its layer, with the clip's own

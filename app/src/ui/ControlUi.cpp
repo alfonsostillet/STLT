@@ -98,6 +98,11 @@ bool DrawMidiInputs( App& app )
 	ControlSettings& c = app.control;
 	bool changed       = false;
 	changed |= ImGui::Checkbox( "MIDI input", &c.midiEnabled );
+	ImGui::SameLine();
+	changed |= ImGui::Checkbox( "Controller lights", &c.midiLights );
+	if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) )
+		ImGui::SetTooltip( "Mapped pads and buttons light up on the controller: a clip ready, playing, starting on the beat; a\n"
+		                   "switch on. On an APC mini mk2: blue ready, green playing, pulsing green starting." );
 	std::string midiStatus = app.remote.MidiStatus();
 	ImGui::PushTextWrapPos( 0 );
 	if( !midiStatus.empty() )
