@@ -159,6 +159,10 @@ bool App::Init( const LaunchOptions& launch )
 	// No keyboard navigation: the keys belong to the user's shortcuts (text fields still take typing).
 	io.ConfigFlags |= ImGuiConfigFlags_DockingEnable | ImGuiConfigFlags_ViewportsEnable;
 	io.ConfigWindowsMoveFromTitleBarOnly = true;
+#ifdef NDEBUG
+	// Dear ImGui's warning about two controls sharing an ID is for us, not for someone playing a show.
+	io.ConfigDebugHighlightIdConflicts = false;
+#endif
 	io.ConfigDockingAlwaysTabBar         = true; // every panel has a tab to grab, docked or floating
 	iniPath        = ( fs::u8path( configDir ) / "layout.ini" ).u8string();
 	io.IniFilename = options.fresh ? nullptr : iniPath.c_str();
@@ -911,6 +915,24 @@ bool App::OpenComposition( const std::string& path )
 		else
 			failures++;
 	} );
+	// The clips that played when it was saved play again (from their start).
+	for( int i = 0; i < (int)composition.layers.size(); ++i )
+	{
+		Layer& l = composition.layers[ i ];
+		if( l.active < 0 )
+			continue;
+		Clip* clip = composition.ActiveClip( i );
+		if( !clip || !clip->Playable() )
+		{
+			l.active = l.activeRow = -1;
+			continue;
+		}
+		if( clip->generator )
+			continue;
+		clip->player->Activate();
+		clip->Restart();
+		clip->player->Update( clip->CurrentFrame(), clip->PlayDirection() );
+	}
 	compositionPath = path;
 	int missing = 0;
 	auto countMissing = [ & ]( const EffectChain& chain ) {

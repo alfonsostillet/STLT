@@ -373,7 +373,10 @@ void DrawEffectParams( Effect& effect )
 				ImGui::TableNextRow();
 				ImGui::TableSetColumnIndex( 0 );
 				ImGui::PushID( i );
-				groupOpen = ImGui::TreeNodeEx( group.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAllColumns | ImGuiTreeNodeFlags_NoTreePushOnOpen );
+				// "##group": a parameter often bears its group's name (STLT-CHASER's Delayer switch in the Delayer
+				// group), and the two must not share an ID.
+				groupOpen = ImGui::TreeNodeEx( ( group + "##group" ).c_str(),
+				                               ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_SpanAllColumns | ImGuiTreeNodeFlags_NoTreePushOnOpen );
 				ImGui::PopID();
 			}
 			else

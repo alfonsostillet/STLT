@@ -474,7 +474,8 @@ struct Composition
 };
 
 // Saving and loading as JSON. Clips are stored by path; players are created by the caller. Without
-// `withShownDeck` the text leaves out which deck is shown (for undo, where showing a deck is not a step).
+// `withShownDeck` the text leaves out which deck is shown and which clips play (for undo, where neither is a step);
+// with it a composition opens as it was saved, its clips playing (the caller starts their players).
 std::string SaveComposition( const Composition& composition, bool withShownDeck = true );
 bool LoadComposition( const std::string& json, Composition& composition, std::string& error );
 }

@@ -34,11 +34,13 @@ def read_bmp(path):
     return width, height, pixel
 
 
-def run(name, args, timeout=180):
-    home = tempfile.mkdtemp(prefix="stltvj-smoke-")
+def run(name, args, timeout=180, home=None, fresh=True):
+    home = home or tempfile.mkdtemp(prefix="stltvj-smoke-")
     env = dict(os.environ, STLTVJ_NO_AUDIO="1", APPDATA=home, HOME=home, XDG_CONFIG_HOME=home, GALLIUM_DRIVER="llvmpipe")
     capture = os.path.join(home, "capture.bmp")
-    command = [EXE, "--fresh", "--size", "1280x720", "--capture", capture, "--capture-composition", "--frames", "45"] + args
+    if os.path.exists(capture):
+        os.remove(capture)
+    command = [EXE] + (["--fresh"] if fresh else []) + ["--size", "1280x720", "--capture", capture, "--capture-composition", "--frames", "45"] + args
     try:
         result = subprocess.run(command, env=env, capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
@@ -87,6 +89,12 @@ image, _ = run("DXV High Quality", clip("dxv_ycg6.mov"))
 expect("DXV High Quality", image, bars, 16)
 image, _ = run("DXV High Quality alpha", clip("dxv_yg10.mov"))
 expect("DXV High Quality alpha", image, bars, 16)
+
+# The session comes back: a clip playing when the program closed plays again when it opens, with nothing asked.
+session = tempfile.mkdtemp(prefix="stltvj-smoke-session-")
+run("Session (first run)", clip("dxv_ycg6.mov"), home=session, fresh=False)
+image, _ = run("Session (reopened)", [], home=session, fresh=False)
+expect("Session (reopened)", image, bars, 16)
 
 # H.264 through FFmpeg: grey frames from black up (luma 16 + 16 n), so the middle is neutral, whichever frame it is.
 image, _ = run("H.264", clip("ramp_h264.mp4"))

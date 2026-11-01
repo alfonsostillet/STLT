@@ -439,7 +439,7 @@ static void TestTimeline()
 	CHECK( l.tracks.size() == 2 && l.tracks[ 0 ].clips.size() == 4 && l.tracks[ 1 ].audio );
 	CHECK( l.blocks.size() == 4 && l.blocks[ 0 ].name == "One" && l.blocks[ 3 ].endAction == BlockEnd::Black );
 	CHECK( Near( l.tracks[ 0 ].clips[ 2 ].clip.inPoint, 5 ) && Near( l.tracks[ 0 ].clips[ 1 ].length, 2 ) );
-	CHECK( !l.playing && Near( l.position, 0 ) );
+	CHECK( !l.playing && Near( l.position, c.timeline.position ) ); // the playhead where it was, stopped
 }
 
 // Keyframes: straight lines between them, held before the first and after the last; they stay put in time when
@@ -539,8 +539,34 @@ static void TestKeyCurves()
 	CHECK( r.keys[ (int)KeyProperty::Scale ].empty() && r.paramKeys[ 0 ].keys.size() == 1 && r.keys[ (int)KeyProperty::Opacity ].size() == 1 );
 }
 
+// A saved composition opens as it was: the clips that played play again, the timeline's playhead where it was.
+// Undo snapshots (without the shown deck) leave what plays alone.
+static void TestSavedPlaying()
+{
+	Composition c   = Composition::MakeDefault();
+	c.layers[ 0 ].clips[ 2 ].path = "movie.mov";
+	c.layers[ 1 ].clips[ 0 ].path = "other.mov";
+	c.layers[ 0 ].active     = 2;
+	c.layers[ 0 ].activeRow  = 0;
+	c.layers[ 0 ].activeDeck = 0;
+	c.layers[ 1 ].active     = 5; // an empty cell: nothing plays there after opening
+	c.layers[ 1 ].activeRow  = 1;
+	c.timeline.position      = 42.5;
+
+	Composition loaded;
+	std::string error;
+	CHECK( LoadComposition( SaveComposition( c ), loaded, error ) );
+	CHECK( loaded.layers[ 0 ].active == 2 && loaded.layers[ 0 ].activeRow == 0 && loaded.layers[ 0 ].activeDeck == 0 );
+	CHECK( loaded.layers[ 1 ].active == -1 );
+	CHECK( Near( loaded.timeline.position, 42.5 ) && !loaded.timeline.playing );
+
+	Composition undo;
+	CHECK( LoadComposition( SaveComposition( c, false ), undo, error ) && undo.layers[ 0 ].active == -1 );
+}
+
 int main()
 {
+	TestSavedPlaying();
 	TestRange();
 	TestCuesAndSync();
 	TestAnimationsAndTransitions();

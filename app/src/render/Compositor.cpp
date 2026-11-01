@@ -533,7 +533,9 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame, bool 
 		current = 1 - current;
 	}
 
-	Fbo* result = ApplyChain( composition.effects, &mix[ current ], &mix[ 1 - current ], frame );
+	// The composition's effects belong to the deck (Session view); the timeline is a show of its own, with effects
+	// on its clips, so they leave it alone (STLT-CHASER on the deck's composition would mask the timeline).
+	Fbo* result = timelineView ? &mix[ current ] : ApplyChain( composition.effects, &mix[ current ], &mix[ 1 - current ], frame );
 
 	final.Bind();
 	glBindVertexArray( vao );

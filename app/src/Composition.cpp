@@ -557,6 +557,8 @@ std::string SaveComposition( const Composition& c, bool withShownDeck )
 		if( layer.opacityAnimation.mode != AnimMode::Off )
 			l[ "opacityAnimation" ] = SaveAnimation( layer.opacityAnimation );
 		l[ "transition" ] = { { "mode", TransitionModeName( layer.transition ) }, { "duration", layer.transitionDuration }, { "beats", layer.transitionInBeats } };
+		if( withShownDeck && layer.active >= 0 )
+			l[ "playing" ] = { { "deck", layer.activeDeck }, { "row", layer.activeRow }, { "column", layer.active } };
 		layers.push_back( l );
 	}
 	root[ "layers" ] = layers;
@@ -659,6 +661,7 @@ static nlohmann::json SaveTimeline( const Timeline& t )
 	root[ "bpm" ]         = t.bpm;
 	root[ "beatsPerBar" ] = t.beatsPerBar;
 	root[ "fps" ]         = t.fps;
+	root[ "position" ]    = t.position; // the playhead, where it was (not playing)
 	json tracks           = json::array();
 	for( const TimelineTrack& track : t.tracks )
 	{
@@ -729,6 +732,7 @@ static Timeline LoadTimeline( const nlohmann::json& root )
 	t.bpm         = std::clamp( root.value( "bpm", 120.0 ), 20.0, 500.0 );
 	t.beatsPerBar = std::clamp( root.value( "beatsPerBar", 4 ), 1, 32 );
 	t.fps         = std::clamp( root.value( "fps", 25.0 ), 1.0, 120.0 );
+	t.position    = std::max( 0.0, root.value( "position", 0.0 ) );
 	if( root.contains( "tracks" ) && root[ "tracks" ].is_array() )
 		for( const json& k : root[ "tracks" ] )
 		{
@@ -853,6 +857,13 @@ bool LoadComposition( const std::string& text, Composition& out, std::string& er
 				layer.transitionDuration = std::max( 0.0f, t.value( "duration", 0.0f ) );
 				layer.transitionInBeats  = t.value( "beats", false );
 			}
+			if( l.contains( "playing" ) && l[ "playing" ].is_object() )
+			{
+				const json& p    = l[ "playing" ];
+				layer.activeDeck = p.value( "deck", 0 );
+				layer.activeRow  = p.value( "row", -1 );
+				layer.active     = p.value( "column", -1 );
+			}
 			if( l.contains( "clips" ) && l[ "clips" ].is_array() ) // before decks: the clips were the layer's
 				for( const json& k : l[ "clips" ] )
 					layer.clips.push_back( LoadClip( k ) );
@@ -899,6 +910,29 @@ bool LoadComposition( const std::string& text, Composition& out, std::string& er
 			c.columns.push_back( "Column " + std::to_string( i + 1 ) );
 	if( root.contains( "timeline" ) )
 		c.timeline = LoadTimeline( root[ "timeline" ] );
+	// What played: only a clip that is there (a layer, deck, row and column that exist, a clip in the cell).
+	for( Layer& layer : c.layers )
+	{
+		if( layer.active < 0 )
+			continue;
+		const Clip* playing = nullptr;
+		if( layer.activeDeck >= 0 && layer.activeDeck < (int)c.decks.size() && layer.activeRow >= 0 && layer.activeRow < (int)c.layers.size() )
+		{
+			const std::vector< Clip >* row = nullptr;
+			if( layer.activeDeck == c.deck )
+				row = &c.layers[ layer.activeRow ].clips;
+			else if( layer.activeRow < (int)c.decks[ layer.activeDeck ].rows.size() )
+				row = &c.decks[ layer.activeDeck ].rows[ layer.activeRow ];
+			// Players and generators are made by the caller: a movie or a generator in the cell is enough here.
+			if( row && layer.active < (int)row->size() && ( !( *row )[ layer.active ].path.empty() || !( *row )[ layer.active ].generatorId.empty() ) )
+				playing = &( *row )[ layer.active ];
+		}
+		if( !playing )
+		{
+			layer.active = layer.activeRow = -1;
+			layer.activeDeck = 0;
+		}
+	}
 	size_t widest = c.columns.size();
 	for( const Layer& layer : c.layers )
 		widest = std::max( widest, layer.clips.size() );
