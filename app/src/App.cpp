@@ -2031,6 +2031,7 @@ void App::SavePreferences()
 void App::ApplyPreferences( bool restartAudio )
 {
 	SetHardwareDecoding( prefs.hardwareDecoding );
+	SetFrameCacheMegabytes( prefs.frameCacheMegabytes );
 	Composition::newLayerBlend          = prefs.layerBlend;
 	Composition::newLayerTransition     = prefs.layerTransition;
 	Composition::newLayerTransitionTime = prefs.layerTransitionTime;

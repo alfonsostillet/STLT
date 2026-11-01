@@ -101,6 +101,7 @@ HAP is the format to use for a show. Other formats work, but every one of them c
 Measured with `decodebench` on clips made from the same 4-second source; your numbers depend on the machine and the encoding, the proportions do not. What it means on stage:
 
 - **H.264, HEVC and other long-GOP codecs** only store a full picture every second or so. Playing forwards is fine for a layer or two, but jumping in a clip, scrubbing, playing backwards or bouncing has to decode from the previous full picture every time: slow, and visible as stutter. They also use most of the CPU, so several of them at once compete with each other.
+- **Scratching and jumping H.264 and the like**: STLT-VJ softens that cost. It knows where the full pictures are (from the file's index) and decodes on instead of starting over when no full picture lies between; it keeps the frames it decoded recently, and the ones just before a jump's target, in memory (*Preferences → Video → Scratch memory per clip*, 256 MB by default), so going back over them is instant; and while you scratch it drops the frames your hand has left behind and shows the nearest picture it has (the full picture, or how far it got), the exact frame following as soon as you stop. Scratching a 1080p H.264 clip with a full picture every 8 seconds, the picture stays about 2 frames behind the hand and changes about 90 times a second, against 24 frames behind and 6 times a second before (`decodebench clip.mp4 --scratch`). The first jump into an unseen part still costs the decoding from its full picture.
 - **Hardware decoding**: H.264, HEVC, VP9, AV1, MPEG-2/4 (and ProRes on macOS) go to the computer's video decoder when there is one (VideoToolbox on macOS, D3D11 or DXVA2 on Windows, VA-API or VDPAU on Linux), which frees the CPU for more layers; the Clip panel says which decoder a clip uses, and the Performance panel can turn it off. It does not change the jumping cost: the hardware still decodes from the previous full picture.
 - **ProRes, DNxHD and Motion JPEG** decode any frame on its own, so jumps are fine, but they are heavy on the CPU and large on disk.
 - **DXV** (Resolume's codec) is decoded by FFmpeg on the CPU here, unlike HAP whose compressed textures go to the GPU as they are.
@@ -167,6 +168,7 @@ cmake -S app -B app/build -DCMAKE_BUILD_TYPE=Release
 cmake --build app/build --config Release
 ctest --test-dir app/build -C Release          # media and effect tests
 app/build/decodebench clip.mov --random        # decode speed of any clip, no GPU needed
+app/build/decodebench clip.mp4 --scratch       # how far behind a scratching hand the picture stays
 ```
 
 STLT-CHASER is the `chaser` submodule (clone with `--recursive`, or `git submodule update --init --recursive`). Its effects build with `cmake -S chaser/plugin -B chaser/plugin/build` (Linux also needs `libglew-dev`) and go into `plugins/` next to `stlt-vj`; its editor (Node 22) with `npm ci` and `npx electron-builder --dir` in `chaser/editor`, and goes into `chaser/` next to `stlt-vj`. `STLTVJ_CHASER_EDITOR` points *Output → Chaser* at another editor executable.

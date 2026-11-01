@@ -1,6 +1,8 @@
 #include "ClipPlayer.h"
 #include <hap.h>
 #include <chrono>
+#include <climits>
+#include <cstdlib>
 #include <vector>
 
 namespace stltvj
@@ -8,6 +10,14 @@ namespace stltvj
 namespace
 {
 using Clock = std::chrono::steady_clock;
+
+double Seconds()
+{
+	return std::chrono::duration< double >( Clock::now().time_since_epoch() ).count();
+}
+
+// How long after the playhead's last jump it counts as being scratched.
+constexpr double kScratchSeconds = 0.25;
 
 float Smooth( float average, float sample )
 {
@@ -102,8 +112,10 @@ bool ClipPlayer::Activate()
 		Remap( slot );
 	}
 	shownFrame = -1;
+	shownExact = true;
 	lastWanted = -1;
 	stopping   = false;
+	lastJump   = -1e9;
 	int decoders = source->IsHap() ? 2 : 1; // other formats decode one frame at a time
 	for( int i = 0; i < decoders; ++i )
 		threads.emplace_back( [ this ] { DecodeLoop(); } );
@@ -184,6 +196,22 @@ int64_t ClipPlayer::Wrap( int64_t frame ) const
 	return frame < 0 ? frame + count : frame;
 }
 
+bool ClipPlayer::StillWanted( int64_t frame ) const
+{
+	int64_t w = wantedNow.load();
+	int d     = directionNow.load();
+	int span  = d == 0 ? 1 : kSlots;
+	for( int k = 0; k < span; ++k )
+		if( Wrap( w + k * d ) == frame )
+			return true;
+	return false;
+}
+
+bool ClipPlayer::Scratching() const
+{
+	return Seconds() - lastJump.load() < kScratchSeconds;
+}
+
 bool ClipPlayer::InWindow( int64_t frame ) const
 {
 	int span = wantedDirection == 0 ? 1 : kSlots;
@@ -209,7 +237,7 @@ bool ClipPlayer::PickWork( int& slotIndex, int64_t& frame ) const
 	for( int k = 0; k < span; ++k )
 	{
 		int64_t candidate = Wrap( wanted + k * wantedDirection );
-		if( candidate == shownFrame )
+		if( candidate == shownFrame && shownExact )
 			continue;
 		bool taken = false;
 		for( const Slot& s : slots )
@@ -243,15 +271,36 @@ void ClipPlayer::DecodeLoop()
 		slot.state           = SlotState::Decoding;
 		slot.frame           = frame;
 		uint8_t* destination = slot.mapped;
+		DecodeRequest request;
+		request.abandon     = [ this, frame ] { return !StillWanted( frame ); };
+		request.approximate = [ this ] { return Scratching(); };
+		request.shown       = shownFrame;
 		lock.unlock();
 
 		Clock::time_point start = Clock::now();
-		bool ok                 = DecodeInto( frame, destination );
-		decodeMs.store( Smooth( decodeMs.load(), std::chrono::duration< float, std::milli >( Clock::now() - start ).count() ) );
-		decodedCount++;
+		int64_t content         = frame;
+		DecodeResult result     = source->DecodeFrame( (size_t)frame, destination, request, content );
+		if( result != DecodeResult::Abandoned )
+		{
+			decodeMs.store( Smooth( decodeMs.load(), std::chrono::duration< float, std::milli >( Clock::now() - start ).count() ) );
+			decodedCount++;
+		}
 
 		lock.lock();
-		slot.state = ok ? SlotState::Ready : SlotState::Failed;
+		switch( result )
+		{
+		case DecodeResult::Exact:
+		case DecodeResult::Approximate:
+			slot.state   = SlotState::Ready;
+			slot.content = content;
+			slot.exact   = result == DecodeResult::Exact;
+			break;
+		case DecodeResult::Abandoned:
+			slot.state = SlotState::Free;
+			slot.frame = -1;
+			break;
+		case DecodeResult::Failed: slot.state = SlotState::Failed; break;
+		}
 	}
 }
 
@@ -259,36 +308,73 @@ void ClipPlayer::Update( int64_t frame, int direction )
 {
 	if( !Active() )
 		return;
-	frame      = Wrap( frame );
-	Slot* show = nullptr;
+	frame         = Wrap( frame );
+	int dir       = direction > 0 ? 1 : direction < 0 ? -1 : 0;
+	// A jump: anything but staying put or moving on by a few frames in the play direction (cue points, scratching).
+	if( lastWanted >= 0 && frame != lastWanted )
+	{
+		bool onward = false;
+		for( int k = 1; k <= 3 && dir != 0; ++k )
+			onward = onward || Wrap( lastWanted + k * dir ) == frame;
+		if( !onward )
+			lastJump = Seconds();
+	}
+	bool scratching = Scratching();
+	Slot* show      = nullptr;
 	{
 		std::lock_guard< std::mutex > lock( mutex );
 		wanted          = frame;
-		wantedDirection = direction > 0 ? 1 : direction < 0 ? -1 : 0;
+		wantedDirection = dir;
+		wantedNow       = frame;
+		directionNow    = dir;
+		// The exact frame; else, while scratching, the ready frame nearest the playhead if it is nearer than
+		// what is on show.
+		for( Slot& s : slots )
+			if( s.state == SlotState::Ready && s.frame == frame && s.exact && s.content == frame )
+				show = &s;
+		if( !show && scratching )
+		{
+			int64_t best = shownFrame < 0 ? INT64_MAX : std::llabs( shownFrame - frame );
+			for( Slot& s : slots )
+				if( s.state == SlotState::Ready && std::llabs( s.content - frame ) < best )
+				{
+					best = std::llabs( s.content - frame );
+					show = &s;
+				}
+		}
+		// Done frames nobody will show: outside the window, already on show, or approximate ones overtaken.
 		for( Slot& s : slots )
 		{
+			if( &s == show )
+				continue;
 			bool done = s.state == SlotState::Ready || s.state == SlotState::Failed;
-			if( done && ( !InWindow( s.frame ) || s.frame == shownFrame ) )
+			if( done && ( !InWindow( s.frame ) || ( s.content == shownFrame && s.exact == shownExact ) || !s.exact ) )
 			{
 				s.state = SlotState::Free;
 				s.frame = -1;
 			}
-			if( s.state == SlotState::Ready && s.frame == frame )
-				show = &s;
 		}
 	}
-	if( show && frame != shownFrame )
+	if( show && !( show->content == shownFrame && show->exact == shownExact ) )
 	{
 		// The decoder never touches a Ready slot, so the upload runs without the lock.
 		Upload( *show );
 		std::lock_guard< std::mutex > lock( mutex );
-		shownFrame  = frame;
+		shownFrame  = show->content;
+		shownExact  = show->exact && show->content == frame;
 		show->state = SlotState::Free;
 		show->frame = -1;
 	}
-	else if( frame != shownFrame && frame != lastWanted && shownFrame >= 0 )
+	else
 	{
-		lateCount++;
+		if( show )
+		{
+			std::lock_guard< std::mutex > lock( mutex );
+			show->state = SlotState::Free;
+			show->frame = -1;
+		}
+		if( frame != shownFrame && frame != lastWanted && shownFrame >= 0 )
+			lateCount++;
 	}
 	lastWanted = frame;
 	wake.notify_all();
@@ -319,7 +405,10 @@ bool ClipPlayer::ShowNow( int64_t frame )
 	{
 		std::lock_guard< std::mutex > lock( mutex );
 		if( ok )
+		{
 			shownFrame = frame;
+			shownExact = true;
+		}
 		slot->state = SlotState::Free;
 		slot->frame = -1;
 	}

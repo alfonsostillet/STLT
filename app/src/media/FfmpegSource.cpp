@@ -2,11 +2,21 @@
 // H.264, HEVC and the other codecs the computer's video hardware knows decode there when it can (VideoToolbox,
 // D3D11, DXVA2, VA-API, VDPAU), falling back to the CPU. Planar YUV and NV12 frames go to the GPU as they are
 // (single and two-channel textures, converted in the shader); anything else is converted to RGBA on the CPU.
+//
+// Jumping (cue points, scratching) costs what decoding from the keyframe before the frame costs, which in an
+// H.264 file can be hundreds of frames. To keep that down: the keyframes are known from the file's index, so a
+// jump ahead decodes on when no keyframe lies between; recent frames and those just before a jump's target stay
+// in memory (FrameCacheMegabytes), so scratching back over them is instant; and while the playhead is scratched
+// the decoder gives up on frames left behind and shows the nearest it has (the keyframe after a seek, or how far
+// it got), the exact frame following once the playhead rests.
 #ifdef STLTVJ_WITH_FFMPEG
 #include <algorithm>
 #include <cctype>
+#include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <map>
 #include <mutex>
 #include <vector>
@@ -206,7 +216,7 @@ public:
 		frame    = av_frame_alloc();
 		transfer = av_frame_alloc();
 		packet   = av_packet_alloc();
-		bool first = ReadFrame();
+		bool first = ReadFrame() && Materialize();
 		if( !first && hardwareName.size() )
 		{
 			// The hardware took the file but cannot decode it (a profile it lacks): the CPU, from the start.
@@ -215,7 +225,7 @@ public:
 				return false;
 			av_seek_frame( format, stream, startPts, AVSEEK_FLAG_BACKWARD );
 			draining = ended = false;
-			first            = ReadFrame();
+			first            = ReadFrame() && Materialize();
 		}
 		if( !first )
 		{
@@ -224,6 +234,7 @@ public:
 		}
 		BuildLayout();
 		lastIndex = IndexOf( frame );
+		IndexKeyframes( st );
 		if( still )
 		{
 			cache.resize( layout.totalBytes );
@@ -254,34 +265,192 @@ public:
 
 	bool Decode( size_t target, uint8_t* destination ) override
 	{
+		int64_t decoded = 0;
+		return DecodeFrame( target, destination, DecodeRequest{}, decoded ) == DecodeResult::Exact;
+	}
+
+	DecodeResult DecodeFrame( size_t targetIndex, uint8_t* destination, const DecodeRequest& request, int64_t& decoded ) override
+	{
 		std::lock_guard< std::mutex > lock( mutex );
 		if( still )
 		{
 			std::memcpy( destination, cache.data(), cache.size() );
-			return true;
+			decoded = 0;
+			return DecodeResult::Exact;
 		}
-		// Going back, or far ahead, needs a seek to the nearest keyframe before it; close ahead decodes through.
-		int64_t t        = (int64_t)target;
-		int64_t ahead    = (int64_t)std::max( 30.0, fps * 2 );
-		bool afterSeek   = lastIndex == kUnknown;
-		if( !afterSeek && ( ended || t <= lastIndex || t > lastIndex + ahead ) )
-			Seek( target );
+		int64_t t = (int64_t)targetIndex;
+		decoded   = t;
+		if( CacheGet( t, destination ) )
+			return DecodeResult::Exact;
+		auto scratching = [ & ] { return request.approximate && request.approximate(); };
+		// An approximate answer only when it gets closer to the target than what is on show.
+		auto closer = [ & ]( int64_t candidate ) {
+			return request.shown < 0 || std::llabs( candidate - t ) < std::llabs( request.shown - t );
+		};
+		if( scratching() )
+		{
+			int64_t near = CacheNearest( t, std::max< int64_t >( 2, (int64_t)( fps / 4 ) ) );
+			if( near >= 0 && closer( near ) && CacheGet( near, destination ) )
+			{
+				decoded = near;
+				return DecodeResult::Approximate;
+			}
+		}
+		if( !Reachable( t ) )
+			Seek( (size_t)t );
+		bool justSought                 = lastIndex == kUnknown;
+		std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
 		for( int guard = 0; guard < 100000; ++guard )
 		{
 			if( !ReadFrame() )
-				return false;
+				return DecodeResult::Failed;
 			lastIndex = IndexOf( frame );
 			if( lastIndex >= t )
 			{
-				Store( destination );
-				return true;
+				decoded = lastIndex;
+				return Emit( lastIndex, destination ) ? DecodeResult::Exact : DecodeResult::Failed;
 			}
+			// The frames just before the target are where a scratch goes next: keep them.
+			if( t - lastIndex <= kKeepBefore )
+				CachePut( lastIndex );
+			bool givingUp = request.abandon && request.abandon();
+			bool showNow  = scratching() && closer( lastIndex )
+			               && ( justSought || givingUp
+			                    || std::chrono::steady_clock::now() - start > std::chrono::milliseconds( kProgressMs ) );
+			justSought = false;
+			if( showNow )
+			{
+				decoded = lastIndex;
+				return Emit( lastIndex, destination ) ? DecodeResult::Approximate : DecodeResult::Failed;
+			}
+			if( givingUp )
+				return DecodeResult::Abandoned;
 		}
-		return false;
+		return DecodeResult::Failed;
 	}
 
 private:
 	static constexpr int64_t kUnknown = INT64_MIN;
+	static constexpr int64_t kKeepBefore = 90; // frames before a jump's target kept in memory
+	static constexpr int kProgressMs     = 40; // while scratching, show how far the decoder got this often
+
+	// Whether `t` can be had by decoding on from where the decoder is, rather than seeking: ahead of it, with no
+	// keyframe in between worth seeking to (without an index, not too far ahead).
+	bool Reachable( int64_t t ) const
+	{
+		if( lastIndex == kUnknown || ended || t <= lastIndex )
+			return false;
+		if( keyframes.empty() )
+			return t <= lastIndex + (int64_t)std::max( 30.0, fps * 2 );
+		auto after = std::upper_bound( keyframes.begin(), keyframes.end(), t );
+		if( after == keyframes.begin() )
+			return true;
+		int64_t key = *( after - 1 ); // the last keyframe at or before t
+		return key <= lastIndex + 4;
+	}
+
+	// The keyframes' frame numbers, from the file's index (MP4 and MOV have one; otherwise none are known).
+	void IndexKeyframes( AVStream* st )
+	{
+		keyframes.clear();
+		int count = avformat_index_get_entries_count( st );
+		for( int i = 0; i < count; ++i )
+		{
+			const AVIndexEntry* e = avformat_index_get_entry( st, i );
+			if( e && ( e->flags & AVINDEX_KEYFRAME ) && e->timestamp != AV_NOPTS_VALUE )
+				keyframes.push_back( (int64_t)std::floor( ( e->timestamp - startPts ) * av_q2d( timeBase ) * fps + 0.5 ) );
+		}
+		std::sort( keyframes.begin(), keyframes.end() );
+		keyframes.erase( std::unique( keyframes.begin(), keyframes.end() ), keyframes.end() );
+		// An index with every frame a keyframe tells nothing a seek would not.
+		if( keyframes.size() <= 1 )
+			keyframes.clear();
+	}
+
+	// ---- Frames kept in memory ----
+
+	struct Kept
+	{
+		std::vector< uint8_t > bytes;
+		uint64_t used = 0;
+	};
+
+	size_t CacheCapacity() const
+	{
+		size_t bytes = (size_t)FrameCacheMegabytes() * 1024 * 1024;
+		return layout.totalBytes ? bytes / layout.totalBytes : 0;
+	}
+
+	bool CacheGet( int64_t index, uint8_t* destination )
+	{
+		auto at = kept.find( index );
+		if( at == kept.end() )
+			return false;
+		at->second.used = ++useCounter;
+		std::memcpy( destination, at->second.bytes.data(), at->second.bytes.size() );
+		return true;
+	}
+
+	// The kept frame nearest `t` within `range`, or -1.
+	int64_t CacheNearest( int64_t t, int64_t range ) const
+	{
+		int64_t best = -1;
+		auto above   = kept.lower_bound( t );
+		if( above != kept.end() && above->first - t <= range )
+			best = above->first;
+		if( above != kept.begin() )
+		{
+			int64_t below = std::prev( above )->first;
+			if( t - below <= range && ( best < 0 || t - below <= best - t ) )
+				best = below;
+		}
+		return best;
+	}
+
+	// Room for frame `index`: a new buffer, or the least recently used one's; null when nothing may be kept.
+	std::vector< uint8_t >* CacheSlot( int64_t index )
+	{
+		size_t capacity = CacheCapacity();
+		if( capacity == 0 )
+		{
+			kept.clear();
+			return nullptr;
+		}
+		std::vector< uint8_t > bytes;
+		while( kept.size() >= capacity )
+		{
+			auto oldest = std::min_element( kept.begin(), kept.end(), []( const auto& a, const auto& b ) { return a.second.used < b.second.used; } );
+			bytes.swap( oldest->second.bytes );
+			kept.erase( oldest );
+		}
+		Kept& k = kept[ index ];
+		k.bytes.swap( bytes );
+		k.bytes.resize( layout.totalBytes );
+		k.used = ++useCounter;
+		return &k.bytes;
+	}
+
+	// Keeps the current frame (frame `index`).
+	void CachePut( int64_t index )
+	{
+		if( kept.count( index ) )
+			return;
+		if( std::vector< uint8_t >* bytes = CacheSlot( index ) )
+			if( !Store( bytes->data() ) )
+				kept.erase( index );
+	}
+
+	// Writes the current frame (frame `index`) to `destination`, keeping a copy. The copy is made first: the
+	// destination is a mapped pixel buffer, which is slow to read back from.
+	bool Emit( int64_t index, uint8_t* destination )
+	{
+		CachePut( index );
+		auto at = kept.find( index );
+		if( at == kept.end() )
+			return Store( destination );
+		std::memcpy( destination, at->second.bytes.data(), at->second.bytes.size() );
+		return true;
+	}
 
 	// Opens the decoder, on the hardware when asked and available.
 	bool StartDecoder( const AVCodec* decoder, AVStream* st, bool hardware, std::string& error )
@@ -350,19 +519,8 @@ private:
 		for( ;; )
 		{
 			int result = avcodec_receive_frame( codec, frame );
-			if( result == 0 && frame->format == hardwareFormat && hardwareFormat != AV_PIX_FMT_NONE )
-			{
-				// From video memory to ours (NV12, or P010 for 10-bit), with the timing and colour information.
-				av_frame_unref( transfer );
-				if( av_hwframe_transfer_data( transfer, frame, 0 ) < 0 )
-					return false;
-				av_frame_copy_props( transfer, frame );
-				av_frame_unref( frame );
-				av_frame_move_ref( frame, transfer );
-				return true;
-			}
 			if( result == 0 )
-				return true;
+				return true; // a hardware frame stays in video memory until it is stored (Materialize)
 			if( result == AVERROR_EOF )
 			{
 				ended = true;
@@ -386,6 +544,21 @@ private:
 					break;
 			}
 		}
+	}
+
+	// A hardware frame copied from video memory to ours (NV12, or P010 for 10-bit), with its timing and colour
+	// information; frames skipped on the way to a jump's target never need it.
+	bool Materialize()
+	{
+		if( hardwareFormat == AV_PIX_FMT_NONE || frame->format != hardwareFormat )
+			return true;
+		av_frame_unref( transfer );
+		if( av_hwframe_transfer_data( transfer, frame, 0 ) < 0 )
+			return false;
+		av_frame_copy_props( transfer, frame );
+		av_frame_unref( frame );
+		av_frame_move_ref( frame, transfer );
+		return true;
 	}
 
 	void Seek( size_t target )
@@ -443,8 +616,10 @@ private:
 	}
 
 	// Writes the current frame into the layout: plane copies when it already matches, swscale otherwise.
-	void Store( uint8_t* destination )
+	bool Store( uint8_t* destination )
 	{
+		if( !Materialize() )
+			return false;
 		uint8_t* planes[ 4 ] = {};
 		int strides[ 4 ]     = {};
 		for( unsigned p = 0; p < layout.planeCount; ++p )
@@ -457,12 +632,14 @@ private:
 		{
 			for( unsigned p = 0; p < layout.planeCount; ++p )
 				av_image_copy_plane( planes[ p ], strides[ p ], frame->data[ p ], frame->linesize[ p ], strides[ p ], layout.planes[ p ].height );
-			return;
+			return true;
 		}
 		sws = sws_getCachedContext( sws, frame->width, frame->height, (AVPixelFormat)frame->format, layout.width, layout.height, target, SWS_BILINEAR,
 		                            nullptr, nullptr, nullptr );
-		if( sws )
-			sws_scale( sws, frame->data, frame->linesize, 0, frame->height, planes, strides );
+		if( !sws )
+			return false;
+		sws_scale( sws, frame->data, frame->linesize, 0, frame->height, planes, strides );
+		return true;
 	}
 
 	std::mutex mutex;
@@ -484,6 +661,9 @@ private:
 	bool ended        = false;
 	int64_t lastIndex = kUnknown;
 	std::vector< uint8_t > cache; // a still image, decoded once
+	std::vector< int64_t > keyframes;   // frame numbers, ascending; empty when the file has no index
+	std::map< int64_t, Kept > kept;     // decoded frames kept in memory, by frame number
+	uint64_t useCounter = 0;
 	FrameLayout layout;
 	std::string codecName;
 	std::string hardwareName; // empty when decoding on the CPU

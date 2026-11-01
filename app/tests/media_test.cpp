@@ -206,6 +206,61 @@ static void TestFrameSourceFfmpeg()
 		}
 	}
 
+	// Scratching (ramp_h264.mp4: keyframes at 0, 4 and 8): frames kept from before, the keyframe after a seek while
+	// the playhead moves, giving up on frames nobody wants.
+	{
+		auto luma = []( FrameSource& source, size_t frame, const DecodeRequest& request, int64_t& decoded, DecodeResult& result ) {
+			std::vector< uint8_t > pixels( source.Layout().totalBytes );
+			result = source.DecodeFrame( frame, pixels.data(), request, decoded );
+			return (int)pixels[ 0 ];
+		};
+		DecodeRequest plain;
+		DecodeRequest moving;
+		moving.approximate = [] { return true; };
+		DecodeRequest leftBehind = moving;
+		leftBehind.abandon       = [] { return true; };
+		int64_t decoded = -1;
+		DecodeResult result;
+
+		std::unique_ptr< FrameSource > a = OpenFrameSource( Fixture( "ramp_h264.mp4" ), error );
+		CHECK( a != nullptr );
+		if( a )
+		{
+			int y = luma( *a, 7, plain, decoded, result ); // decodes on from the first frame, keeping 1..6
+			CHECK( result == DecodeResult::Exact && decoded == 7 && std::abs( y - ( 16 + 16 * 7 ) ) <= 1 );
+			y = luma( *a, 5, plain, decoded, result ); // kept: no decoding
+			CHECK( result == DecodeResult::Exact && decoded == 5 && std::abs( y - ( 16 + 16 * 5 ) ) <= 1 );
+		}
+		std::unique_ptr< FrameSource > c = OpenFrameSource( Fixture( "ramp_h264.mp4" ), error );
+		CHECK( c != nullptr );
+		if( c )
+		{
+			luma( *c, 1, plain, decoded, result );           // the decoder at frame 1
+			int y = luma( *c, 10, moving, decoded, result ); // behind keyframe 8: the keyframe first, while moving
+			CHECK( result == DecodeResult::Approximate && decoded == 8 && std::abs( y - ( 16 + 16 * 8 ) ) <= 1 );
+			y = luma( *c, 10, plain, decoded, result ); // then on from it
+			CHECK( result == DecodeResult::Exact && decoded == 10 && std::abs( y - ( 16 + 16 * 10 ) ) <= 1 );
+		}
+		std::unique_ptr< FrameSource > b = OpenFrameSource( Fixture( "ramp_h264.mp4" ), error );
+		CHECK( b != nullptr );
+		if( b )
+		{
+			DecodeRequest gone;
+			gone.abandon = [] { return true; };
+			luma( *b, 3, gone, decoded, result ); // nobody wants it: nothing written
+			CHECK( result == DecodeResult::Abandoned );
+			leftBehind.shown = 0;
+			int y = luma( *b, 3, leftBehind, decoded, result ); // left behind while scratching: as far as it got
+			CHECK( result == DecodeResult::Approximate && decoded > 0 && decoded < 3 && std::abs( y - ( 16 + 16 * (int)decoded ) ) <= 1 );
+			SetFrameCacheMegabytes( 0 ); // nothing kept: still right
+			y = luma( *b, 3, plain, decoded, result );
+			CHECK( result == DecodeResult::Exact && decoded == 3 && std::abs( y - ( 16 + 16 * 3 ) ) <= 1 );
+			y = luma( *b, 1, plain, decoded, result );
+			CHECK( result == DecodeResult::Exact && std::abs( y - ( 16 + 16 * 1 ) ) <= 1 );
+			SetFrameCacheMegabytes( 256 );
+		}
+	}
+
 	// NV12 (a Y plane and interleaved UV, what hardware decoders hand back) goes up as two textures, unconverted.
 	std::unique_ptr< FrameSource > nv12 = OpenFrameSource( Fixture( "nv12_raw.mkv" ), error );
 	CHECK( nv12 != nullptr );

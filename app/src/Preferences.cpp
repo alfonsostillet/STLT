@@ -27,6 +27,7 @@ std::string Preferences::Save() const
 	root[ "audioDevice" ]       = audioDevice;
 	root[ "audioBuffer" ]       = audioBuffer;
 	root[ "hardwareDecoding" ]  = hardwareDecoding;
+	root[ "frameCacheMegabytes" ] = frameCacheMegabytes;
 	root[ "clipFit" ]           = FitModeName( clipFit );
 	root[ "clipPlayMode" ]      = PlayModeName( clipPlayMode );
 	root[ "clipBpmSync" ]       = clipBpmSync;
@@ -49,6 +50,7 @@ bool Preferences::Load( const std::string& text )
 	p.audioDevice       = root.value( "audioDevice", "" );
 	p.audioBuffer       = std::clamp( root.value( "audioBuffer", 256 ), 64, 4096 );
 	p.hardwareDecoding  = root.value( "hardwareDecoding", true );
+	p.frameCacheMegabytes = std::clamp( root.value( "frameCacheMegabytes", 256 ), 0, 4096 );
 	p.clipFit           = ByName( root.value( "clipFit", nlohmann::json() ), FitModeName, FitMode::Fit );
 	p.clipPlayMode      = ByName( root.value( "clipPlayMode", nlohmann::json() ), PlayModeName, PlayMode::Loop );
 	p.clipBpmSync       = root.value( "clipBpmSync", false );

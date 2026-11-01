@@ -23,6 +23,8 @@ namespace stltvj
 // HAP reaches the GPU as DXT/BC blocks and YUV as planes: neither is expanded to RGBA on the CPU.
 // A few slots let the decoders run ahead of the playhead in the play direction. HAP gets two decoder threads
 // working on different frames, so one slow read (a cold disk, a busy drive) does not stall the next frame.
+// While the playhead jumps around (scratching) the decoder drops frames the playhead has left, and the nearest
+// frame it has shows until the exact one is ready (see DecodeRequest).
 class ClipPlayer
 {
 public:
@@ -83,13 +85,17 @@ private:
 		GLuint buffer   = 0;
 		uint8_t* mapped = nullptr;
 		SlotState state = SlotState::Free;
-		int64_t frame   = -1;
+		int64_t frame   = -1; // the frame asked for
+		int64_t content = -1; // the frame decoded into it (another, nearby one when approximate)
+		bool exact      = true;
 	};
 	static constexpr int kSlots = 6;
 
 	void DecodeLoop();
 	bool PickWork( int& slot, int64_t& frame ) const;
 	bool InWindow( int64_t frame ) const;
+	bool StillWanted( int64_t frame ) const; // InWindow without the lock, for the decoder while it works
+	bool Scratching() const;
 	int64_t Wrap( int64_t frame ) const;
 	bool DecodeInto( int64_t frame, uint8_t* destination );
 	void Upload( Slot& slot );
@@ -112,6 +118,10 @@ private:
 	bool stopping      = false;
 	int64_t wanted     = 0;
 	int wantedDirection = 0;
+	bool shownExact    = true;
+	std::atomic< int64_t > wantedNow{ 0 };     // wanted and wantedDirection, for StillWanted
+	std::atomic< int > directionNow{ 0 };
+	std::atomic< double > lastJump{ -1e9 };    // seconds (steady clock) the playhead last jumped
 
 	std::atomic< float > decodeMs{ 0 };
 	float uploadMs = 0;

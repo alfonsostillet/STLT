@@ -136,6 +136,17 @@ std::atomic< bool > hardwareDecoding{ [] {
 	const char* env = std::getenv( "STLTVJ_HWDEC" );
 	return !env || std::strcmp( env, "0" ) != 0;
 }() };
+std::atomic< int > frameCacheMegabytes{ 256 };
+}
+
+void SetFrameCacheMegabytes( int megabytes )
+{
+	frameCacheMegabytes = std::max( 0, megabytes );
+}
+
+int FrameCacheMegabytes()
+{
+	return frameCacheMegabytes;
 }
 
 void SetHardwareDecoding( bool on )

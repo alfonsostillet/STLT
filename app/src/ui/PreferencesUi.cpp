@@ -183,6 +183,15 @@ bool Video( App& app )
 			app.ApplyPreferences( false );
 		}
 		Help( "The graphics chip decodes non-HAP video, sparing the CPU. Applies to clips loaded from now on. HAP needs none of it." );
+		ImGui::SetNextItemWidth( Ui( 160 ) );
+		if( ImGui::SliderInt( "Scratch memory per clip", &p.frameCacheMegabytes, 0, 2048, p.frameCacheMegabytes ? "%d MB" : "off",
+		                      ImGuiSliderFlags_AlwaysClamp ) )
+		{
+			changed = true;
+			app.ApplyPreferences( false );
+		}
+		Help( "H.264 and other non-HAP clips keep their recently decoded frames in memory, so scratching back over them and "
+		      "jumping to cue points nearby is instant. About 3 MB a frame in HD, 12 MB in 4K. HAP needs none of it." );
 	}
 	Caption( "GPU" );
 	ImGui::TextDisabled( "%s, OpenGL %s", Caps().renderer, Caps().version );

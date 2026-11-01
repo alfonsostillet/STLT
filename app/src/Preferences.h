@@ -18,6 +18,7 @@ struct Preferences
 
 	// Video.
 	bool hardwareDecoding = true;
+	int frameCacheMegabytes = 256; // per clip that is not HAP: decoded frames kept for scratching back over them
 
 	// Defaults for clips and layers made from now on (those already there keep theirs), as in Resolume.
 	FitMode clipFit             = FitMode::Fit;
