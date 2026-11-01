@@ -1,5 +1,6 @@
 #include "ClipPlayer.h"
 #include <hap.h>
+#include <algorithm>
 #include <chrono>
 #include <climits>
 #include <cstdlib>
@@ -16,7 +17,8 @@ double Seconds()
 	return std::chrono::duration< double >( Clock::now().time_since_epoch() ).count();
 }
 
-// How long after the playhead's last jump it counts as being scratched.
+// Jumps this close together are a scratch (one alone, a cue point or a launch, is not); it lasts this long after
+// the last of them.
 constexpr double kScratchSeconds = 0.25;
 
 float Smooth( float average, float sample )
@@ -116,6 +118,7 @@ bool ClipPlayer::Activate()
 	lastWanted = -1;
 	stopping   = false;
 	lastJump   = -1e9;
+	jumpBefore = -1e9;
 	int decoders = source->IsGpuTexture() ? 2 : 1; // other formats decode one frame at a time
 	for( int i = 0; i < decoders; ++i )
 		threads.emplace_back( [ this ] { DecodeLoop(); } );
@@ -134,6 +137,7 @@ void ClipPlayer::Deactivate()
 	for( std::thread& t : threads )
 		t.join();
 	threads.clear();
+	source->ReleaseMemory();
 
 	for( Slot& slot : slots )
 	{
@@ -209,7 +213,8 @@ bool ClipPlayer::StillWanted( int64_t frame ) const
 
 bool ClipPlayer::Scratching() const
 {
-	return Seconds() - lastJump.load() < kScratchSeconds;
+	double last = lastJump.load();
+	return Seconds() - last < kScratchSeconds && last - jumpBefore.load() < kScratchSeconds;
 }
 
 bool ClipPlayer::InWindow( int64_t frame ) const
@@ -310,14 +315,18 @@ void ClipPlayer::Update( int64_t frame, int direction )
 		return;
 	frame         = Wrap( frame );
 	int dir       = direction > 0 ? 1 : direction < 0 ? -1 : 0;
-	// A jump: anything but staying put or moving on by a few frames in the play direction (cue points, scratching).
+	// A jump: anything but staying put or moving on in the play direction by up to a quarter of a second (playing
+	// fast, or with few frames drawn, moves on by several frames at a time).
 	if( lastWanted >= 0 && frame != lastWanted )
 	{
-		bool onward = false;
-		for( int k = 1; k <= 3 && dir != 0; ++k )
-			onward = onward || Wrap( lastWanted + k * dir ) == frame;
-		if( !onward )
-			lastJump = Seconds();
+		int64_t count  = (int64_t)FrameCount();
+		int64_t step   = dir == 0 || count <= 0 ? 0 : ( ( frame - lastWanted ) * dir % count + count ) % count;
+		int64_t onward = std::max< int64_t >( 3, (int64_t)( source->FrameRate() / 4 ) );
+		if( !( step >= 1 && step <= onward ) )
+		{
+			jumpBefore = lastJump.load();
+			lastJump   = Seconds();
+		}
 	}
 	bool scratching = Scratching();
 	Slot* show      = nullptr;

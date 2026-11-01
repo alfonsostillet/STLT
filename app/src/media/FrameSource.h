@@ -93,6 +93,9 @@ public:
 	// Decodes `frame` into `destination` (Layout().totalBytes). Safe to call from several threads,
 	// though only HAP decodes in parallel.
 	virtual bool Decode( size_t frame, uint8_t* destination ) = 0;
+	// Frees what the source keeps between frames (decoded frames kept for scratching): the player calls it when
+	// it stops, so only clips on show hold memory.
+	virtual void ReleaseMemory() {}
 	// As Decode, for the player: may give up or answer with a nearby frame (see DecodeRequest); `decoded` is the
 	// frame written.
 	virtual DecodeResult DecodeFrame( size_t frame, uint8_t* destination, const DecodeRequest& request, int64_t& decoded )

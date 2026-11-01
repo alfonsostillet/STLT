@@ -260,6 +260,10 @@ static void TestFrameSourceFfmpeg()
 			y = luma( *b, 1, plain, decoded, result );
 			CHECK( result == DecodeResult::Exact && std::abs( y - ( 16 + 16 * 1 ) ) <= 1 );
 			SetFrameCacheMegabytes( 256 );
+			// A stopped clip keeps nothing; it still decodes after.
+			b->ReleaseMemory();
+			y = luma( *b, 1, plain, decoded, result );
+			CHECK( result == DecodeResult::Exact && std::abs( y - ( 16 + 16 * 1 ) ) <= 1 );
 		}
 	}
 

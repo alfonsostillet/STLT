@@ -190,6 +190,17 @@ static void TestMidiDeviceNames()
 	CHECK( MidiDeviceName( "Launchpad X 1A", true ) == "Launchpad X 1A" );
 	CHECK( MidiDeviceName( "APC mini mk2 0", false ) == "APC mini mk2 0" ); // other systems name ports themselves
 	CHECK( MidiDeviceName( "Midi Through:Midi Through Port-0 14:0", false ) == "Midi Through:Midi Through Port-0 14:0" );
+
+	// Inputs turned off are saved by these names, marked so names saved before (with the number) are converted
+	// once on loading, and never again: a device whose own name ends in a number stays as it is.
+	ControlSettings s;
+	s.midiInputsOff = { "MPK mini 3" };
+	std::string saved = s.Save();
+	CHECK( saved.find( "\"midiNames\"" ) != std::string::npos );
+	ControlSettings back;
+	CHECK( back.Load( saved ) && back.midiInputsOff.size() == 1 && back.midiInputsOff[ 0 ] == "MPK mini 3" );
+	CHECK( back.Load( "{\"format\":\"stlt-vj-control\",\"midiInputsOff\":[\"APC mini mk2 0\"]}" ) && back.midiInputsOff.size() == 1
+	       && back.midiInputsOff[ 0 ] == MidiDeviceName( "APC mini mk2 0" ) );
 }
 
 int main()

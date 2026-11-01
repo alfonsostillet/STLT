@@ -217,10 +217,7 @@ void RemoteInputs::Configure( const ControlSettings& settings, bool retry )
 	}
 	devices    = names;
 	auto isOff = [ & ]( const std::string& name ) {
-		for( const std::string& off : settings.midiInputsOff )
-			if( off == name || MidiDeviceName( off ) == name ) // names saved before carried the port number
-				return true;
-		return false;
+		return std::find( settings.midiInputsOff.begin(), settings.midiInputsOff.end(), name ) != settings.midiInputsOff.end();
 	};
 	for( auto it = midiPorts.begin(); it != midiPorts.end(); )
 	{

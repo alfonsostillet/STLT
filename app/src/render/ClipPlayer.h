@@ -122,6 +122,7 @@ private:
 	std::atomic< int64_t > wantedNow{ 0 };     // wanted and wantedDirection, for StillWanted
 	std::atomic< int > directionNow{ 0 };
 	std::atomic< double > lastJump{ -1e9 };    // seconds (steady clock) the playhead last jumped
+	std::atomic< double > jumpBefore{ -1e9 };  // and the jump before that
 
 	std::atomic< float > decodeMs{ 0 };
 	float uploadMs = 0;

@@ -1,4 +1,5 @@
 #include "control/Control.h"
+#include "control/RemoteInputs.h"
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -398,6 +399,7 @@ std::string ControlSettings::Save() const
 	root[ "oscPort" ]      = oscPort;
 	root[ "midiEnabled" ]  = midiEnabled;
 	root[ "midiInputsOff" ] = midiInputsOff;
+	root[ "midiNames" ]     = 2; // without RtMidi's port numbers (MidiDeviceName)
 	root[ "preset" ]        = preset;
 	json mappings          = json::array();
 	for( const MidiMapping& m : midi )
@@ -453,10 +455,16 @@ bool ControlSettings::Load( const std::string& text )
 	s.oscPort     = std::clamp( root.value( "oscPort", 7000 ), 1, 65535 );
 	s.midiEnabled = root.value( "midiEnabled", true );
 	s.preset      = root.value( "preset", "" );
+	// Saved before names lost RtMidi's port number (Windows): taken off once, here.
+	bool numbered = root.value( "midiNames", 1 ) < 2;
 	if( root.contains( "midiInputsOff" ) && root[ "midiInputsOff" ].is_array() )
 		for( const json& name : root[ "midiInputsOff" ] )
 			if( name.is_string() )
-				s.midiInputsOff.push_back( name.get< std::string >() );
+			{
+				std::string n = numbered ? MidiDeviceName( name.get< std::string >() ) : name.get< std::string >();
+				if( std::find( s.midiInputsOff.begin(), s.midiInputsOff.end(), n ) == s.midiInputsOff.end() )
+					s.midiInputsOff.push_back( n );
+			}
 	if( root.contains( "midi" ) && root[ "midi" ].is_array() )
 		for( const json& m : root[ "midi" ] )
 		{

@@ -13,7 +13,9 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <climits>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <iterator>
@@ -235,6 +237,7 @@ public:
 		BuildLayout();
 		lastIndex = IndexOf( frame );
 		IndexKeyframes( st );
+		NoteKeyframe();
 		if( still )
 		{
 			cache.resize( layout.totalBytes );
@@ -267,6 +270,12 @@ public:
 	{
 		int64_t decoded = 0;
 		return DecodeFrame( target, destination, DecodeRequest{}, decoded ) == DecodeResult::Exact;
+	}
+
+	void ReleaseMemory() override
+	{
+		std::lock_guard< std::mutex > lock( mutex );
+		kept.clear();
 	}
 
 	DecodeResult DecodeFrame( size_t targetIndex, uint8_t* destination, const DecodeRequest& request, int64_t& decoded ) override
@@ -305,13 +314,14 @@ public:
 			if( !ReadFrame() )
 				return DecodeResult::Failed;
 			lastIndex = IndexOf( frame );
+			NoteKeyframe();
 			if( lastIndex >= t )
 			{
 				decoded = lastIndex;
 				return Emit( lastIndex, destination ) ? DecodeResult::Exact : DecodeResult::Failed;
 			}
-			// The frames just before the target are where a scratch goes next: keep them.
-			if( t - lastIndex <= kKeepBefore )
+			// The frames just before the target are where a scratch goes next: keep them (no more than fit).
+			if( t - lastIndex <= std::min< int64_t >( kKeepBefore, (int64_t)CacheCapacity() ) )
 				CachePut( lastIndex );
 			bool givingUp = request.abandon && request.abandon();
 			bool showNow  = scratching() && closer( lastIndex )
@@ -342,11 +352,36 @@ private:
 			return false;
 		if( keyframes.empty() )
 			return t <= lastIndex + (int64_t)std::max( 30.0, fps * 2 );
-		auto after = std::upper_bound( keyframes.begin(), keyframes.end(), t );
+		auto after = std::upper_bound( keyframes.begin(), keyframes.end(), t - keyShift );
 		if( after == keyframes.begin() )
 			return true;
-		int64_t key = *( after - 1 ); // the last keyframe at or before t
+		int64_t key = *( after - 1 ) + keyShift; // the last keyframe at or before t
 		return key <= lastIndex + 4;
+	}
+
+	// The index gives decoding times, the frames presentation times: with B-frames they differ by a frame or two.
+	// A decoded keyframe tells by how much, so the keyframes are placed where the frames number them.
+	void NoteKeyframe()
+	{
+#ifdef AV_FRAME_FLAG_KEY
+		bool key = ( frame->flags & AV_FRAME_FLAG_KEY ) != 0;
+#else
+		bool key = frame->key_frame != 0;
+#endif
+		if( !key || keyframes.empty() || lastIndex == kUnknown )
+			return;
+		int64_t indexed = lastIndex - keyShift;
+		auto near       = std::lower_bound( keyframes.begin(), keyframes.end(), indexed - 8 );
+		bool found      = false;
+		int64_t best    = 0;
+		for( ; near != keyframes.end() && *near <= indexed + 8; ++near )
+			if( !found || std::llabs( *near - indexed ) < std::llabs( best - indexed ) )
+			{
+				best  = *near;
+				found = true;
+			}
+		if( found )
+			keyShift = lastIndex - best;
 	}
 
 	// The keyframes' frame numbers, from the file's index (MP4 and MOV have one; otherwise none are known).
@@ -662,6 +697,7 @@ private:
 	int64_t lastIndex = kUnknown;
 	std::vector< uint8_t > cache; // a still image, decoded once
 	std::vector< int64_t > keyframes;   // frame numbers, ascending; empty when the file has no index
+	int64_t keyShift = 0;               // add to `keyframes` for the frames' own numbering (NoteKeyframe)
 	std::map< int64_t, Kept > kept;     // decoded frames kept in memory, by frame number
 	uint64_t useCounter = 0;
 	FrameLayout layout;
