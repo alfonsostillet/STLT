@@ -6,6 +6,8 @@
 #include "control/Feedback.h"
 #include "control/RemoteInputs.h"
 #include "control/TempoSync.h"
+#include "control/Timecode.h"
+#include <vector>
 #include <chrono>
 #include <random>
 #include <thread>
@@ -371,8 +373,177 @@ static void TestLink()
 	CHECK( !a.LinkEnabled() && a.LinkPeers() == 0 );
 }
 
+// LTC as a timecode generator plays it: 80 bits a frame, biphase mark, the sync word at the end.
+static std::vector< float > MakeLtc( Timecode start, int frames, int rate, float amplitude, float noise, bool inverted )
+{
+	std::vector< float > out;
+	std::mt19937 random( 3 );
+	std::uniform_real_distribution< float > hiss( -noise, noise );
+	double fps = TimecodeRateFps( start.rate ), perBit = rate / ( fps * 80 ), at = 0;
+	float level = inverted ? -1.0f : 1.0f;
+	Timecode tc = start;
+	int nominal = TimecodeRateFrames( tc.rate );
+	for( int f = 0; f < frames; ++f )
+	{
+		uint8_t bits[ 80 ] = {};
+		auto put = [ & ]( int first, int count, int value ) {
+			for( int i = 0; i < count; ++i )
+				bits[ first + i ] = ( value >> i ) & 1;
+		};
+		put( 0, 4, tc.frames % 10 );
+		put( 8, 2, tc.frames / 10 );
+		bits[ 10 ] = tc.rate == TimecodeRate::Fps2997Drop;
+		put( 16, 4, tc.seconds % 10 );
+		put( 24, 3, tc.seconds / 10 );
+		put( 32, 4, tc.minutes % 10 );
+		put( 40, 3, tc.minutes / 10 );
+		put( 48, 4, tc.hours % 10 );
+		put( 56, 2, tc.hours / 10 );
+		const uint8_t sync[ 16 ] = { 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 1 };
+		for( int i = 0; i < 16; ++i )
+			bits[ 64 + i ] = sync[ i ];
+		for( int b = 0; b < 80; ++b )
+		{
+			double end = at + perBit, middle = at + perBit / 2;
+			level      = -level; // every cell starts with an edge
+			while( (double)out.size() < end )
+			{
+				if( bits[ b ] && (double)out.size() >= middle && (double)out.size() - 1 < middle )
+					level = -level; // a 1 has another in the middle
+				out.push_back( amplitude * level + hiss( random ) );
+			}
+			at = end;
+		}
+		// The next frame, drop frame numbering included.
+		if( ++tc.frames >= nominal )
+		{
+			tc.frames = 0;
+			if( ++tc.seconds >= 60 )
+			{
+				tc.seconds = 0;
+				if( ++tc.minutes >= 60 )
+				{
+					tc.minutes = 0;
+					tc.hours   = ( tc.hours + 1 ) % 24;
+				}
+				if( tc.rate == TimecodeRate::Fps2997Drop && tc.minutes % 10 != 0 )
+					tc.frames = 2;
+			}
+		}
+	}
+	return out;
+}
+
+static void TestTimecode()
+{
+	// The time of a timecode, drop frame counted out.
+	Timecode tc;
+	CHECK( ParseTimecode( "01:00:00:00", tc ) && tc.hours == 1 && std::fabs( tc.Seconds() - 3600 ) < 1e-9 );
+	tc.rate = TimecodeRate::Fps25;
+	CHECK( ParseTimecode( "00:00:10:12", tc ) && std::fabs( tc.Seconds() - 10.48 ) < 1e-9 );
+	CHECK( ParseTimecode( "00:10:00;00", tc ) && tc.rate == TimecodeRate::Fps2997Drop );
+	CHECK( std::fabs( tc.Seconds() - 600 ) < 0.001 ); // drop frame keeps to the clock every ten minutes
+	CHECK( tc.Text() == "00:10:00;00" );
+	CHECK( !ParseTimecode( "1:2:3", tc ) && !ParseTimecode( "00:61:00:00", tc ) && !ParseTimecode( "aa:00:00:00", tc ) );
+
+	// The receiver: running while the time moves on, extrapolated between times, kept going for the freewheel.
+	TimecodeReceiver receiver;
+	CHECK( !receiver.At( 0, 0.5 ).present );
+	Timecode t0;
+	t0.rate    = TimecodeRate::Fps25;
+	t0.seconds = 10;
+	receiver.Receive( t0, 100 );
+	CHECK( receiver.At( 100, 0.5 ).present && !receiver.At( 100, 0.5 ).running ); // one time: not yet moving
+	Timecode t1 = t0;
+	t1.frames   = 1;
+	receiver.Receive( t1, 100.04 );
+	TimecodeReceiver::State st = receiver.At( 100.06, 0.5 );
+	CHECK( st.running && std::fabs( st.seconds - 10.06 ) < 1e-9 );
+	CHECK( receiver.At( 100.5, 0.5 ).running && !receiver.At( 100.6, 0.5 ).running ); // freewheel, then stopped
+	CHECK( !receiver.At( 100.2, 0 ).running ); // no freewheel: three frames
+	receiver.Receive( t1, 100.08 );
+	receiver.Receive( t1, 100.12 );
+	CHECK( receiver.At( 100.13, 0.5 ).running ); // a frame or two the same: a late packet, perhaps
+	receiver.Receive( t1, 100.16 ); // the same time for more than two frames and a half: stopped
+	CHECK( !receiver.At( 100.17, 0.5 ).running && std::fabs( receiver.At( 100.13, 0.5 ).seconds - 10.04 ) < 1e-9 );
+
+	// LTC read back, at several rates, sample rates, levels, with noise and either polarity.
+	struct Case
+	{
+		const char* start;
+		TimecodeRate rate;
+		int sampleRate;
+		float amplitude, noise;
+		bool inverted;
+	};
+	const Case cases[] = {
+		{ "01:00:00:00", TimecodeRate::Fps25, 48000, 0.5f, 0.0f, false },
+		{ "00:59:59:20", TimecodeRate::Fps30, 44100, 0.05f, 0.01f, true },
+		{ "10:23:45:12", TimecodeRate::Fps24, 96000, 0.3f, 0.05f, false },
+		{ "00:00:59;25", TimecodeRate::Fps2997Drop, 48000, 0.2f, 0.02f, false },
+	};
+	for( const Case& c : cases )
+	{
+		Timecode start;
+		start.rate = c.rate;
+		CHECK( ParseTimecode( c.start, start ) );
+		start.rate                = c.rate;
+		std::vector< float > ltc  = MakeLtc( start, 50, c.sampleRate, c.amplitude, c.noise, c.inverted );
+		TimecodeReceiver got;
+		LtcDecoder decoder( got );
+		double t = 0;
+		for( size_t at = 0; at < ltc.size(); at += 256 ) // in blocks, as a sound card hands them
+		{
+			size_t n = std::min< size_t >( 256, ltc.size() - at );
+			t        = (double)( at + n ) / c.sampleRate;
+			decoder.Feed( ltc.data() + at, n, c.sampleRate, t );
+		}
+		CHECK( decoder.Frames() >= 48 ); // the first word or two go to finding the bits
+		TimecodeReceiver::State st = got.At( t, 0.5 );
+		CHECK( st.present && st.running && st.last.rate == c.rate );
+		// At the end of 50 frames the time is the start's plus 50 frames.
+		double expected = start.Seconds() + 50 / TimecodeRateFps( c.rate );
+		if( std::fabs( st.seconds - expected ) > 0.002 )
+			std::fprintf( stderr, "LTC %s: %.4f, expected %.4f\n", c.start, st.seconds, expected );
+		CHECK( std::fabs( st.seconds - expected ) < 0.002 );
+	}
+
+	// MTC: quarter frames make a time every two frames, behind by a frame and three quarters; full frames locate.
+	TimecodeReceiver mtcGot;
+	MtcDecoder mtc( mtcGot );
+	auto quarter = [ & ]( int h, int m, int s, int f, int rateBits, double time, double perQuarter ) {
+		int values[ 8 ] = { f & 15, f >> 4, s & 15, s >> 4, m & 15, m >> 4, h & 15, ( h >> 4 ) | rateBits << 1 };
+		for( int piece = 0; piece < 8; ++piece )
+		{
+			unsigned char message[] = { 0xF1, (unsigned char)( piece << 4 | values[ piece ] ) };
+			mtc.Message( message, 2, time + piece * perQuarter );
+		}
+	};
+	double q = 1.0 / 25 / 4;
+	quarter( 1, 2, 3, 4, 1, 50, q );
+	quarter( 1, 2, 3, 6, 1, 50 + 8 * q, q );
+	st = mtcGot.At( 50 + 15 * q, 0.5 );
+	Timecode six;
+	six.rate = TimecodeRate::Fps25;
+	CHECK( ParseTimecode( "01:02:03:06", six ) );
+	CHECK( st.running && st.last.rate == TimecodeRate::Fps25 && std::fabs( st.seconds - ( six.Seconds() + 1.75 / 25 ) ) < 1e-9 );
+	unsigned char full[] = { 0xF0, 0x7F, 0x7F, 0x01, 0x01, (unsigned char)( 3 << 5 | 2 ), 30, 0, 15, 0xF7 };
+	mtc.Message( full, sizeof( full ), 60 );
+	st = mtcGot.At( 60.5, 0.5 );
+	CHECK( st.present && !st.running && st.last.rate == TimecodeRate::Fps30 && st.last.Text() == "02:30:00:15" );
+
+	// Art-Net.
+	uint8_t packet[ 19 ] = { 'A', 'r', 't', '-', 'N', 'e', 't', 0, 0x00, 0x97, 0, 14, 0, 0, 24, 59, 7, 1, 2 };
+	Timecode art;
+	CHECK( ParseArtTimecode( packet, sizeof( packet ), art ) && art.Text() == "01:07:59;24" && art.rate == TimecodeRate::Fps2997Drop );
+	packet[ 9 ] = 0x50; // ArtDmx
+	CHECK( !ParseArtTimecode( packet, sizeof( packet ), art ) );
+	CHECK( !ParseArtTimecode( packet, 12, art ) );
+}
+
 int main()
 {
+	TestTimecode();
 	TestLink();
 	TestMidiClock();
 	TestLights();

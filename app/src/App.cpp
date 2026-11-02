@@ -126,6 +126,7 @@ bool App::Init( const LaunchOptions& launch )
 	// The MIDI clock goes straight from the inputs' threads to the tempo sync, stamped as it arrives.
 	remote.onClock = [ this ]( const std::string& device, const unsigned char* bytes, size_t size, double time ) {
 		tempoSync.OnMidi( device, bytes, size, time );
+		timecode.OnMidi( device, bytes, size, time );
 	};
 	// STLT-CHASER's sequences, for its editor and its effects (set before the effects load).
 	chaserStage = ( fs::u8path( chaser::UseDataDirectory( configDir ) ) / "stlt-vj-stage.json" ).u8string();
@@ -2194,6 +2195,9 @@ void App::ApplySync()
 	tempoSync.SetClockInput( prefs.midiClockInput );
 	tempoSync.latency = prefs.syncLatencyMs / 1000.0;
 	tempoSync.EnableLink( prefs.linkEnabled, composition.bpm, composition.beat );
+	bool off = std::getenv( "STLTVJ_NO_AUDIO" ) && prefs.timecodeSource == (int)TimecodeInput::Source::Ltc;
+	timecode.Configure( off ? TimecodeInput::Source::Off : (TimecodeInput::Source)prefs.timecodeSource, prefs.timecodeLtcDevice,
+	                    prefs.timecodeLtcChannel, prefs.timecodeMtcInput );
 }
 
 void App::ApplyPreferences( bool restartAudio )
@@ -2365,10 +2369,59 @@ int App::AddTimelineFile( int track, double start, const std::string& path )
 	return AddTimelineClip( track, start, std::move( clip ) );
 }
 
+// The playhead where the timecode coming in says, when the timeline follows it: running with it (small
+// differences made up smoothly, large ones a jump), stopped where it stops, and stopped when it is gone for longer
+// than the freewheel. False when the timeline is on its own.
+bool App::FollowTimecode( double dt )
+{
+	Timeline& t    = composition.timeline;
+	timecodeLocked = false;
+	if( !t.followTimecode || timecode.Current() == TimecodeInput::Source::Off )
+		return false;
+	TimecodeReceiver::State in = timecode.At( TempoSync::Now() + prefs.syncLatencyMs / 1000.0, prefs.timecodeFreewheelMs / 1000.0 );
+	if( !in.present )
+	{
+		t.playing = false;
+		return true;
+	}
+	timecodeLocked = true;
+	Timecode start;
+	start.rate    = in.last.rate;
+	double origin = ParseTimecode( t.timecodeStart, start ) ? start.Seconds() : 0.0;
+	double target = in.seconds - origin;
+	if( target < 0 )
+	{
+		// Before the show's start: waiting at the top.
+		t.playing = false;
+		if( t.position != 0 )
+			t.Locate( 0 );
+		return true;
+	}
+	if( in.running )
+	{
+		t.playing        = true;
+		double predicted = t.position + dt;
+		double error     = target - predicted;
+		if( std::fabs( error ) > 0.25 )
+			t.Locate( target );
+		else
+			t.position = predicted + error * std::min( 1.0, dt * 8 );
+		t.black = false;
+	}
+	else
+	{
+		t.playing = false;
+		if( std::fabs( target - t.position ) > 0.5 / TimecodeRateFps( in.last.rate ) )
+			t.Locate( target );
+	}
+	return true;
+}
+
 void App::UpdateTimeline( double dt )
 {
 	Timeline& t = composition.timeline;
-	t.Advance( dt );
+	if( !FollowTimecode( dt ) )
+		t.Advance( dt );
 	// The clips under the playhead play; those about to start get their first frame ready; the others rest.
 	const double ahead = 1.5;
 	bool shown         = view == View::Arrangement || t.playing;

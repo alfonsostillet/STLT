@@ -526,7 +526,7 @@ static nlohmann::json SaveClip( const Clip& clip )
 	return k;
 }
 
-static nlohmann::json SaveTimeline( const Timeline& t );
+static nlohmann::json SaveTimeline( const Timeline& t, bool withPlayhead );
 
 std::string SaveComposition( const Composition& c, bool withShownDeck, double bpm )
 {
@@ -590,7 +590,7 @@ std::string SaveComposition( const Composition& c, bool withShownDeck, double bp
 		decks.push_back( k );
 	}
 	root[ "decks" ] = decks;
-	root[ "timeline" ] = SaveTimeline( c.timeline );
+	root[ "timeline" ] = SaveTimeline( c.timeline, withShownDeck );
 	if( withShownDeck )
 		root[ "deck" ] = c.deck;
 	return root.dump( 2 );
@@ -658,14 +658,18 @@ Clip CopyClip( const Clip& clip )
 }
 
 // The timeline: tempo, tracks with their clips (placed in time), and blocks.
-static nlohmann::json SaveTimeline( const Timeline& t )
+static nlohmann::json SaveTimeline( const Timeline& t, bool withPlayhead )
 {
 	using nlohmann::json;
 	json root;
 	root[ "bpm" ]         = t.bpm;
 	root[ "beatsPerBar" ] = t.beatsPerBar;
 	root[ "fps" ]         = t.fps;
-	root[ "position" ]    = t.position; // the playhead, where it was (not playing)
+	if( t.followTimecode )
+		root[ "followTimecode" ] = true;
+	root[ "timecodeStart" ] = t.timecodeStart;
+	if( withPlayhead ) // the playhead, where it was (not playing); it moves too often to be an undo step
+		root[ "position" ] = t.position;
 	json tracks           = json::array();
 	for( const TimelineTrack& track : t.tracks )
 	{
@@ -736,6 +740,8 @@ static Timeline LoadTimeline( const nlohmann::json& root )
 	t.bpm         = std::clamp( root.value( "bpm", 120.0 ), 20.0, 500.0 );
 	t.beatsPerBar = std::clamp( root.value( "beatsPerBar", 4 ), 1, 32 );
 	t.fps         = std::clamp( root.value( "fps", 25.0 ), 1.0, 120.0 );
+	t.followTimecode = root.value( "followTimecode", false );
+	t.timecodeStart  = root.value( "timecodeStart", "00:00:00:00" );
 	t.position    = std::max( 0.0, root.value( "position", 0.0 ) );
 	if( root.contains( "tracks" ) && root[ "tracks" ].is_array() )
 		for( const json& k : root[ "tracks" ] )

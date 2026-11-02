@@ -350,6 +350,10 @@ struct Timeline
 	double bpm      = 120; // the show's tempo and metre, for the ruler and the snap
 	int beatsPerBar = 4;
 	double fps      = 25; // the timecode's frames per second
+	// Following the timecode coming in (Preferences > Sync): the playhead is where the timecode says, `start`
+	// being the timecode of the timeline's 0 (shows often begin at 01:00:00:00).
+	bool followTimecode       = false;
+	std::string timecodeStart = "00:00:00:00";
 	std::vector< TimelineTrack > tracks; // index 0 is the bottom track
 	std::vector< TimelineBlock > blocks; // in time order: cue N starts block N
 
@@ -474,9 +478,10 @@ struct Composition
 };
 
 // Saving and loading as JSON. Clips are stored by path; players are created by the caller. Without
-// `withShownDeck` the text leaves out which deck is shown and which clips play (for undo, where neither is a step);
-// with it a composition opens as it was saved, its clips playing (the caller starts their players). `bpm`, when
-// not negative, is written instead of the composition's (a tempo that follows Link or a MIDI clock is no undo step).
+// `withShownDeck` the text leaves out which deck is shown, which clips play and where the timeline's playhead is
+// (for undo, where none is a step); with it a composition opens as it was saved, its clips playing (the caller
+// starts their players). `bpm`, when not negative, is written instead of the composition's (a tempo that follows
+// Link or a MIDI clock is no undo step).
 std::string SaveComposition( const Composition& composition, bool withShownDeck = true, double bpm = -1 );
 bool LoadComposition( const std::string& json, Composition& composition, std::string& error );
 }

@@ -10,6 +10,7 @@
 #include "audio/AudioEngine.h"
 #include "audio/AudioInput.h"
 #include "control/TempoSync.h"
+#include "control/TimecodeInput.h"
 #include "control/Feedback.h"
 #include "control/RemoteInputs.h"
 #include "fx/EffectRegistry.h"
@@ -217,6 +218,10 @@ public:
 	// Tempo and beat from Ableton Link or a MIDI clock (Preferences > Sync). Before `remote`, whose MIDI threads
 	// feed it, so that it outlives them.
 	TempoSync tempoSync;
+	// The timecode the timeline can follow (Preferences > Sync; the timeline's TC button). Before `remote` too.
+	TimecodeInput timecode;
+	bool timecodeLocked = false; // the timeline follows a timecode that is coming in
+	bool FollowTimecode( double dt );
 	RemoteInputs remote;
 	AudioEngine audio;
 	// The sound coming in, for parameters that follow it: opened while an animation listens (and closed ten seconds

@@ -238,10 +238,12 @@ void RemoteInputs::OnMidi( double, std::vector< unsigned char >* message, void* 
 	MidiPort* port = (MidiPort*)user;
 	if( message && !message->empty() && ( *message )[ 0 ] >= 0xF0 )
 	{
-		// System messages: the clock and transport go to whoever follows them.
-		unsigned char status = ( *message )[ 0 ];
+		// System messages: the clock, transport and time code go to whoever follows them; other SysEx is dropped.
+		const std::vector< unsigned char >& m = *message;
+		unsigned char status = m[ 0 ];
 		bool clock           = status == 0xF8 || status == 0xFA || status == 0xFB || status == 0xFC || status == 0xF2;
-		if( clock && port->owner->onClock )
+		bool timecode        = status == 0xF1 || ( status == 0xF0 && m.size() >= 10 && m[ 1 ] == 0x7F && m[ 3 ] == 0x01 && m[ 4 ] == 0x01 );
+		if( ( clock || timecode ) && port->owner->onClock )
 		{
 			double now = std::chrono::duration< double >( std::chrono::steady_clock::now().time_since_epoch() ).count();
 			port->owner->onClock( port->name, message->data(), message->size(), now ); // as TempoSync::Now()
@@ -323,7 +325,7 @@ void RemoteInputs::Configure( const ControlSettings& settings, bool retry )
 				port->name  = name;
 				port->in    = std::make_unique< RtMidiIn >();
 				port->in->openPort( index, "STLT-VJ" );
-				port->in->ignoreTypes( true, false, true ); // the clock, but no system exclusive or active sensing
+				port->in->ignoreTypes( false, false, true ); // SysEx (MTC full frames) and the clock, but no active sensing
 				port->in->setCallback( &RemoteInputs::OnMidi, port.get() );
 				midiPorts[ name ] = std::move( port );
 				failure.clear();

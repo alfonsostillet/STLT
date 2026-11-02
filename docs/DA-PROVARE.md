@@ -33,3 +33,12 @@ Correzioni già fatte e verificate dai test automatici, da provare sul PC vero p
 - [ ] **MIDI clock**: in *Preferences → Sync → MIDI Clock* scegli l'ingresso del mixer o della drum machine (deve essere acceso in *Preferences → MIDI*). Nella barra si accende **CLOCK**, il BPM segue il clock; premendo Play/Start sul dispositivo la battuta riparte da 1. Con lo Stop le animazioni continuano al tempo di prima.
 - [ ] **Delay**: se le immagini arrivano dopo la musica (proiettore, LED), sposta *Preferences → Sync → Delay* a destra finché i flash cadono sulla cassa.
 - [ ] Con Link o clock attivi, Ctrl+Z non deve cambiare il BPM.
+
+## Timeline che segue il timecode (nuovo)
+
+- [ ] **Art-Net** (il più facile da provare): in *Preferences → Sync → Timecode* scegli *Art-Net*; manda timecode da una console luci o da un programma (per esempio TouchDesigner, o un generatore Art-Net gratuito). Nella timeline accendi **TC** e scrivi l'inizio (per esempio 01:00:00:00): la testina deve andare dove dice il timecode, suonare quando scorre, fermarsi quando si ferma, saltare quando salta. Windows può chiedere il permesso per la rete: consenti.
+- [ ] **MTC**: da Ableton Live (o Reaper) sullo stesso PC con una porta MIDI virtuale (loopMIDI): in Live *Preferences → Link/Tempo/MIDI*, sulla porta di loopMIDI attiva *Sync* in uscita e il tipo *MTC*. In STLT-VJ accendi la porta in *Preferences → MIDI* e scegli *MTC* come sorgente. Play, stop e salti in Live devono muovere la timeline.
+- [ ] **LTC**: un file audio di LTC (si trovano generatori online) suonato in un ingresso della scheda audio (o con un cavo da un'uscita a un ingresso): scegli *LTC*, l'ingresso e il canale. Lo stato sotto deve mostrare il timecode e il frame rate giusto.
+- [ ] **Take**: con il timecode che arriva, sposta la testina dove deve partire lo show e premi *Take*: da lì in poi la timeline segue con quell'inizio.
+- [ ] **Freewheel**: scollegando il cavo (o fermando l'invio) per un attimo, la timeline deve andare avanti per il tempo scelto e poi fermarsi.
+- [ ] Durante la riproduzione della timeline Ctrl+Z non deve più far tornare indietro la testina (prima ogni due secondi c'era un passo di annullamento finto).

@@ -9,11 +9,15 @@ composition after some frames and checks pixels whose colour is known. The progr
 a crash, a hang or a wrong picture fails the run. When the STLT-CHASER effects sit next to the program
 (plugins/), they must load and run on the composition.
 """
+import json
 import os
+import socket
 import struct
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 
 EXE, FIXTURES = sys.argv[1], sys.argv[2]
 failures = []
@@ -102,6 +106,75 @@ if image is not None:
     r, g, b = image[2](960, 540)
     if not (abs(r - g) <= 12 and abs(g - b) <= 12):
         failures.append(f"H.264: middle pixel is {(r, g, b)}, expected a grey")
+
+# The timeline following Art-Net timecode: a green clip from 4 s on, the timeline's start at 01:00:00:00. With no
+# timecode the playhead stays at the top (black); with timecode from 01:00:05:00 it is in the clip (green).
+def art_timecode(frame):
+    hh, rest = divmod(frame, 25 * 3600)
+    mm, rest = divmod(rest, 25 * 60)
+    ss, ff = divmod(rest, 25)
+    return b"Art-Net\0" + bytes([0x00, 0x97, 0, 14, 0, 0, ff, ss, mm, hh, 1])  # ArtTimeCode, 25 fps
+
+
+def clip_settings(node):
+    if isinstance(node, dict):
+        if str(node.get("path", "")).endswith("green_hap.mov"):
+            return dict(node)
+        node = list(node.values())
+    for child in node if isinstance(node, list) else []:
+        found = clip_settings(child)
+        if found:
+            return found
+    return None
+
+
+def stop_playing(node):
+    if isinstance(node, dict):
+        node.pop("playing", None)
+        node = list(node.values())
+    for child in node if isinstance(node, list) else []:
+        stop_playing(child)
+
+
+tc_home = tempfile.mkdtemp(prefix="stltvj-smoke-tc-")
+run("Timecode (setup)", clip("green_hap.mov"), home=tc_home, fresh=False)
+sessions = [os.path.join(d, "last-session.stltvj") for d, _, files in os.walk(tc_home) if "last-session.stltvj" in files]
+if not sessions:
+    failures.append("Timecode: no session saved")
+else:
+    config = os.path.dirname(sessions[0])
+    session = json.load(open(sessions[0], encoding="utf-8"))
+    green = clip_settings(session)
+    stop_playing(session)
+    timeline = session.setdefault("timeline", {})
+    timeline.update({"tracks": [{"name": "Video 1", "audio": False, "clips": [{"start": 4, "length": 120, "clip": green}]}],
+                     "followTimecode": True, "timecodeStart": "01:00:00:00", "position": 0})
+    json.dump(session, open(sessions[0], "w", encoding="utf-8"))
+    with open(os.path.join(config, "view.txt"), "w") as f:
+        f.write("arrangement")
+    with open(os.path.join(config, "preferences.json"), "w") as f:
+        json.dump({"format": "stlt-vj-preferences", "timecodeSource": 3}, f)
+    image, _ = run("Timecode (none coming)", [], home=tc_home, fresh=False)
+    expect("Timecode (none coming)", image, [(960, 540, (0, 0, 0))], 12)
+    sending = threading.Event()
+    sending.set()
+
+    def send():
+        out = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        frame = 25 * 3600 + 5 * 25
+        while sending.is_set():
+            out.sendto(art_timecode(frame), ("127.0.0.1", 6454))
+            frame += 1
+            time.sleep(0.04)
+
+    sender = threading.Thread(target=send)
+    sender.start()
+    try:
+        image, _ = run("Timecode (Art-Net)", [], home=tc_home, fresh=False)
+    finally:
+        sending.clear()
+        sender.join()
+    expect("Timecode (Art-Net)", image, [(960, 540, (0, 255, 0))], 12)
 
 # STLT-CHASER's effects, when they come with the program: listed, and running on the composition.
 plugins = os.path.join(os.path.dirname(os.path.abspath(EXE)), "plugins")

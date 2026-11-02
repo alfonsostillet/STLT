@@ -57,8 +57,9 @@ public:
 	// Changes whenever an output opens: lights sent before did not reach it.
 	int OutputsVersion() const { return outputsVersion; }
 
-	// MIDI clock and transport (Start, Continue, Stop, Song Position) from the inputs in use, on their threads, with
-	// the input's name and the arrival time in seconds (steady clock). Set before the first Configure.
+	// System messages from the inputs in use, on their threads, with the input's name and the arrival time in
+	// seconds (steady clock): the clock and transport (Start, Continue, Stop, Song Position) and MIDI time code
+	// (quarter frames and the full-frame SysEx). Set before the first Configure.
 	std::function< void( const std::string& device, const unsigned char* bytes, size_t size, double time ) > onClock;
 
 	std::vector< std::string > MidiDevices() const { return devices; } // every input there is, on or off

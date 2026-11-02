@@ -235,6 +235,10 @@ add_library(stltvj-core STATIC
     src/control/RemoteInputs.h
     src/control/TempoSync.cpp
     src/control/TempoSync.h
+    src/control/Timecode.cpp
+    src/control/Timecode.h
+    src/control/TimecodeInput.cpp
+    src/control/TimecodeInput.h
     src/audio/AudioEngine.cpp
     src/audio/AudioEngine.h
     src/audio/AudioInput.cpp

@@ -296,6 +296,83 @@ void Toolbar( App& app )
 	if( ImGui::IsItemHovered() )
 		ImGui::SetTooltip( "Frames per second of the timecode" );
 
+	// TC: the playhead follows the timecode coming in (the source is in Preferences > Sync), the timeline's 0
+	// being the timecode in the field next to it. Lit while it follows; amber while it waits for the timecode.
+	ImGui::SameLine( 0, Ui( 14 ) );
+	{
+		bool on       = t.followTimecode;
+		bool locked   = on && app.timecodeLocked;
+		bool noSource = app.timecode.Current() == TimecodeInput::Source::Off;
+		ImU32 face    = locked ? theme::AccentDim : on ? IM_COL32( 110, 78, 24, 255 ) : theme::Raised;
+		ImGui::PushStyleColor( ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4( face ) );
+		ImGui::PushStyleColor( ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4( locked ? theme::AccentHover : theme::RaisedHover ) );
+		ImGui::PushFont( Fonts().bold );
+		if( ImGui::Button( " TC " ) )
+			t.followTimecode = !on;
+		ImGui::PopFont();
+		ImGui::PopStyleColor( 2 );
+		if( ImGui::IsItemHovered() )
+		{
+			std::string status = app.timecode.Status();
+			ImGui::SetTooltip( "Follow the timecode: the playhead goes where the timecode coming in says, and plays and "
+			                   "stops with it.\n%s",
+			                   noSource ? "Choose its source (LTC, MTC or Art-Net) in Preferences > Sync." : status.c_str() );
+		}
+		if( on )
+		{
+			ImGui::SameLine( 0, Ui( 4 ) );
+			ImGui::PushFont( Fonts().mono );
+			ImGui::SetNextItemWidth( Ui( 92 ) );
+			static std::string start; // what is being typed, kept until the field is left
+			static bool typing = false;
+			if( !typing )
+				start = t.timecodeStart;
+			ImGui::InputText( "##tcStart", &start, ImGuiInputTextFlags_CharsNoBlank );
+			typing = ImGui::IsItemActive();
+			if( ImGui::IsItemDeactivatedAfterEdit() )
+			{
+				Timecode parsed;
+				if( ParseTimecode( start, parsed ) )
+					t.timecodeStart = parsed.Text(); // anything else: the start stays as it was
+			}
+			ImGui::PopFont();
+			if( ImGui::IsItemHovered() )
+				ImGui::SetTooltip( "The timecode at the timeline's start (shows often begin at 01:00:00:00)" );
+			ImGui::SameLine( 0, Ui( 4 ) );
+			TimecodeReceiver::State in = app.timecode.At( TempoSync::Now(), 0 );
+			ImGui::BeginDisabled( !in.present );
+			if( ImGui::Button( "Take" ) )
+			{
+				// The timecode coming in now becomes the start, less where the playhead is.
+				double origin = in.seconds - t.position;
+				double fps    = TimecodeRateFps( in.last.rate );
+				int64_t frame = (int64_t)std::llround( std::max( 0.0, origin ) * fps );
+				Timecode s;
+				s.rate    = in.last.rate == TimecodeRate::Fps2997Drop ? TimecodeRate::Fps30 : in.last.rate; // whole frames
+				int per   = TimecodeRateFrames( s.rate );
+				s.frames  = (int)( frame % per );
+				s.seconds = (int)( frame / per % 60 );
+				s.minutes = (int)( frame / per / 60 % 60 );
+				s.hours   = (int)( frame / per / 3600 % 24 );
+				t.timecodeStart = s.Text();
+			}
+			ImGui::EndDisabled();
+			if( ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenDisabled ) )
+				ImGui::SetTooltip( "The timecode coming in now goes where the playhead is" );
+			if( locked || ( on && !noSource ) )
+			{
+				ImGui::SameLine( 0, Ui( 6 ) );
+				ImGui::PushFont( Fonts().mono );
+				ImGui::AlignTextToFramePadding();
+				if( in.present )
+					ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( locked ? theme::Accent : theme::TextDim ), "%s", in.last.Text().c_str() );
+				else
+					ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( theme::Warning ), "no timecode" );
+				ImGui::PopFont();
+			}
+		}
+	}
+
 	ImGui::SameLine( 0, Ui( 14 ) );
 	ImGui::SetNextItemWidth( Ui( 82 ) );
 	const char* snaps[] = { "Snap: Off", "Snap: Beat", "Snap: Bar" };

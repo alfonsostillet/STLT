@@ -31,6 +31,11 @@ std::string Preferences::Save() const
 	root[ "linkEnabled" ]       = linkEnabled;
 	root[ "midiClockInput" ]    = midiClockInput;
 	root[ "syncLatencyMs" ]     = syncLatencyMs;
+	root[ "timecodeSource" ]    = timecodeSource;
+	root[ "timecodeLtcDevice" ] = timecodeLtcDevice;
+	root[ "timecodeLtcChannel" ] = timecodeLtcChannel;
+	root[ "timecodeMtcInput" ]  = timecodeMtcInput;
+	root[ "timecodeFreewheelMs" ] = timecodeFreewheelMs;
 	root[ "hardwareDecoding" ]  = hardwareDecoding;
 	root[ "frameCacheMegabytes" ] = frameCacheMegabytes;
 	root[ "clipFit" ]           = FitModeName( clipFit );
@@ -59,6 +64,11 @@ bool Preferences::Load( const std::string& text )
 	p.linkEnabled       = root.value( "linkEnabled", false );
 	p.midiClockInput    = root.value( "midiClockInput", "" );
 	p.syncLatencyMs     = std::clamp( root.value( "syncLatencyMs", 0.0f ), -500.0f, 500.0f );
+	p.timecodeSource    = std::clamp( root.value( "timecodeSource", 0 ), 0, 3 );
+	p.timecodeLtcDevice = root.value( "timecodeLtcDevice", "" );
+	p.timecodeLtcChannel = std::clamp( root.value( "timecodeLtcChannel", 0 ), 0, 63 );
+	p.timecodeMtcInput  = root.value( "timecodeMtcInput", "*" );
+	p.timecodeFreewheelMs = std::clamp( root.value( "timecodeFreewheelMs", 500.0f ), 0.0f, 10000.0f );
 	p.hardwareDecoding  = root.value( "hardwareDecoding", true );
 	p.frameCacheMegabytes = std::clamp( root.value( "frameCacheMegabytes", 256 ), 0, 4096 );
 	p.clipFit           = ByName( root.value( "clipFit", nlohmann::json() ), FitModeName, FitMode::Fit );

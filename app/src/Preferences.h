@@ -22,6 +22,11 @@ struct Preferences
 	bool linkEnabled = false;   // Ableton Link
 	std::string midiClockInput; // the MIDI input whose clock is followed: "" none, "*" any
 	float syncLatencyMs = 0;    // the beat is taken this much ahead, for a picture that shows late
+	int timecodeSource  = 0;    // TimecodeInput::Source: 0 off, 1 LTC, 2 MTC, 3 Art-Net
+	std::string timecodeLtcDevice; // the sound card input with LTC ("": the system's default)
+	int timecodeLtcChannel = 0;    // its channel, from 0
+	std::string timecodeMtcInput = "*"; // the MIDI input with MTC ("*": any)
+	float timecodeFreewheelMs = 500;    // the timeline runs on this long when the timecode stops arriving
 
 	// Video.
 	bool hardwareDecoding = true;

@@ -287,6 +287,88 @@ bool Sync( App& app )
 	if( !status.empty() )
 		ImGui::TextDisabled( "%s", status.c_str() );
 
+	ImGui::SeparatorText( "Timecode" );
+	{
+		int source = p.timecodeSource;
+		ImGui::SetNextItemWidth( Ui( 200 ) );
+		if( ImGui::BeginCombo( "##tcSource", TimecodeInput::SourceName( (TimecodeInput::Source)source ) ) )
+		{
+			for( int i = 0; i < (int)TimecodeInput::Source::Count; ++i )
+				if( ImGui::Selectable( TimecodeInput::SourceName( (TimecodeInput::Source)i ), source == i ) && source != i )
+				{
+					p.timecodeSource = i;
+					changed          = true;
+				}
+			ImGui::EndCombo();
+		}
+		Help( "The timecode the timeline follows when its TC button is on: LTC (SMPTE on a sound card's input), "
+		      "MTC (from a DAW or a console over MIDI) or Art-Net (from the lighting desk's network)." );
+		if( p.timecodeSource == (int)TimecodeInput::Source::Ltc )
+		{
+			static std::vector< std::string > devices = AudioInput::Devices();
+			Caption( "LTC input" );
+			ImGui::SetNextItemWidth( Ui( 300 ) );
+			if( ImGui::BeginCombo( "##ltcDevice", p.timecodeLtcDevice.empty() ? "System default" : p.timecodeLtcDevice.c_str() ) )
+			{
+				if( ImGui::Selectable( "System default", p.timecodeLtcDevice.empty() ) && !p.timecodeLtcDevice.empty() )
+				{
+					p.timecodeLtcDevice.clear();
+					changed = true;
+				}
+				for( const std::string& d : devices )
+					if( ImGui::Selectable( d.c_str(), p.timecodeLtcDevice == d ) && p.timecodeLtcDevice != d )
+					{
+						p.timecodeLtcDevice = d;
+						changed             = true;
+					}
+				ImGui::EndCombo();
+			}
+			ImGui::SameLine();
+			if( ImGui::Button( "Refresh##ltc" ) )
+				devices = AudioInput::Devices();
+			ImGui::SameLine();
+			ImGui::SetNextItemWidth( Ui( 90 ) );
+			int channel = p.timecodeLtcChannel + 1;
+			if( ImGui::InputInt( "Channel##ltc", &channel ) )
+			{
+				p.timecodeLtcChannel = std::clamp( channel, 1, 64 ) - 1;
+				changed              = true;
+			}
+		}
+		else if( p.timecodeSource == (int)TimecodeInput::Source::Mtc )
+		{
+			Caption( "MTC input" );
+			ImGui::SetNextItemWidth( Ui( 300 ) );
+			if( ImGui::BeginCombo( "##mtcInput", shownName( p.timecodeMtcInput ).c_str() ) )
+			{
+				std::vector< std::string > choices = { "*" };
+				choices.insert( choices.end(), inputs.begin(), inputs.end() );
+				for( const std::string& c : choices )
+					if( ImGui::Selectable( shownName( c ).c_str(), p.timecodeMtcInput == c ) && p.timecodeMtcInput != c )
+					{
+						p.timecodeMtcInput = c;
+						changed            = true;
+					}
+				ImGui::EndCombo();
+			}
+			Help( "From a DAW on this computer, a virtual MIDI port (loopMIDI on Windows, the IAC bus on a Mac) carries it. "
+			      "The input must be on in Preferences > MIDI." );
+		}
+		else if( p.timecodeSource == (int)TimecodeInput::Source::ArtNet )
+			Help( "ArtTimeCode on UDP port 6454, from any sender on the network." );
+		if( p.timecodeSource != 0 )
+		{
+			Caption( "Freewheel" );
+			ImGui::SetNextItemWidth( Ui( 260 ) );
+			if( ImGui::SliderFloat( "##freewheel", &p.timecodeFreewheelMs, 0, 5000, "%.0f ms", ImGuiSliderFlags_AlwaysClamp ) )
+				changed = true;
+			Help( "When the timecode stops arriving (a cable, a lost packet) the timeline runs on this long before it stops." );
+			std::string tc = app.timecode.Status();
+			if( !tc.empty() )
+				ImGui::TextDisabled( "%s", tc.c_str() );
+		}
+	}
+
 	ImGui::SeparatorText( "Delay" );
 	ImGui::SetNextItemWidth( Ui( 260 ) );
 	if( ImGui::SliderFloat( "##latency", &p.syncLatencyMs, -200, 200, "%+.0f ms", ImGuiSliderFlags_AlwaysClamp ) )
@@ -297,7 +379,7 @@ bool Sync( App& app )
 		changed         = true;
 	}
 	Help( "Projectors and LED processors show the picture late: when the visuals trail the music, move this to the "
-	      "right until the flashes land on the kick. Applies to Link and the MIDI clock. Double-click: 0." );
+	      "right until the flashes land on the kick. Applies to Link, the MIDI clock and the timecode. Double-click: 0." );
 	if( changed )
 		app.ApplySync();
 	return changed;
