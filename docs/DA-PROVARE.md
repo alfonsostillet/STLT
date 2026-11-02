@@ -65,3 +65,11 @@ Correzioni già fatte e verificate dai test automatici, da provare sul PC vero p
 - [ ] Il pallino colorato accanto alle slice nella lista ha lo stesso colore della pastiglia delle tracce che vanno lì.
 - [ ] Salva l'Advanced Output e il progetto, chiudi e riapri: tele, sorgenti delle slice e uscite delle tracce restano.
 - [ ] *Remove Canvas* rimanda slice e tracce alla composizione.
+
+## Advanced Output rifatto (nuovo)
+
+- [ ] In alto gli **schermi come schede** con l'anteprima viva (pallino verde quando arrivano a un display, una finestra o in rete); clic per lavorare su uno, tasto destro per accenderlo/spegnerlo, duplicarlo o eliminarlo; *+ Screen* per aggiungerne.
+- [ ] A sinistra solo le slice dello schermo scelto; tasto destro su una: su, giù, duplica, elimina.
+- [ ] Al centro **Input** (*Takes from*) e **Output** (*Shows on*) affiancati: trascinando un punto in uno si vede subito l'altro. *Input* / *Output* in alto mostrano una vista sola, grande.
+- [ ] In basso: se il setup è in uscita, quanti schermi vanno dove, *Unsaved changes*, *Discard Changes*, *Save*. I preset sono in *Presets...* in alto.
+- [ ] Dimmi se è più chiaro di prima, e cosa cambieresti.

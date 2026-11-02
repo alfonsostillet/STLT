@@ -6,9 +6,10 @@ namespace stltvj
 {
 class App;
 
-// The Advanced Output editor: screens and their slices on the left, the canvas in the middle
-// (Input Selection: what each slice takes from the composition; Output Transformation: where and how it lands
-// on the screen), the selected screen's or slice's settings on the right.
+// The Advanced Output editor: the screens as cards along the top; the chosen screen's slices on the left; in the
+// middle Input (what each slice takes from its picture, the composition or a canvas) and Output (where and how it
+// lands on the screen), side by side or one large; the slice's and screen's settings on the right; on show and
+// saving along the bottom.
 void DrawAdvancedOutputPanel( App& app );
 // Asks whether to save the Advanced Output setup when its editor closes, or the app quits, with unsaved edits.
 void DrawAdvancedOutputSavePrompt( App& app );

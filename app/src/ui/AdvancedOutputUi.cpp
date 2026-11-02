@@ -94,6 +94,15 @@ struct Editor
 
 	std::string presetName;
 
+	// The middle: Input and Output side by side, or one of them (editor.tab) large.
+	enum class View
+	{
+		Both,
+		Input,
+		Output
+	};
+	View view = View::Both;
+
 	// What the Input tab shows: the selected slice's picture, "" the composition or a canvas's id.
 	std::string inputSource;
 
@@ -274,18 +283,6 @@ void DrawList( App& app )
 	Composition& comp          = app.composition;
 	float cw = (float)comp.width, ch = (float)comp.height;
 
-	if( ImGui::Button( "+ Screen" ) )
-	{
-		Screen s;
-		s.name   = "Screen " + std::to_string( setup.screens.size() + 1 );
-		s.width  = comp.width;
-		s.height = comp.height;
-		s.slices.push_back( AdvancedOutputSetup::MakeSlice( "Slice 1", cw, ch, (float)s.width, (float)s.height ) );
-		setup.screens.push_back( s );
-		editor.screen = (int)setup.screens.size() - 1;
-		editor.slice  = 0;
-	}
-	ImGui::SameLine();
 	bool haveScreen = editor.screen >= 0 && editor.screen < (int)setup.screens.size();
 	ImGui::BeginDisabled( !haveScreen );
 	if( ImGui::Button( "+ Slice" ) && haveScreen )
@@ -305,7 +302,7 @@ void DrawList( App& app )
 		{
 			editor.drawing    = true;
 			editor.drawScreen = editor.screen;
-			editor.drawTab    = editor.tab;
+			editor.drawTab    = editor.view == Editor::View::Both ? -1 : editor.tab; // side by side: the pane clicked first
 			editor.drawPoints.clear();
 		}
 		if( ImGui::IsItemHovered() )
@@ -346,54 +343,74 @@ void DrawList( App& app )
 	ImGui::EndDisabled();
 	ImGui::Separator();
 
-	ImGui::BeginChild( "##tree", ImVec2( 0, -ImGui::GetFrameHeightWithSpacing() * 6.5f ) );
-	for( int si = 0; si < (int)setup.screens.size(); ++si )
+	ImGui::BeginChild( "##slices", ImVec2( 0, -ImGui::GetFrameHeightWithSpacing() * 1.3f ) );
+	if( haveScreen )
 	{
-		Screen& screen = setup.screens[ si ];
-		ImGui::PushID( si );
-		ImGui::Checkbox( "##on", &screen.enabled );
-		ImGui::SameLine();
-		bool screenSelected = editor.screen == si && editor.slice < 0;
-		ImGui::SetNextItemOpen( true, ImGuiCond_Once );
-		ImGuiTreeNodeFlags flags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_SpanAvailWidth | ( screenSelected ? ImGuiTreeNodeFlags_Selected : 0 );
-		std::string label        = screen.name + "  (" + OutputDeviceName( screen.device ) + ")";
-		bool open                = ImGui::TreeNodeEx( "##screen", flags, "%s", label.c_str() );
-		if( ImGui::IsItemClicked() && !ImGui::IsItemToggledOpen() )
+		Screen& screen = setup.screens[ editor.screen ];
+		ImGui::TextDisabled( "%s: %d item%s, top drawn on top", screen.name.c_str(), (int)screen.slices.size(), screen.slices.size() == 1 ? "" : "s" );
+		// Top of the list is drawn on top: show the slices last to first.
+		for( int k = (int)screen.slices.size() - 1; k >= 0; --k )
 		{
-			editor.screen = si;
-			editor.slice  = -1;
-		}
-		if( open )
-		{
-			// Top of the list is drawn on top: show the slices last to first.
-			for( int k = (int)screen.slices.size() - 1; k >= 0; --k )
+			Slice& slice = screen.slices[ k ];
+			ImGui::PushID( k );
+			ImGui::Checkbox( "##on", &slice.enabled );
+			ImGui::SameLine();
+			std::string name = ( slice.mask ? "[M] " : slice.polygon ? "[P] " : "" ) + slice.name;
+			ImVec2 rowAt     = ImGui::GetCursorScreenPos();
+			if( ImGui::Selectable( name.c_str(), editor.slice == k ) )
+				editor.slice = k;
+			if( ImGui::IsItemClicked( ImGuiMouseButton_Right ) )
 			{
-				Slice& slice = screen.slices[ k ];
-				ImGui::PushID( k );
-				ImGui::Checkbox( "##on", &slice.enabled );
-				ImGui::SameLine();
-				std::string name = ( slice.mask ? "[M] " : slice.polygon ? "[P] " : "" ) + slice.name;
-				ImVec2 rowAt     = ImGui::GetCursorScreenPos();
-				if( ImGui::Selectable( name.c_str(), editor.screen == si && editor.slice == k ) )
-				{
-					editor.screen = si;
-					editor.slice  = k;
-				}
-				if( !slice.mask )
-				{
-					// The colour of what it takes from (the composition, or a canvas), as on the timeline's tracks.
-					float h  = ImGui::GetTextLineHeight();
-					float x  = ImGui::GetItemRectMax().x - Ui( 10 );
-					ImGui::GetWindowDrawList()->AddRectFilled( ImVec2( x, rowAt.y + h * 0.25f ), ImVec2( x + Ui( 6 ), rowAt.y + h * 0.25f + Ui( 6 ) ),
-					                                           PictureColour( app, slice.source ), Ui( 2 ) );
-					if( ImGui::IsItemHovered() )
-						ImGui::SetTooltip( "Takes from: %s", PictureName( app, slice.source ).c_str() );
-				}
-				ImGui::PopID();
+				editor.slice = k;
+				ImGui::OpenPopup( "##itemMenu" );
 			}
-			ImGui::TreePop();
+			if( !slice.mask )
+			{
+				// The colour of what it takes from (the composition, or a canvas), as on the timeline's tracks.
+				float h = ImGui::GetTextLineHeight();
+				float x = ImGui::GetItemRectMax().x - Ui( 10 );
+				ImGui::GetWindowDrawList()->AddRectFilled( ImVec2( x, rowAt.y + h * 0.25f ), ImVec2( x + Ui( 6 ), rowAt.y + h * 0.25f + Ui( 6 ) ),
+				                                           PictureColour( app, slice.source ), Ui( 2 ) );
+				if( ImGui::IsItemHovered() )
+					ImGui::SetTooltip( "Takes from: %s\nRight-click: up, down, duplicate, delete", PictureName( app, slice.source ).c_str() );
+			}
+			if( ImGui::BeginPopup( "##itemMenu" ) )
+			{
+				std::vector< Slice >& slices = screen.slices;
+				if( ImGui::MenuItem( "Up (drawn over)", nullptr, false, k + 1 < (int)slices.size() ) )
+				{
+					std::swap( slices[ k ], slices[ k + 1 ] );
+					editor.slice = k + 1;
+				}
+				if( ImGui::MenuItem( "Down (drawn under)", nullptr, false, k > 0 ) )
+				{
+					std::swap( slices[ k ], slices[ k - 1 ] );
+					editor.slice = k - 1;
+				}
+				if( ImGui::MenuItem( "Duplicate" ) )
+				{
+					Slice copy = slices[ k ];
+					copy.name  = UniqueName( slices, copy.mask ? "Mask" : copy.polygon ? "Polygon" : "Slice" );
+					copy.id.clear(); // a new one
+					slices.insert( slices.begin() + k + 1, copy );
+					setup.EnsureIds();
+					editor.slice = k + 1;
+				}
+				ImGui::Separator();
+				if( ImGui::MenuItem( "Delete" ) )
+				{
+					slices.erase( slices.begin() + k );
+					editor.slice = std::min( k, (int)slices.size() - 1 );
+					ImGui::EndPopup();
+					ImGui::PopID();
+					break;
+				}
+				ImGui::EndPopup();
+			}
+			ImGui::PopID();
 		}
-		ImGui::PopID();
+		if( screen.slices.empty() )
+			ImGui::TextDisabled( "Nothing on this screen yet: add a slice above." );
 	}
 	ImGui::EndChild();
 
@@ -413,35 +430,32 @@ void DrawList( App& app )
 		editor.slice--;
 	}
 	ImGui::SameLine();
-	if( ImGui::Button( "Duplicate" ) && haveSlice )
+	if( ImGui::Button( "Copy" ) && haveSlice )
 	{
 		std::vector< Slice >& slices = setup.screens[ editor.screen ].slices;
 		Slice copy                   = slices[ editor.slice ];
 		copy.name                    = UniqueName( slices, copy.mask ? "Mask" : copy.polygon ? "Polygon" : "Slice" );
+		copy.id.clear(); // a new one
 		slices.insert( slices.begin() + editor.slice + 1, copy );
+		setup.EnsureIds();
 		editor.slice++;
 	}
 	ImGui::EndDisabled();
 	ImGui::SameLine();
-	ImGui::BeginDisabled( !haveScreen );
-	if( ImGui::Button( "Delete" ) && haveScreen )
+	ImGui::BeginDisabled( !haveSlice );
+	if( ImGui::Button( "Delete" ) && haveSlice )
 	{
-		if( haveSlice )
-		{
-			std::vector< Slice >& slices = setup.screens[ editor.screen ].slices;
-			slices.erase( slices.begin() + editor.slice );
-			editor.slice = std::min( editor.slice, (int)slices.size() - 1 );
-		}
-		else if( setup.screens.size() > 1 )
-		{
-			setup.screens.erase( setup.screens.begin() + editor.screen );
-			editor.screen = std::max( 0, editor.screen - 1 );
-			editor.slice  = -1;
-		}
+		std::vector< Slice >& slices = setup.screens[ editor.screen ].slices;
+		slices.erase( slices.begin() + editor.slice );
+		editor.slice = std::min( editor.slice, (int)slices.size() - 1 );
 	}
 	ImGui::EndDisabled();
+}
 
-	ImGui::SeparatorText( "Presets" );
+// The presets and Resolume's setups, in the header's Presets menu.
+void DrawPresets( App& app )
+{
+
 	std::vector< std::string > presets = app.OutputPresets();
 	ImGui::SetNextItemWidth( -FLT_MIN );
 	if( ImGui::BeginCombo( "##load", "Load preset...", ImGuiComboFlags_HeightLarge ) )
@@ -600,12 +614,12 @@ void TransformPoints( Slice& s, int tab, PointFn point, VectorFn vector )
 // polygon (three points at least); Backspace takes the last point back, Esc or a right-click on no point gives up.
 // Points snap to the other slices as dragged points do. Called with the canvas's clip rectangle pushed; pops it.
 template < typename ToScreen, typename ToContent >
-void DrawPolygonTool( App& app, Screen& screen, ImDrawList* draw, ImVec2 pos, ImVec2 size, ToScreen toScreen, ToContent toContent, float scale,
-                      float W, float H, bool hovered )
+void DrawPolygonTool( App& app, Screen& screen, int tab, ImDrawList* draw, ImVec2 pos, ImVec2 size, ToScreen toScreen, ToContent toContent,
+                      float scale, float W, float H, bool hovered )
 {
 	ImGuiIO& io              = ImGui::GetIO();
 	std::vector< Vec2 >& pts = editor.drawPoints;
-	Vec2 mouse               = Snap( toContent( io.MousePos ), screen, editor.drawTab, -1, W, H, Ui( 8 ) / scale );
+	Vec2 mouse               = Snap( toContent( io.MousePos ), screen, tab, -1, W, H, Ui( 8 ) / scale );
 	const ImU32 amber        = IM_COL32( 255, 190, 70, 255 ), black = IM_COL32( 0, 0, 0, 255 );
 	float radius             = Ui( 4.5f );
 	auto near                = [ & ]( Vec2 p ) {
@@ -659,7 +673,7 @@ void DrawPolygonTool( App& app, Screen& screen, ImDrawList* draw, ImVec2 pos, Im
 		{
 			int sw, sh; // the picture shown on the Input tab: the new polygon takes from it
 			app.advancedOutput.SourceSize( editor.inputSource, app.composition.width, app.composition.height, sw, sh );
-			screen.slices.push_back( AdvancedOutputSetup::MakePolygonFrom( UniqueName( screen.slices, "Polygon" ), pts, editor.drawTab == OutputTab,
+			screen.slices.push_back( AdvancedOutputSetup::MakePolygonFrom( UniqueName( screen.slices, "Polygon" ), pts, tab == OutputTab,
 			                                                               (float)sw, (float)sh, (float)screen.width, (float)screen.height ) );
 			screen.slices.back().source = editor.inputSource;
 			editor.slice = (int)screen.slices.size() - 1;
@@ -677,7 +691,10 @@ void DrawPolygonTool( App& app, Screen& screen, ImDrawList* draw, ImVec2 pos, Im
 	{
 		bool repeat = !pts.empty() && near( pts.back() ); // the same place twice adds nothing
 		if( !repeat )
+		{
 			pts.push_back( mouse );
+			editor.drawTab = tab; // drawn on this pane from now on
+		}
 	}
 	else if( ImGui::IsKeyPressed( ImGuiKey_Enter ) || ImGui::IsKeyPressed( ImGuiKey_KeypadEnter ) )
 		finish();
@@ -690,10 +707,9 @@ void DrawPolygonTool( App& app, Screen& screen, ImDrawList* draw, ImVec2 pos, Im
 	}
 }
 
-void DrawCanvas( App& app, Screen& screen )
+void DrawCanvas( App& app, Screen& screen, int tab )
 {
 	ImGuiIO& io = ImGui::GetIO();
-	int tab     = editor.tab;
 	// The Input tab shows the picture the selected slice takes from (the composition or a canvas).
 	if( editor.slice >= 0 && editor.slice < (int)screen.slices.size() && !screen.slices[ editor.slice ].mask )
 		editor.inputSource = screen.slices[ editor.slice ].source;
@@ -713,9 +729,13 @@ void DrawCanvas( App& app, Screen& screen )
 	ImGui::InvisibleButton( "##canvas", size, ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight | ImGuiButtonFlags_MouseButtonMiddle );
 	bool hovered     = ImGui::IsItemHovered();
 	bool focused     = ImGui::IsItemFocused() || ImGui::IsItemActive();
+	if( hovered && ( ImGui::IsMouseClicked( ImGuiMouseButton_Left ) || ImGui::IsMouseClicked( ImGuiMouseButton_Right ) ) )
+		editor.tab = tab; // the pane in use: keys and the inspector's point rows follow it
 	ImDrawList* draw = ImGui::GetWindowDrawList();
 	draw->PushClipRect( pos, ImVec2( pos.x + size.x, pos.y + size.y ), true );
 	draw->AddRectFilled( pos, ImVec2( pos.x + size.x, pos.y + size.y ), IM_COL32( 22, 22, 22, 255 ) );
+	if( editor.tab == tab && hovered )
+		draw->AddRect( pos, ImVec2( pos.x + size.x, pos.y + size.y ), theme::AccentDim, 0, 0, Ui( 1 ) );
 
 	float fit   = std::min( size.x / W, size.y / H ) * 0.92f;
 	float scale = fit * editor.zoom[ tab ];
@@ -894,14 +914,20 @@ void DrawCanvas( App& app, Screen& screen )
 			draw->AddLine( ImVec2( pos.x, p.y ), ImVec2( pos.x + size.x, p.y ), IM_COL32( 255, 200, 80, 160 ) );
 	}
 
-	// A polygon being drawn: on another screen or tab it is given up.
-	if( editor.drawing && ( editor.drawScreen != editor.screen || editor.drawTab != tab ) )
+	// A polygon being drawn: on the pane its first point went to (either, until then); on another screen it is
+	// given up; the other pane only shows while drawing.
+	if( editor.drawing && editor.drawScreen != editor.screen )
 	{
 		editor.drawing = false;
 		editor.drawPoints.clear();
 	}
+	if( editor.drawing && ( editor.drawTab < 0 || editor.drawTab == tab ) )
+		return DrawPolygonTool( app, screen, tab, draw, pos, size, toScreen, toContent, scale, W, H, hovered );
 	if( editor.drawing )
-		return DrawPolygonTool( app, screen, draw, pos, size, toScreen, toContent, scale, W, H, hovered );
+	{
+		draw->PopClipRect();
+		return;
+	}
 	draw->PopClipRect();
 
 	// Picking and dragging.
@@ -1280,7 +1306,8 @@ void DrawCanvas( App& app, Screen& screen )
 
 void DrawScreenProps( App& app, Screen& screen )
 {
-	ImGui::SeparatorText( "Screen" );
+	if( !ImGui::CollapsingHeader( ( "Screen: " + screen.name + "###screenProps" ).c_str(), ImGuiTreeNodeFlags_DefaultOpen ) )
+		return;
 	if( !BeginProps( "##screen" ) )
 		return;
 	Row( "Name" );
@@ -1406,7 +1433,8 @@ void PointModeRows( Slice& s )
 
 void DrawMaskProps( Screen& screen, Slice& s )
 {
-	ImGui::SeparatorText( "Mask" );
+	if( !ImGui::CollapsingHeader( ( "Mask: " + s.name + "###maskProps" ).c_str(), ImGuiTreeNodeFlags_DefaultOpen ) )
+		return;
 	if( !BeginProps( "##mask" ) )
 		return;
 	Row( "Name" );
@@ -1447,7 +1475,8 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 	int sourceW, sourceH;
 	setup.SourceSize( s.source, comp.width, comp.height, sourceW, sourceH );
 	float cw = (float)sourceW, ch = (float)sourceH; // the picture the slice takes from
-	ImGui::SeparatorText( s.polygon ? "Polygon" : "Slice" );
+	if( !ImGui::CollapsingHeader( ( std::string( s.polygon ? "Polygon: " : "Slice: " ) + s.name + "###sliceProps" ).c_str(), ImGuiTreeNodeFlags_DefaultOpen ) )
+		return;
 	if( !BeginProps( "##slice" ) )
 		return;
 	Row( "Name" );
@@ -1736,127 +1765,287 @@ void DrawAdvancedOutputPanel( App& app )
 
 	if( app.outputSavePrompt != 0 )
 		DrawSaveQuestion( app );
-	// Save or discard: the edits show live, but are kept only when saved.
+
+	// Header: the presets and Resolume's setups.
 	{
+		if( ImGui::Button( "Presets..." ) )
+			ImGui::OpenPopup( "##presets" );
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "Load or save the whole setup under a name; import Resolume's AdvancedOutput.xml" );
+		ImGui::SetNextWindowSize( ImVec2( Ui( 320 ), 0 ) );
+		if( ImGui::BeginPopup( "##presets" ) )
+		{
+			DrawPresets( app );
+			ImGui::EndPopup();
+		}
+	}
+
+	// The stage: every screen as a card with what it shows now; click one to work on it.
+	{
+		float cardW = Ui( 190 ), thumbH = Ui( 70 );
+		ImGui::BeginChild( "##stage", ImVec2( 0, thumbH + ImGui::GetTextLineHeightWithSpacing() * 2 + Ui( 22 ) ), ImGuiChildFlags_None,
+		                   ImGuiWindowFlags_HorizontalScrollbar );
+		ImDrawList* draw = ImGui::GetWindowDrawList();
+		for( int si = 0; si < (int)setup.screens.size(); ++si )
+		{
+			Screen& screen = setup.screens[ si ];
+			ImGui::PushID( si );
+			if( si > 0 )
+				ImGui::SameLine( 0, Ui( 8 ) );
+			ImVec2 at = ImGui::GetCursorScreenPos();
+			ImVec2 cardSize( cardW, thumbH + ImGui::GetTextLineHeightWithSpacing() * 2 + Ui( 12 ) );
+			bool selected = editor.screen == si;
+			if( ImGui::InvisibleButton( "##card", cardSize ) )
+			{
+				if( editor.screen != si )
+					editor.slice = screen.slices.empty() ? -1 : 0;
+				editor.screen = si;
+			}
+			bool hot = ImGui::IsItemHovered();
+			if( ImGui::IsItemClicked( ImGuiMouseButton_Right ) )
+			{
+				editor.screen = si;
+				ImGui::OpenPopup( "##screenMenu" );
+			}
+			draw->AddRectFilled( at, ImVec2( at.x + cardSize.x, at.y + cardSize.y ), hot ? theme::RaisedHover : theme::Well, Ui( 5 ) );
+			draw->AddRect( at, ImVec2( at.x + cardSize.x, at.y + cardSize.y ), selected ? theme::Accent : theme::Line, Ui( 5 ), 0, selected ? Ui( 2 ) : Ui( 1 ) );
+			// What it shows, fitted into the card.
+			ImVec2 box( at.x + Ui( 6 ), at.y + Ui( 6 ) );
+			float bw = cardW - Ui( 12 ), bh = thumbH;
+			float fit = std::min( bw / std::max( screen.width, 1 ), bh / std::max( screen.height, 1 ) );
+			ImVec2 tl( box.x + ( bw - screen.width * fit ) / 2, box.y + ( bh - screen.height * fit ) / 2 );
+			ImVec2 br( tl.x + screen.width * fit, tl.y + screen.height * fit );
+			draw->AddRectFilled( tl, br, IM_COL32( 0, 0, 0, 255 ) );
+			if( GLuint texture = app.outputs.ScreenTexture( (size_t)si ) )
+				draw->AddImage( TextureId( texture ), tl, br, ImVec2( 0, 1 ), ImVec2( 1, 0 ) );
+			// Name and state: green when it reaches a display, window or the network; grey when only drawn here.
+			bool reaches = screen.enabled && app.outputMode == OutputMode::Advanced && ( screen.device != OutputDevice::Virtual || screen.ndi || screen.share );
+			float line   = ImGui::GetTextLineHeightWithSpacing();
+			ImVec2 text( at.x + Ui( 8 ), at.y + Ui( 10 ) + thumbH );
+			draw->AddCircleFilled( ImVec2( text.x + Ui( 4 ), text.y + line * 0.45f ), Ui( 3.5f ), reaches ? IM_COL32( 79, 209, 139, 255 ) : theme::TextDim );
+			draw->PushClipRect( at, ImVec2( at.x + cardSize.x - Ui( 6 ), at.y + cardSize.y ), true );
+			draw->AddText( ImVec2( text.x + Ui( 12 ), text.y ), screen.enabled ? theme::Text : theme::TextDim, screen.name.c_str() );
+			char detail[ 160 ];
+			const char* device = screen.device == OutputDevice::Display ? "Display" : screen.device == OutputDevice::Window ? "Window" : "Virtual";
+			std::snprintf( detail, sizeof( detail ), "%dx%d  %s%s", screen.width, screen.height, device, screen.ndi ? " + NDI" : "" );
+			draw->AddText( ImVec2( text.x, text.y + line ), theme::TextDim, detail );
+			draw->PopClipRect();
+			if( hot )
+				ImGui::SetTooltip( "%s\n%s\nClick: work on it. Right-click: on/off, duplicate, delete.", screen.name.c_str(), app.outputs.DeviceStatus( (size_t)si ).c_str() );
+			if( ImGui::BeginPopup( "##screenMenu" ) )
+			{
+				ImGui::MenuItem( "Enabled", nullptr, &screen.enabled );
+				if( ImGui::MenuItem( "Duplicate" ) )
+				{
+					Screen copy = screen;
+					copy.name += " copy";
+					for( Slice& sl : copy.slices )
+						sl.id.clear();
+					setup.screens.insert( setup.screens.begin() + si + 1, copy );
+					setup.EnsureIds();
+					editor.screen = si + 1;
+				}
+				if( ImGui::MenuItem( "Delete", nullptr, false, setup.screens.size() > 1 ) )
+				{
+					setup.screens.erase( setup.screens.begin() + si );
+					editor.screen = std::max( 0, si - 1 );
+					editor.slice  = -1;
+					ImGui::EndPopup();
+					ImGui::PopID();
+					break;
+				}
+				ImGui::EndPopup();
+			}
+			ImGui::PopID();
+		}
+		// A new screen, the size of the composition, with one slice showing all of it.
+		ImGui::SameLine( 0, Ui( 8 ) );
+		if( ImGui::Button( "+ Screen", ImVec2( Ui( 100 ), thumbH + ImGui::GetTextLineHeightWithSpacing() * 2 + Ui( 12 ) ) ) )
+		{
+			Composition& comp = app.composition;
+			Screen s;
+			s.name   = "Screen " + std::to_string( setup.screens.size() + 1 );
+			s.width  = comp.width;
+			s.height = comp.height;
+			s.slices.push_back( AdvancedOutputSetup::MakeSlice( "Slice 1", (float)comp.width, (float)comp.height, (float)s.width, (float)s.height ) );
+			setup.screens.push_back( s );
+			setup.EnsureIds();
+			editor.screen = (int)setup.screens.size() - 1;
+			editor.slice  = 0;
+		}
+		ImGui::EndChild();
+	}
+
+	editor.screen  = std::clamp( editor.screen, 0, (int)setup.screens.size() - 1 );
+	Screen& screen = setup.screens[ editor.screen ];
+	if( editor.slice >= (int)screen.slices.size() )
+		editor.slice = -1;
+
+	float statusHeight = ImGui::GetFrameHeightWithSpacing() + Ui( 10 );
+	float bodyHeight   = std::max( Ui( 100 ), ImGui::GetContentRegionAvail().y - statusHeight );
+	if( ImGui::BeginTable( "##ao", 3, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV, ImVec2( 0, bodyHeight ) ) )
+	{
+		ImGui::TableSetupColumn( "list", ImGuiTableColumnFlags_WidthFixed, Ui( 236 ) );
+		ImGui::TableSetupColumn( "canvas", ImGuiTableColumnFlags_WidthStretch );
+		ImGui::TableSetupColumn( "props", ImGuiTableColumnFlags_WidthFixed, Ui( 330 ) );
+		ImGui::TableNextRow();
+
+		ImGui::TableSetColumnIndex( 0 );
+		ImGui::BeginChild( "##left", ImVec2( 0, bodyHeight ) );
+		DrawList( app );
+		ImGui::EndChild();
+
+		ImGui::TableSetColumnIndex( 1 );
+		ImGui::BeginChild( "##middle", ImVec2( 0, bodyHeight ) );
+		{
+			// Side by side, or one large.
+			const char* views[] = { "Side by Side", "Input", "Output" };
+			for( int v = 0; v < 3; ++v )
+			{
+				if( v > 0 )
+					ImGui::SameLine( 0, Ui( 2 ) );
+				bool on = (int)editor.view == v;
+				if( on )
+					ImGui::PushStyleColor( ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4( theme::AccentDim ) );
+				if( ImGui::Button( views[ v ] ) )
+				{
+					editor.view = (Editor::View)v;
+					if( v == 1 )
+						editor.tab = InputTab;
+					if( v == 2 )
+						editor.tab = OutputTab;
+				}
+				if( on )
+					ImGui::PopStyleColor();
+			}
+			ImGui::SameLine( 0, Ui( 16 ) );
+			if( ImGui::Button( "Fit View" ) )
+				for( int t = 0; t < 2; ++t )
+				{
+					editor.zoom[ t ] = 1;
+					editor.pan[ t ]  = ImVec2( 0, 0 );
+				}
+			ImGui::SameLine();
+			ImGui::Checkbox( "Snap", &editor.snap );
+			ImGui::SameLine();
+			ImGui::Checkbox( "Test Pattern", &screen.testPattern );
+		}
+		// A pane: its title (what it shows) over its canvas.
+		auto pane = [ & ]( int tab, float width ) {
+			ImGui::BeginChild( tab == InputTab ? "##inputPane" : "##outputPane", ImVec2( width, 0 ) );
+			ImGui::AlignTextToFramePadding();
+			if( tab == InputTab )
+			{
+				const Canvas* c = app.advancedOutput.FindCanvas( editor.inputSource );
+				ImVec2 p        = ImGui::GetCursorScreenPos();
+				ImGui::GetWindowDrawList()->AddRectFilled( ImVec2( p.x, p.y + Ui( 6 ) ), ImVec2( p.x + Ui( 8 ), p.y + Ui( 14 ) ), PictureColour( app, editor.inputSource ), Ui( 2 ) );
+				ImGui::SetCursorScreenPos( ImVec2( p.x + Ui( 14 ), p.y ) );
+				ImGui::Text( "Takes from: %s", c ? c->name.c_str() : "Composition" );
+				ImGui::SameLine();
+				ImGui::TextDisabled( "%dx%d", c ? c->width : app.composition.width, c ? c->height : app.composition.height );
+			}
+			else
+			{
+				ImGui::Text( "Shows on: %s", screen.name.c_str() );
+				ImGui::SameLine();
+				ImGui::TextDisabled( "%dx%d", screen.width, screen.height );
+			}
+			ImGui::SameLine();
+			ImGui::TextDisabled( "%.0f %%", editor.zoom[ tab ] * 100 );
+			DrawCanvas( app, screen, tab );
+			ImGui::EndChild();
+		};
+		if( editor.view == Editor::View::Both )
+		{
+			float half = ( ImGui::GetContentRegionAvail().x - Ui( 6 ) ) / 2;
+			pane( InputTab, half );
+			ImGui::SameLine( 0, Ui( 6 ) );
+			pane( OutputTab, 0 );
+		}
+		else
+			pane( editor.view == Editor::View::Input ? InputTab : OutputTab, 0 );
+		ImGui::EndChild();
+
+		ImGui::TableSetColumnIndex( 2 );
+		ImGui::BeginChild( "##right", ImVec2( 0, bodyHeight ) );
+		if( editor.slice >= 0 )
+			DrawSliceProps( app, screen, screen.slices[ editor.slice ] );
+		DrawScreenProps( app, screen );
+		ImGui::Spacing();
+		if( ImGui::CollapsingHeader( "Mouse and keys" ) )
+			ImGui::TextDisabled( "Drag a slice to move it, its points to shape it.\n"
+			                     "Double-click the outline of a contour or\npolygon to add a point; Del removes it.\n"
+			                     "Double-click a contour point: smooth or\nstraight. Alt-drag it: new Bezier handles.\n"
+			                     "Alt on a handle: move it alone.\n"
+			                     "Transform: drag the box to scale (Alt: from\nthe centre), the knob to rotate.\n"
+			                     "Shift: one axis, keep proportions, 15 degrees.\nAlt: free input corner. Ctrl: no snapping.\n"
+			                     "Arrows: nudge the slice or the selected point.\nWheel: zoom. Middle button or Space: pan.\nRight-click a slice for more." );
+		ImGui::EndChild();
+		ImGui::EndTable();
+	}
+
+	// Status bar: whether the setup is on show, and saving (the edits show live, but are kept only when saved).
+	{
+		ImGui::Separator();
+		auto pill = [ & ]( const char* text, ImU32 colour ) {
+			ImVec2 p  = ImGui::GetCursorScreenPos();
+			ImVec2 sz = ImGui::CalcTextSize( text );
+			float h   = ImGui::GetFrameHeight();
+			ImVec4 c  = ImGui::ColorConvertU32ToFloat4( colour );
+			ImGui::GetWindowDrawList()->AddRectFilled( p, ImVec2( p.x + sz.x + Ui( 26 ), p.y + h ), ImGui::GetColorU32( ImVec4( c.x, c.y, c.z, 0.16f ) ), h / 2 );
+			ImGui::GetWindowDrawList()->AddCircleFilled( ImVec2( p.x + Ui( 10 ), p.y + h / 2 ), Ui( 3.5f ), colour );
+			ImGui::GetWindowDrawList()->AddText( ImVec2( p.x + Ui( 18 ), p.y + ( h - sz.y ) / 2 ), colour, text );
+			ImGui::Dummy( ImVec2( sz.x + Ui( 26 ), h ) );
+		};
+		const ImU32 green = IM_COL32( 79, 209, 139, 255 );
+		int displays = 0, windows = 0, network = 0;
+		for( const Screen& sc : setup.screens )
+			if( sc.enabled )
+			{
+				displays += sc.device == OutputDevice::Display;
+				windows += sc.device == OutputDevice::Window;
+				network += sc.ndi || sc.share;
+			}
+		bool live = app.outputMode == OutputMode::Advanced;
+		if( !live )
+		{
+			pill( ( "Not on show (Output: " + app.OutputModeLabel() + ")" ).c_str(), theme::Warning );
+			ImGui::SameLine();
+			if( ImGui::Button( "Use Advanced Output" ) )
+				app.SetOutputMode( OutputMode::Advanced );
+		}
+		else if( displays + windows + network == 0 )
+			pill( "On show, but every screen is Virtual: choose a Device for a screen", theme::Warning );
+		else
+			pill( "On show", green );
+		ImGui::SameLine( 0, Ui( 12 ) );
+		ImGui::AlignTextToFramePadding();
+		ImGui::TextDisabled( "%d screen%s: %d on displays, %d in windows, %d shared", (int)setup.screens.size(), setup.screens.size() == 1 ? "" : "s",
+		                     displays, windows, network );
 		bool unsaved = app.OutputUnsaved();
+		float right  = ImGui::CalcTextSize( "Unsaved changes" ).x + ImGui::CalcTextSize( "Discard Changes" ).x + ImGui::CalcTextSize( "Save" ).x + Ui( 80 );
+		ImGui::SameLine( std::max( ImGui::GetCursorPosX() + Ui( 12 ), ImGui::GetWindowContentRegionMax().x - right ) );
+		if( unsaved )
+			pill( "Unsaved changes", theme::Warning );
+		else
+		{
+			ImGui::AlignTextToFramePadding();
+			ImGui::TextDisabled( "Saved" );
+		}
+		ImGui::SameLine();
 		ImGui::BeginDisabled( !unsaved );
+		if( ImGui::Button( "Discard Changes" ) )
+			app.RevertOutputSetup();
+		if( ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenDisabled ) )
+			ImGui::SetTooltip( "Back to the setup as it was last saved" );
+		ImGui::SameLine();
 		if( unsaved )
 			ImGui::PushStyleColor( ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4( theme::AccentDim ) );
 		if( ImGui::Button( "Save" ) )
 			app.SaveOutputSetup();
 		if( unsaved )
 			ImGui::PopStyleColor();
-		ImGui::SameLine();
-		if( ImGui::Button( "Discard Changes" ) )
-			app.RevertOutputSetup();
 		ImGui::EndDisabled();
-		if( ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenDisabled ) )
-			ImGui::SetTooltip( "Back to the setup as it was last saved" );
-		ImGui::SameLine();
-		ImGui::AlignTextToFramePadding();
-		if( unsaved )
-			ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( theme::Warning ), "Unsaved changes: they show now, but are lost unless saved" );
-		else
-			ImGui::TextDisabled( "Saved" );
-	}
-
-	// Banners: the setup is not on show, or nothing of it reaches a screen.
-	auto banner = [ & ]( const char* id, const std::string& text, const char* button ) {
-		ImGui::PushStyleColor( ImGuiCol_ChildBg, ImVec4( 0.45f, 0.32f, 0.10f, 0.55f ) );
-		ImGui::BeginChild( id, ImVec2( 0, ImGui::GetFrameHeightWithSpacing() + Ui( 8 ) ), ImGuiChildFlags_None, ImGuiWindowFlags_NoScrollbar );
-		ImGui::SetCursorPos( ImVec2( Ui( 8 ), Ui( 4 ) ) );
-		ImGui::AlignTextToFramePadding();
-		ImGui::TextUnformatted( text.c_str() );
-		bool pressed = false;
-		if( button )
-		{
-			ImGui::SameLine();
-			pressed = ImGui::Button( button );
-		}
-		ImGui::EndChild();
-		ImGui::PopStyleColor();
-		return pressed;
-	};
-	bool anyDevice = std::any_of( setup.screens.begin(), setup.screens.end(), []( const Screen& s ) { return s.device != OutputDevice::Virtual && s.enabled; } );
-	if( app.outputMode != OutputMode::Advanced )
-	{
-		if( banner( "##notLive", "This setup is not on show (Output: " + app.OutputModeLabel() + ").", "Use Advanced Output" ) )
-			app.SetOutputMode( OutputMode::Advanced );
-	}
-	else if( !anyDevice )
-	{
-		if( banner( "##virtual",
-		            "Nothing is shown: every screen is a Virtual Output. Select a screen in the list, then choose its Device on the right (a display or Window).",
-		            "Select Screen 1" ) )
-		{
-			editor.screen = 0;
-			editor.slice  = -1;
-		}
-	}
-
-	if( ImGui::BeginTable( "##ao", 3, ImGuiTableFlags_Resizable | ImGuiTableFlags_BordersInnerV, ImGui::GetContentRegionAvail() ) )
-	{
-		ImGui::TableSetupColumn( "list", ImGuiTableColumnFlags_WidthFixed, Ui( 230 ) );
-		ImGui::TableSetupColumn( "canvas", ImGuiTableColumnFlags_WidthStretch );
-		ImGui::TableSetupColumn( "props", ImGuiTableColumnFlags_WidthFixed, Ui( 340 ) );
-		ImGui::TableNextRow();
-
-		ImGui::TableSetColumnIndex( 0 );
-		ImGui::BeginChild( "##left" );
-		DrawList( app );
-		ImGui::EndChild();
-
-		editor.screen = std::clamp( editor.screen, 0, (int)setup.screens.size() - 1 );
-		Screen& screen = setup.screens[ editor.screen ];
-		if( editor.slice >= (int)screen.slices.size() )
-			editor.slice = -1;
-
-		ImGui::TableSetColumnIndex( 1 );
-		ImGui::BeginChild( "##middle" );
-		if( ImGui::RadioButton( "Input Selection", editor.tab == InputTab ) )
-			editor.tab = InputTab;
-		ImGui::SameLine();
-		if( ImGui::RadioButton( "Output Transformation", editor.tab == OutputTab ) )
-			editor.tab = OutputTab;
-		ImGui::SameLine( 0, Ui( 20 ) );
-		if( ImGui::Button( "Fit View" ) )
-		{
-			editor.zoom[ editor.tab ] = 1;
-			editor.pan[ editor.tab ]  = ImVec2( 0, 0 );
-		}
-		ImGui::SameLine();
-		ImGui::Text( "%.0f %%", editor.zoom[ editor.tab ] * 100 );
-		ImGui::SameLine();
-		ImGui::Checkbox( "Snap", &editor.snap );
-		ImGui::SameLine();
-		ImGui::Checkbox( "Test Pattern", &screen.testPattern );
-		ImGui::SameLine();
-		if( editor.tab == InputTab )
-		{
-			const Canvas* c = app.advancedOutput.FindCanvas( editor.inputSource );
-			ImGui::TextDisabled( "%s %dx%d", c ? ( "canvas " + c->name ).c_str() : "composition", c ? c->width : app.composition.width,
-			                     c ? c->height : app.composition.height );
-		}
-		else
-			ImGui::TextDisabled( "%s - screen %dx%d", screen.name.c_str(), screen.width, screen.height );
-		DrawCanvas( app, screen );
-		ImGui::EndChild();
-
-		ImGui::TableSetColumnIndex( 2 );
-		ImGui::BeginChild( "##right" );
-		if( editor.slice >= 0 )
-			DrawSliceProps( app, screen, screen.slices[ editor.slice ] );
-		DrawScreenProps( app, screen );
-		ImGui::Spacing();
-		ImGui::TextDisabled( "Drag a slice to move it, its points to shape it.\n"
-		                     "Double-click the outline of a contour or\npolygon to add a point; Del removes it.\n"
-		                     "Double-click a contour point: smooth or\nstraight. Alt-drag it: new Bezier handles.\n"
-		                     "Alt on a handle: move it alone.\n"
-		                     "Transform: drag the box to scale (Alt: from\nthe centre), the knob to rotate.\n"
-		                     "Shift: one axis, keep proportions, 15 degrees.\nAlt: free input corner. Ctrl: no snapping.\n"
-		                     "Arrows: nudge the slice or the selected point.\nWheel: zoom. Middle button or Space: pan.\nRight-click a slice for more." );
-		ImGui::EndChild();
-		ImGui::EndTable();
 	}
 	ImGui::End();
 }
