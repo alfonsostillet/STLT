@@ -13,6 +13,7 @@
 #include "Settings.h"
 #include "audio/AudioEngine.h"
 #include "fx/BuiltinEffects.h"
+#include "fx/IsfEffect.h"
 #include "gl/Gl.h"
 #include "ui/AdvancedOutputUi.h"
 #include "ui/ControlUi.h"
@@ -223,6 +224,8 @@ bool App::Init( const LaunchOptions& launch )
 	}
 	registry = std::make_unique< EffectRegistry >();
 	RescanPlugins();
+	if( !options.isfFolder.empty() )
+		registry->Scan( { options.isfFolder } );
 	if( options.listEffects )
 	{
 		for( const EffectRegistry::Entry& e : registry->Entries() )
@@ -340,6 +343,7 @@ void App::Shutdown()
 	preview.Release();
 	compositor.Shutdown();
 	ReleaseBuiltinPrograms();
+	ReleaseIsfPrograms();
 	registry.reset(); // unloads the plugins
 	ImGui_ImplOpenGL3_Shutdown();
 	ImGui_ImplGlfw_Shutdown();
@@ -347,6 +351,31 @@ void App::Shutdown()
 	glfwDestroyWindow( window );
 	window = nullptr;
 	glfwTerminate();
+}
+
+int App::CheckIsf()
+{
+	glfwMakeContextCurrent( window );
+	int checked = 0, failed = 0;
+	for( const EffectRegistry::Entry& e : registry->Entries() )
+	{
+		if( !e.isf )
+			continue;
+		++checked;
+		std::string error;
+		if( CheckIsfShader( e.isf, error ) )
+			std::printf( "ok      %s\n", e.id.c_str() );
+		else
+		{
+			++failed;
+			std::string first = error.substr( 0, error.find( '\n', error.find( '\n' ) + 1 ) );
+			std::printf( "FAILED  %s: %s\n", e.id.c_str(), first.c_str() );
+		}
+	}
+	for( const EffectRegistry::Failure& f : registry->Failures() )
+		std::printf( "skipped %s: %s\n", f.path.c_str(), f.reason.c_str() );
+	std::printf( "%d ISF shaders checked, %d failed\n", checked, failed );
+	return failed;
 }
 
 ClipPlayer* App::PlayerAt( int layer, int column )

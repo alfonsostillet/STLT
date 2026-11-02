@@ -46,6 +46,8 @@ struct LaunchOptions
 	std::vector< std::pair< int, int > > launches; // --launch layer,column: clips of the restored session
 	bool fresh = false;               // ignore the last session
 	bool listEffects = false;         // print the effect ids and plugin problems at start
+	bool checkIsf    = false;         // --check-isf [FOLDER]: build and run every ISF shader found, then quit
+	std::string isfFolder;            // and those in this folder too
 	std::string outputSetup;          // --output-setup: an output setup (.json) or Resolume AdvancedOutput.xml to load
 	int advancedOutputTab = -1;       // --advanced-output input|output: open the editor on that tab
 	int width = 0, height = 0;        // window size override
@@ -68,6 +70,8 @@ public:
 	bool Init( const LaunchOptions& options );
 	void Run();
 	void Shutdown();
+	// Builds and runs every ISF shader in the registry; prints each one's result and returns how many failed.
+	int CheckIsf();
 
 	// Actions shared by the panels and shortcuts.
 	void LoadClip( int layer, int column, const std::string& path );

@@ -25,6 +25,7 @@
 	X( PFNGLCLEARPROC, glClear )                                         \
 	X( PFNGLCLEARCOLORPROC, glClearColor )                               \
 	X( PFNGLVIEWPORTPROC, glViewport )                                   \
+	X( PFNGLSCISSORPROC, glScissor )                                     \
 	X( PFNGLFLUSHPROC, glFlush )                                         \
 	X( PFNGLFINISHPROC, glFinish )                                       \
 	X( PFNGLGENTEXTURESPROC, glGenTextures )                             \

@@ -96,6 +96,7 @@ jobs:
           if [ "$RUNNER_OS" = "Windows" ]; then
             mkdir -p package/STLT-VJ/plugins
             cp app/build/Release/stlt-vj.exe app/build/Release/*.dll package/STLT-VJ/
+            cp -r app/isf package/STLT-VJ/isf
             cp chaser/plugin/dist/*.dll package/STLT-VJ/plugins/
             cp -r chaser/editor/release/win-unpacked package/STLT-VJ/chaser
             test -f package/STLT-VJ/chaser/STLT-CHASER.exe
@@ -105,6 +106,7 @@ jobs:
           else
             mkdir -p package/STLT-VJ/plugins
             cp app/build/stlt-vj package/STLT-VJ/
+            cp -r app/isf package/STLT-VJ/isf
             cp chaser/plugin/dist/*.so package/STLT-VJ/plugins/
             cp -r chaser/editor/release/linux-unpacked package/STLT-VJ/chaser
             test -x package/STLT-VJ/chaser/stlt-chaser

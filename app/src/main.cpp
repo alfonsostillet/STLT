@@ -1,6 +1,6 @@
 // STLT-VJ: live HAP playback with dockable panels.
 //   stlt-vj [--fresh] [--clip LAYER,COLUMN,PATH]... [--source LAYER,COLUMN,EFFECT-ID]...
-//           [--fx comp|layer:L|clip:L,C=EFFECT-ID]... [--launch LAYER,COLUMN]... [--list-effects]
+//           [--fx comp|layer:L|clip:L,C=EFFECT-ID]... [--launch LAYER,COLUMN]... [--list-effects] [--check-isf [FOLDER]]
 //           [--output-setup FILE.json|AdvancedOutput.xml] [--advanced-output input|output] [--osc PORT]
 //           [--size WxH] [--capture FILE.bmp [--frames N]]
 #include <algorithm>
@@ -21,6 +21,12 @@ int main( int argc, char** argv )
 			options.fresh = true;
 		else if( arg == "--list-effects" )
 			options.listEffects = true;
+		else if( arg == "--check-isf" )
+		{
+			options.checkIsf = true;
+			if( hasValue && argv[ i + 1 ][ 0 ] != '-' )
+				options.isfFolder = argv[ ++i ];
+		}
 		else if( arg == "--output-setup" && hasValue )
 			options.outputSetup = argv[ ++i ];
 		else if( arg == "--advanced-output" && hasValue )
@@ -77,6 +83,12 @@ int main( int argc, char** argv )
 	{
 		app.Shutdown();
 		return 1;
+	}
+	if( options.checkIsf )
+	{
+		int failed = app.CheckIsf();
+		app.Shutdown();
+		return failed ? 1 : 0;
 	}
 	app.Run();
 	app.Shutdown();

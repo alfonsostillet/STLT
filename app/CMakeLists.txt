@@ -209,6 +209,10 @@ add_library(stltvj-core STATIC
     src/fx/FfglAbi.h
     src/fx/FfglPlugin.cpp
     src/fx/FfglPlugin.h
+    src/fx/Isf.cpp
+    src/fx/Isf.h
+    src/fx/IsfEffect.cpp
+    src/fx/IsfEffect.h
     src/gl/Gl.cpp
     src/gl/Gl.h
     src/gl/Program.cpp
@@ -399,10 +403,19 @@ stltvj_ffmpeg_runtime(stlt-vj)
 if(WIN32)
     set_target_properties(stlt-vj PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
 endif()
+# The ISF shaders that come with the app (isf/README.md), next to the program; inside the bundle on macOS.
+if(APPLE)
+    set(STLTVJ_ISF_DIR "$<TARGET_BUNDLE_CONTENT_DIR:stlt-vj>/Resources/isf")
+else()
+    set(STLTVJ_ISF_DIR "$<TARGET_FILE_DIR:stlt-vj>/isf")
+endif()
+add_custom_command(TARGET stlt-vj POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/isf" "${STLTVJ_ISF_DIR}")
 
 # Effects, parameters and composition files, without a GPU.
 add_executable(fx_test tests/fx_test.cpp)
 target_link_libraries(fx_test PRIVATE stltvj-core)
+target_compile_definitions(fx_test PRIVATE ISF_DIR="${CMAKE_CURRENT_SOURCE_DIR}/isf")
 add_test(NAME fx_test COMMAND fx_test)
 stltvj_ffmpeg_runtime(fx_test)
 

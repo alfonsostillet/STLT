@@ -42,3 +42,10 @@ Correzioni già fatte e verificate dai test automatici, da provare sul PC vero p
 - [ ] **Take**: con il timecode che arriva, sposta la testina dove deve partire lo show e premi *Take*: da lì in poi la timeline segue con quell'inizio.
 - [ ] **Freewheel**: scollegando il cavo (o fermando l'invio) per un attimo, la timeline deve andare avanti per il tempo scelto e poi fermarsi.
 - [ ] Durante la riproduzione della timeline Ctrl+Z non deve più far tornare indietro la testina (prima ogni due secondi c'era un passo di annullamento finto).
+
+## Effetti ISF (nuovo)
+
+- [ ] Nel pannello *Effects* c'è la sezione **ISF** con circa 200 effetti divisi per categoria (Blur, Color, Glitch, Halftone, Distortion, Kaleidoscope, Feedback...); nella scheda *Sources* le sorgenti ISF (gradienti, pattern, rumore, forme). Trascinane qualcuno su clip, layer e composizione: devono funzionare come gli altri effetti, con i loro parametri (colori con il selettore colore, punti con X e Y, menu), animabili e mappabili.
+- [ ] Prova soprattutto quelli **Feedback** e **Glitch** (usano più passaggi e buffer): per esempio *Echo Trace*, *Comet Tails*, *RGB Trails 3.0*, *Time Glitch RGB*, *Slit Scan*.
+- [ ] Un progetto salvato con effetti ISF si riapre con gli stessi effetti e valori.
+- [ ] Se hai altri shader ISF (per esempio da VDMX o scaricati), mettili in `C:\ProgramData\ISF` o nella cartella `isf` delle impostazioni di STLT-VJ: devono comparire dopo il riavvio.

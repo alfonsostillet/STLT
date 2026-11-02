@@ -3,6 +3,7 @@
 #include <string>
 #include <vector>
 #include "fx/Effect.h"
+#include "fx/Isf.h"
 
 namespace stltvj
 {
@@ -20,6 +21,8 @@ public:
 		std::string description;
 		bool source = false;
 		std::shared_ptr< FfglLibrary > library; // FFGL only
+		std::shared_ptr< const IsfShader > isf;  // ISF only
+		std::string category;                    // ISF: its first category ("Blur", "Glitch"...)
 	};
 	struct Failure
 	{
@@ -30,8 +33,8 @@ public:
 	EffectRegistry();
 	~EffectRegistry();
 
-	// Loads the FFGL plugins in these folders (and their subfolders). Already loaded files are kept;
-	// plugins are never unloaded while the app runs. Needs the main OpenGL context current.
+	// Loads the FFGL plugins and ISF shaders (.fs) in these folders (and their subfolders). Already loaded files
+	// are kept; plugins are never unloaded while the app runs. Needs the main OpenGL context current.
 	void Scan( const std::vector< std::string >& folders );
 	const std::vector< Entry >& Entries() const { return entries; }
 	const std::vector< Failure >& Failures() const { return failures; }
@@ -42,12 +45,14 @@ public:
 	void Restore( EffectSlot& slot ) const;
 	void Restore( EffectChain& chain ) const;
 
-	// The folders scanned by default: the app's own plugin folder and Resolume's Extra Effects folders.
+	// The folders scanned by default: the app's own plugin and ISF folders, the system's ISF folder (shared with
+	// VDMX and other ISF hosts) and Resolume's Extra Effects folders.
 	static std::vector< std::string > DefaultFolders( const std::string& configDir );
 
 private:
 	void ScanFolder( const std::string& folder, int depth );
 	void Add( const std::string& path );
+	void AddIsf( const std::string& path );
 
 	std::vector< Entry > entries;
 	std::vector< Failure > failures;

@@ -176,6 +176,27 @@ else:
         sender.join()
     expect("Timecode (Art-Net)", image, [(960, 540, (0, 255, 0))], 12)
 
+# ISF shaders, when they come with the program: every one builds and runs, and two of them on the green clip draw
+# what they should (Color Invert: magenta; Fast Blur, in several passes: green still).
+isf = os.path.join(os.path.dirname(os.path.abspath(EXE)), "isf")
+if os.path.isdir(isf):
+    home = tempfile.mkdtemp(prefix="stltvj-smoke-isf-")
+    env = dict(os.environ, STLTVJ_NO_AUDIO="1", APPDATA=home, HOME=home, XDG_CONFIG_HOME=home, GALLIUM_DRIVER="llvmpipe")
+    try:
+        result = subprocess.run([EXE, "--fresh", "--size", "640x360", "--check-isf"], env=env, capture_output=True, text=True, timeout=600)
+        output = result.stdout + result.stderr
+        summary = [line for line in output.splitlines() if "ISF shaders checked" in line]
+        checked = int(summary[-1].split()[0]) if summary else 0
+        if result.returncode != 0 or checked < 150:
+            failed = [line for line in output.splitlines() if line.startswith("FAILED")]
+            failures.append(f"ISF: {summary[-1] if summary else 'no summary'}\n" + "\n".join(failed[:20]) + ("" if failed else output[-2000:]))
+    except subprocess.TimeoutExpired:
+        failures.append("ISF: --check-isf did not finish")
+    image, _ = run("ISF Color Invert", clip("green_hap.mov") + ["--fx", "comp=isf:Color Invert"])
+    expect("ISF Color Invert", image, [(960, 540, (255, 0, 255))], 12)
+    image, _ = run("ISF Fast Blur", clip("green_hap.mov") + ["--fx", "comp=isf:Fast Blur"])
+    expect("ISF Fast Blur", image, [(960, 540, (0, 255, 0))], 12)
+
 # STLT-CHASER's effects, when they come with the program: listed, and running on the composition.
 plugins = os.path.join(os.path.dirname(os.path.abspath(EXE)), "plugins")
 if os.path.isdir(plugins):

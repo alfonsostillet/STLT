@@ -5,6 +5,7 @@
 #include "Settings.h"
 #include "fx/BuiltinEffects.h"
 #include "fx/FfglPlugin.h"
+#include "fx/IsfEffect.h"
 
 namespace fs = std::filesystem;
 
@@ -51,6 +52,19 @@ std::vector< std::string > EffectRegistry::DefaultFolders( const std::string& co
 	folders.push_back( ( here / "plugins" ).u8string() );
 #endif
 	folders.push_back( ( fs::u8path( configDir ) / "plugins" ).u8string() );
+	// ISF shaders: those that come with STLT-VJ, the user's own, and the system's ISF folder.
+#if defined( __APPLE__ )
+	folders.push_back( ( here.parent_path() / "Resources" / "isf" ).u8string() );
+#else
+	folders.push_back( ( here / "isf" ).u8string() );
+#endif
+	folders.push_back( ( fs::u8path( configDir ) / "isf" ).u8string() );
+#if defined( _WIN32 )
+	folders.push_back( "C:/ProgramData/ISF" );
+#elif defined( __APPLE__ )
+	folders.push_back( "/Library/Graphics/ISF" );
+	folders.push_back( ( fs::u8path( HomeDirectory() ) / "Library" / "Graphics" / "ISF" ).u8string() );
+#endif
 	fs::path documents = fs::u8path( DocumentsDirectory() );
 	// Plugins installed for Resolume, such as STLT-CHASER, work here too.
 	folders.push_back( ( documents / "Resolume Arena" / "Extra Effects" ).u8string() );
@@ -63,11 +77,16 @@ void EffectRegistry::Scan( const std::vector< std::string >& folders )
 	failures.clear();
 	for( const std::string& folder : folders )
 		ScanFolder( folder, 0 );
-	std::stable_sort( entries.begin(), entries.end(), []( const Entry& a, const Entry& b ) {
-		bool builtinA = !a.library, builtinB = !b.library;
-		if( builtinA != builtinB )
-			return builtinA;
-		return builtinA ? false : a.name < b.name;
+	// Built-in first (in their own order), then ISF by category and name, then FFGL by name.
+	auto rank = []( const Entry& e ) { return e.library ? 2 : e.isf ? 1 : 0; };
+	std::stable_sort( entries.begin(), entries.end(), [ & ]( const Entry& a, const Entry& b ) {
+		if( rank( a ) != rank( b ) )
+			return rank( a ) < rank( b );
+		if( rank( a ) == 0 )
+			return false;
+		if( a.category != b.category )
+			return a.category < b.category;
+		return a.name < b.name;
 	} );
 }
 
@@ -85,6 +104,8 @@ void EffectRegistry::ScanFolder( const std::string& folder, int depth )
 		std::error_code ignored;
 		if( IsPluginFile( child ) )
 			Add( child.u8string() );
+		else if( child.extension() == ".fs" )
+			AddIsf( child.u8string() );
 		else if( fs::is_directory( child, ignored ) )
 			ScanFolder( child.u8string(), depth + 1 );
 	}
@@ -117,6 +138,48 @@ void EffectRegistry::Add( const std::string& path )
 	entries.push_back( e );
 }
 
+void EffectRegistry::AddIsf( const std::string& path )
+{
+	if( std::find( loadedPaths.begin(), loadedPaths.end(), path ) != loadedPaths.end() )
+		return;
+	loadedPaths.push_back( path );
+	std::string fragment, vs, error;
+	fs::path file = fs::u8path( path );
+	if( !ReadTextFile( path, fragment ) )
+	{
+		failures.push_back( { path, "cannot be read" } );
+		return;
+	}
+	fs::path vertex = file;
+	vertex.replace_extension( ".vs" );
+	ReadTextFile( vertex.u8string(), vs ); // its own vertex stage, when it has one
+	auto shader = std::make_shared< IsfShader >();
+	if( !ParseIsf( file.stem().u8string(), fragment, vs, *shader, error ) )
+	{
+		failures.push_back( { path, error } );
+		return;
+	}
+	if( shader->usesImports || shader->usesAudio )
+	{
+		failures.push_back( { path, shader->usesImports ? "needs images of its own (not supported yet)" : "needs the sound as a texture (not supported yet)" } );
+		return;
+	}
+	Entry e;
+	e.id          = "isf:" + shader->name;
+	e.name        = shader->name;
+	e.origin      = path;
+	e.description = shader->description;
+	e.source      = shader->source;
+	e.category    = shader->categories.empty() ? "Other" : shader->categories[ 0 ];
+	e.isf         = shader;
+	if( Find( e.id ) )
+	{
+		failures.push_back( { path, "same name as " + Find( e.id )->origin + " (skipped)" } );
+		return;
+	}
+	entries.push_back( e );
+}
+
 const EffectRegistry::Entry* EffectRegistry::Find( const std::string& id ) const
 {
 	for( const Entry& e : entries )
@@ -132,6 +195,8 @@ std::unique_ptr< Effect > EffectRegistry::Create( const std::string& id ) const
 		return nullptr;
 	if( e->library )
 		return std::make_unique< FfglEffect >( e->library );
+	if( e->isf )
+		return CreateIsfEffect( e->isf, e->id );
 	return CreateBuiltin( e->name );
 }
 

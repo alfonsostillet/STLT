@@ -582,20 +582,41 @@ void DrawEffectChain( App& app, EffectChain& chain, const char* id, const std::s
 	ImGui::SetNextItemWidth( Ui( 104 ) );
 	if( ImGui::BeginCombo( "##add", "Add Effect", ImGuiComboFlags_HeightLarge ) )
 	{
-		std::string origin;
+		std::string origin, category;
+		bool menuOpen = false;
 		for( const EffectRegistry::Entry& e : app.registry->Entries() )
 		{
 			if( e.source )
 				continue;
-			std::string group = e.library ? "FFGL" : "Built-in";
+			std::string group = e.isf ? "ISF" : e.library ? "FFGL" : "Built-in";
 			if( group != origin )
 			{
+				if( menuOpen )
+					ImGui::EndMenu();
+				menuOpen = false;
+				category.clear();
 				ImGui::SeparatorText( group.c_str() );
 				origin = group;
+			}
+			if( e.isf )
+			{
+				// ISF: a menu per category.
+				if( e.category != category || category.empty() )
+				{
+					if( menuOpen )
+						ImGui::EndMenu();
+					category = e.category;
+					menuOpen = ImGui::BeginMenu( ( category + "##isfAdd" ).c_str() );
+				}
+				if( menuOpen && ImGui::MenuItem( e.name.c_str() ) )
+					insertId = e.id;
+				continue;
 			}
 			if( ImGui::Selectable( e.name.c_str() ) )
 				insertId = e.id;
 		}
+		if( menuOpen )
+			ImGui::EndMenu();
 		ImGui::EndCombo();
 	}
 
@@ -614,7 +635,7 @@ void DrawEffectChain( App& app, EffectChain& chain, const char* id, const std::s
 
 void DrawPluginFolders( App& app )
 {
-	ImGui::TextWrapped( "FFGL 2 plugins (.dll on Windows, .bundle on macOS) are loaded from these folders and their subfolders." );
+	ImGui::TextWrapped( "FFGL 2 plugins (.dll on Windows, .bundle on macOS) and ISF shaders (.fs, with their .vs) are loaded from these folders and their subfolders." );
 	std::vector< std::string > defaults = EffectRegistry::DefaultFolders( app.configDir );
 	std::string remove;
 	for( const std::string& folder : app.PluginFolders() )
@@ -637,7 +658,7 @@ void DrawPluginFolders( App& app )
 		app.RemovePluginFolder( remove );
 	static std::string newFolder;
 	ImGui::SetNextItemWidth( -Ui( 120 ) );
-	ImGui::InputTextWithHint( "##newFolder", "another folder with FFGL plugins", &newFolder );
+	ImGui::InputTextWithHint( "##newFolder", "another folder with FFGL plugins or ISF shaders", &newFolder );
 	ImGui::SameLine();
 	if( ImGui::Button( "Add Folder" ) && !newFolder.empty() )
 	{
@@ -701,20 +722,38 @@ void DrawEffectsPanel( App& app )
 	ImGui::InputTextWithHint( "##search", "Search", &search );
 	ImGui::BeginChild( "##list" );
 	std::string needle = Lower( search );
-	std::string group;
+	std::string group, category;
+	bool categoryOpen = true, inCategory = false;
 	int shown = 0;
 	for( const EffectRegistry::Entry& e : app.registry->Entries() )
 	{
 		if( e.source != ( tab == 1 ) )
 			continue;
-		if( !needle.empty() && Lower( e.name ).find( needle ) == std::string::npos )
+		if( !needle.empty() && Lower( e.name ).find( needle ) == std::string::npos && Lower( e.category ).find( needle ) == std::string::npos )
 			continue;
-		std::string g = e.library ? "FFGL" : "Built-in";
+		std::string g = e.isf ? "ISF" : e.library ? "FFGL" : "Built-in";
 		if( g != group )
 		{
+			if( inCategory && categoryOpen )
+				ImGui::TreePop();
+			inCategory = false;
 			ImGui::SeparatorText( g.c_str() );
 			group = g;
+			category.clear();
 		}
+		// ISF shaders fold by category (all open while searching).
+		if( e.isf && ( !inCategory || e.category != category ) )
+		{
+			if( inCategory && categoryOpen )
+				ImGui::TreePop();
+			category   = e.category;
+			inCategory = true;
+			if( !needle.empty() )
+				ImGui::SetNextItemOpen( true, ImGuiCond_Always );
+			categoryOpen = ImGui::TreeNodeEx( ( category + "##isf" ).c_str(), ImGuiTreeNodeFlags_SpanAvailWidth );
+		}
+		if( e.isf && !categoryOpen )
+			continue;
 		ImGui::PushID( e.id.c_str() );
 		if( ImGui::Selectable( e.name.c_str(), false, ImGuiSelectableFlags_AllowDoubleClick ) && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
 		{
@@ -736,6 +775,8 @@ void DrawEffectsPanel( App& app )
 			ImGui::TextDisabled( "%s", ShortOrigin( e.origin ).c_str() );
 			if( !e.description.empty() )
 				ImGui::TextWrapped( "%s", e.description.c_str() );
+			if( e.isf && !e.isf->credit.empty() )
+				ImGui::TextDisabled( "%s", e.isf->credit.c_str() );
 			ImGui::TextDisabled( e.source ? "Drag onto an empty clip cell, or double-click to put it in the selected cell."
 			                              : "Drag onto a clip, a layer, the composition monitor or an effects list. Double-click adds it to the selected clip." );
 			ImGui::EndTooltip();
@@ -749,6 +790,8 @@ void DrawEffectsPanel( App& app )
 		ImGui::PopID();
 		++shown;
 	}
+	if( inCategory && categoryOpen )
+		ImGui::TreePop();
 	if( !shown )
 		ImGui::TextDisabled( search.empty() ? "Nothing here yet." : "No match." );
 	ImGui::EndChild();
