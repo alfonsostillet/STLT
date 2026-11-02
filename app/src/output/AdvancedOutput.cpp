@@ -650,6 +650,45 @@ Slice AdvancedOutputSetup::MakePolygon( const std::string& name, float cw, float
 	return s;
 }
 
+Slice AdvancedOutputSetup::MakeRegularPolygon( const std::string& name, int sides, float cw, float ch, float sw, float sh )
+{
+	sides = std::clamp( sides, 3, 256 );
+	Slice s;
+	s.name    = name;
+	s.polygon = true;
+	float r   = 0.3f * std::min( cw, ch );
+	// A point at the top for odd counts; a flat top edge for even ones (a square stands straight).
+	float start = -3.14159265f / 2 - ( sides % 2 == 0 ? 3.14159265f / sides : 0.0f );
+	for( int i = 0; i < sides; ++i )
+	{
+		float a = start + 2 * 3.14159265f * i / sides;
+		s.input.push_back( { cw / 2 + r * std::cos( a ), ch / 2 + r * std::sin( a ) } );
+	}
+	s.MatchOutputToInput( cw, ch, sw, sh );
+	return s;
+}
+
+Slice AdvancedOutputSetup::MakePolygonFrom( const std::string& name, const std::vector< Vec2 >& points, bool onOutput, float cw, float ch, float sw,
+                                            float sh )
+{
+	Slice s;
+	s.name    = name;
+	s.polygon = true;
+	if( onOutput )
+	{
+		s.output = points;
+		float sx = cw / std::max( sw, 1.0f ), sy = ch / std::max( sh, 1.0f );
+		for( Vec2 p : points )
+			s.input.push_back( { p.x * sx, p.y * sy } );
+	}
+	else
+	{
+		s.input = points;
+		s.MatchOutputToInput( cw, ch, sw, sh );
+	}
+	return s;
+}
+
 Slice AdvancedOutputSetup::MakeMask( const std::string& name, float sw, float sh, bool ellipse )
 {
 	Slice s;

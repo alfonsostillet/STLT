@@ -93,6 +93,11 @@ struct Editor
 	Vec2 snapAt;
 
 	std::string presetName;
+
+	// Drawing a new polygon point by point (+ Polygon > Draw): on this screen and tab, the points so far.
+	bool drawing   = false;
+	int drawScreen = -1, drawTab = InputTab;
+	std::vector< Vec2 > drawPoints;
 };
 
 Editor editor;
@@ -286,10 +291,36 @@ void DrawList( App& app )
 	}
 	ImGui::SameLine();
 	if( ImGui::Button( "+ Polygon" ) && haveScreen )
+		ImGui::OpenPopup( "##newPolygon" );
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "Any shape of the composition, point by point: draw it, or start from a regular shape" );
+	if( ImGui::BeginPopup( "##newPolygon" ) )
 	{
-		Screen& s = setup.screens[ editor.screen ];
-		s.slices.push_back( AdvancedOutputSetup::MakePolygon( UniqueName( s.slices, "Polygon" ), cw, ch, (float)s.width, (float)s.height ) );
-		editor.slice = (int)s.slices.size() - 1;
+		if( ImGui::MenuItem( "Draw..." ) && haveScreen )
+		{
+			editor.drawing    = true;
+			editor.drawScreen = editor.screen;
+			editor.drawTab    = editor.tab;
+			editor.drawPoints.clear();
+		}
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "Click the points on the canvas (Input or Output tab); click the first point, double-click or press "
+			                   "Enter to close it" );
+		ImGui::Separator();
+		struct Shape
+		{
+			const char* name;
+			int sides;
+		};
+		for( Shape shape : { Shape{ "Triangle", 3 }, Shape{ "Rectangle", 4 }, Shape{ "Pentagon", 5 }, Shape{ "Hexagon", 6 }, Shape{ "Octagon", 8 },
+		                     Shape{ "Circle", 32 } } )
+			if( ImGui::MenuItem( shape.name ) && haveScreen )
+			{
+				Screen& s = setup.screens[ editor.screen ];
+				s.slices.push_back( AdvancedOutputSetup::MakeRegularPolygon( UniqueName( s.slices, "Polygon" ), shape.sides, cw, ch, (float)s.width, (float)s.height ) );
+				editor.slice = (int)s.slices.size() - 1;
+			}
+		ImGui::EndPopup();
 	}
 	if( ImGui::Button( "+ Mask" ) && haveScreen )
 		ImGui::OpenPopup( "##newMask" );
@@ -549,6 +580,98 @@ void TransformPoints( Slice& s, int tab, PointFn point, VectorFn vector )
 		}
 }
 
+// + Polygon > Draw: each click on the canvas is a point; clicking the first point, a double-click or Enter makes the
+// polygon (three points at least); Backspace takes the last point back, Esc or a right-click on no point gives up.
+// Points snap to the other slices as dragged points do. Called with the canvas's clip rectangle pushed; pops it.
+template < typename ToScreen, typename ToContent >
+void DrawPolygonTool( App& app, Screen& screen, ImDrawList* draw, ImVec2 pos, ImVec2 size, ToScreen toScreen, ToContent toContent, float scale,
+                      float W, float H, bool hovered )
+{
+	ImGuiIO& io              = ImGui::GetIO();
+	std::vector< Vec2 >& pts = editor.drawPoints;
+	Vec2 mouse               = Snap( toContent( io.MousePos ), screen, editor.drawTab, -1, W, H, Ui( 8 ) / scale );
+	const ImU32 amber        = IM_COL32( 255, 190, 70, 255 ), black = IM_COL32( 0, 0, 0, 255 );
+	float radius             = Ui( 4.5f );
+	auto near                = [ & ]( Vec2 p ) {
+        ImVec2 a = toScreen( p );
+        return ( io.MousePos.x - a.x ) * ( io.MousePos.x - a.x ) + ( io.MousePos.y - a.y ) * ( io.MousePos.y - a.y ) < radius * radius * 4;
+	};
+	bool closable = pts.size() >= 3 && near( pts[ 0 ] );
+
+	// What is drawn so far, the next edge to the mouse, and the closing edge when it would close.
+	for( size_t i = 1; i < pts.size(); ++i )
+		draw->AddLine( toScreen( pts[ i - 1 ] ), toScreen( pts[ i ] ), amber, Ui( 2 ) );
+	if( !pts.empty() && hovered )
+	{
+		draw->AddLine( toScreen( pts.back() ), toScreen( closable ? pts[ 0 ] : mouse ), IM_COL32( 255, 190, 70, 150 ), Ui( 1.5f ) );
+		if( pts.size() >= 2 && !closable )
+			draw->AddLine( toScreen( mouse ), toScreen( pts[ 0 ] ), IM_COL32( 255, 190, 70, 60 ), Ui( 1 ) );
+	}
+	for( size_t i = 0; i < pts.size(); ++i )
+	{
+		ImVec2 p  = toScreen( pts[ i ] );
+		float r   = i == 0 && closable ? radius * 1.6f : radius;
+		draw->AddRectFilled( ImVec2( p.x - r, p.y - r ), ImVec2( p.x + r, p.y + r ), i == 0 ? IM_COL32( 255, 255, 255, 255 ) : amber );
+		draw->AddRect( ImVec2( p.x - r, p.y - r ), ImVec2( p.x + r, p.y + r ), black );
+	}
+	if( hovered && !closable )
+		draw->AddCircle( toScreen( mouse ), radius, amber, 0, Ui( 1.5f ) );
+	if( editor.snappedX || editor.snappedY )
+	{
+		ImVec2 p = toScreen( editor.snapAt );
+		if( editor.snappedX )
+			draw->AddLine( ImVec2( p.x, pos.y ), ImVec2( p.x, pos.y + size.y ), IM_COL32( 255, 200, 80, 160 ) );
+		if( editor.snappedY )
+			draw->AddLine( ImVec2( pos.x, p.y ), ImVec2( pos.x + size.x, p.y ), IM_COL32( 255, 200, 80, 160 ) );
+	}
+	// How it works, along the top of the canvas.
+	char hint[ 256 ];
+	std::snprintf( hint, sizeof( hint ),
+	               pts.size() < 3 ? "Drawing a polygon: click to place its points (%d so far). Esc: cancel"
+	                              : "Drawing a polygon (%d points): click the first point, double-click or Enter to finish. Backspace: undo point. Esc: cancel",
+	               (int)pts.size() );
+	ImVec2 textSize = ImGui::CalcTextSize( hint );
+	ImVec2 at( pos.x + Ui( 8 ), pos.y + Ui( 8 ) );
+	draw->AddRectFilled( ImVec2( at.x - Ui( 6 ), at.y - Ui( 4 ) ), ImVec2( at.x + textSize.x + Ui( 6 ), at.y + textSize.y + Ui( 4 ) ), IM_COL32( 0, 0, 0, 200 ), Ui( 4 ) );
+	draw->AddText( at, amber, hint );
+	draw->PopClipRect();
+	if( hovered )
+		ImGui::SetMouseCursor( ImGuiMouseCursor_Hand );
+
+	auto finish = [ & ]() {
+		if( pts.size() >= 3 )
+		{
+			Composition& comp = app.composition;
+			screen.slices.push_back( AdvancedOutputSetup::MakePolygonFrom( UniqueName( screen.slices, "Polygon" ), pts, editor.drawTab == OutputTab,
+			                                                               (float)comp.width, (float)comp.height, (float)screen.width, (float)screen.height ) );
+			editor.slice = (int)screen.slices.size() - 1;
+			editor.point = -1;
+		}
+		editor.drawing = false;
+		pts.clear();
+	};
+	bool clicked = hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && !ImGui::IsKeyDown( ImGuiKey_Space );
+	if( clicked && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
+		finish(); // its first click already placed the last point
+	else if( clicked && closable )
+		finish();
+	else if( clicked )
+	{
+		bool repeat = !pts.empty() && near( pts.back() ); // the same place twice adds nothing
+		if( !repeat )
+			pts.push_back( mouse );
+	}
+	else if( ImGui::IsKeyPressed( ImGuiKey_Enter ) || ImGui::IsKeyPressed( ImGuiKey_KeypadEnter ) )
+		finish();
+	else if( ( ImGui::IsKeyPressed( ImGuiKey_Backspace ) || ImGui::IsKeyPressed( ImGuiKey_Delete ) ) && !pts.empty() )
+		pts.pop_back();
+	else if( ImGui::IsKeyPressed( ImGuiKey_Escape ) || ( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) ) )
+	{
+		editor.drawing = false;
+		pts.clear();
+	}
+}
+
 void DrawCanvas( App& app, Screen& screen )
 {
 	ImGuiIO& io = ImGui::GetIO();
@@ -741,6 +864,15 @@ void DrawCanvas( App& app, Screen& screen )
 		if( editor.snappedY )
 			draw->AddLine( ImVec2( pos.x, p.y ), ImVec2( pos.x + size.x, p.y ), IM_COL32( 255, 200, 80, 160 ) );
 	}
+
+	// A polygon being drawn: on another screen or tab it is given up.
+	if( editor.drawing && ( editor.drawScreen != editor.screen || editor.drawTab != tab ) )
+	{
+		editor.drawing = false;
+		editor.drawPoints.clear();
+	}
+	if( editor.drawing )
+		return DrawPolygonTool( app, screen, draw, pos, size, toScreen, toContent, scale, W, H, hovered );
 	draw->PopClipRect();
 
 	// Picking and dragging.
@@ -1287,6 +1419,17 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 	ImGui::Checkbox( "##enabled", &s.enabled );
 	Row( "Opacity" );
 	SliderPercent( "##opacity", &s.opacity, 0, 1, 1 );
+	if( s.polygon )
+	{
+		Row( "Points" );
+		ImGui::Text( "%d", (int)s.input.size() );
+		ImGui::SameLine();
+		ImGui::TextDisabled( "(?)" );
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "Add a point: double-click the outline, or right-click it > Add Point Here (Input or Output tab).\n"
+			                   "Remove one: select it and press Del, or right-click it > Delete Point.\n"
+			                   "A new shape from scratch: + Polygon > Draw." );
+	}
 
 	if( !s.polygon && s.input.size() == 4 )
 	{

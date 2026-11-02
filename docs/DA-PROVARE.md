@@ -49,3 +49,10 @@ Correzioni già fatte e verificate dai test automatici, da provare sul PC vero p
 - [ ] Prova soprattutto quelli **Feedback** e **Glitch** (usano più passaggi e buffer): per esempio *Echo Trace*, *Comet Tails*, *RGB Trails 3.0*, *Time Glitch RGB*, *Slit Scan*.
 - [ ] Un progetto salvato con effetti ISF si riapre con gli stessi effetti e valori.
 - [ ] Se hai altri shader ISF (per esempio da VDMX o scaricati), mettili in `C:\ProgramData\ISF` o nella cartella `isf` delle impostazioni di STLT-VJ: devono comparire dopo il riavvio.
+
+## Poligoni di qualsiasi forma (nuovo)
+
+- [ ] **+ Polygon → Draw...**: clicca sul canvas (Input o Output) per mettere i punti uno dopo l'altro; per chiudere clicca il primo punto (si ingrandisce quando ci sei sopra), fai doppio clic o premi Invio. Backspace toglie l'ultimo punto, Esc annulla. I punti si agganciano a quelli delle altre slice (Ctrl li lascia liberi).
+- [ ] **+ Polygon → Triangle, Rectangle, Pentagon, Hexagon, Octagon, Circle**: forme pronte da modificare.
+- [ ] Su un poligono già fatto: **doppio clic sul bordo** aggiunge un punto, oppure tasto destro sul bordo → *Add Point Here*; Canc toglie il punto selezionato. Nelle proprietà, *Points* dice quanti sono (il (?) spiega come).
+- [ ] Le forme concave (una stella, una L) devono riempirsi giuste, senza triangoli che escono.

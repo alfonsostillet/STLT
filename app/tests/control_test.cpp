@@ -339,10 +339,20 @@ static void TestLink()
 	a.Update( TempoSync::Now(), bpm, beat );
 	CHECK( std::fabs( bpm - 140 ) < 1e-3 );
 	double before = beat;
-	a.Update( TempoSync::Now() + 0.1, bpm, beat );
-	CHECK( beat >= before && std::fabs( bpm - 140 ) < 1e-3 );
-	a.Resync( TempoSync::Now(), beat );
-	CHECK( std::fabs( beat ) < 0.05 ); // alone: at once
+	std::this_thread::sleep_for( std::chrono::milliseconds( 20 ) );
+	a.Update( TempoSync::Now(), bpm, beat );
+	// Another Link app on the network (a CI machine's neighbour, say) would bring its own tempo and beat: these
+	// checks hold for a session of our own only.
+	if( a.LinkPeers() == 0 )
+	{
+		if( !( beat > before - 1e-9 && std::fabs( bpm - 140 ) < 1e-3 ) )
+			std::fprintf( stderr, "Link alone: beat %.6f after %.6f, bpm %.6f\n", beat, before, bpm );
+		CHECK( beat > before - 1e-9 && std::fabs( bpm - 140 ) < 1e-3 );
+		a.Resync( TempoSync::Now(), beat );
+		CHECK( std::fabs( beat ) < 0.05 ); // alone: at once
+	}
+	else
+		std::printf( "Link: %d other app(s) on this network; the checks for a session alone are skipped\n", a.LinkPeers() );
 
 	TempoSync b;
 	b.EnableLink( true, 120, 0 );

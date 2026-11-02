@@ -21,6 +21,11 @@ static int failures = 0;
 		}                                                                                            \
 	} while( 0 )
 
+static bool Near( float a, float b, float tolerance )
+{
+	return std::fabs( a - b ) < tolerance;
+}
+
 static bool Near( Vec2 a, Vec2 b, float tolerance = 0.01f )
 {
 	return std::fabs( a.x - b.x ) < tolerance && std::fabs( a.y - b.y ) < tolerance;
@@ -435,8 +440,58 @@ static void TestChaserStage()
 	CHECK( LoadAdvancedOutput( SaveAdvancedOutput( setup ), back, error ) && back.screens[ 0 ].slices[ 2 ].id == screen.slices[ 2 ].id );
 }
 
+// Polygons of any shape: regular ones, drawn ones (on either side), and concave ones cut into triangles that cover
+// exactly their area.
+static void TestPolygonShapes()
+{
+	Slice square = AdvancedOutputSetup::MakeRegularPolygon( "S", 4, 1920, 1080, 3840, 2160 );
+	CHECK( square.polygon && square.input.size() == 4 && square.output.size() == 4 );
+	CHECK( Near( square.input[ 0 ].y, square.input[ 1 ].y, 0.01f ) && Near( square.input[ 1 ].x, square.input[ 2 ].x, 0.01f ) ); // standing straight
+	CHECK( Near( square.output[ 2 ].x, square.input[ 2 ].x * 2, 0.01f ) ); // the screen is twice the composition
+	Slice circle = AdvancedOutputSetup::MakeRegularPolygon( "C", 32, 1920, 1080, 1920, 1080 );
+	CHECK( circle.input.size() == 32 );
+	for( Vec2 p : circle.input )
+		CHECK( Near( std::hypot( p.x - 960, p.y - 540 ), 324, 0.05f ) );
+	CHECK( AdvancedOutputSetup::MakeRegularPolygon( "T", 1, 100, 100, 100, 100 ).input.size() == 3 );
+
+	// An L drawn on the output of a 1920x1080 screen over a 960x540 composition.
+	std::vector< Vec2 > l = { { 100, 100 }, { 500, 100 }, { 500, 300 }, { 300, 300 }, { 300, 700 }, { 100, 700 } };
+	Slice drawn           = AdvancedOutputSetup::MakePolygonFrom( "L", l, true, 960, 540, 1920, 1080 );
+	CHECK( drawn.polygon && drawn.output.size() == 6 && drawn.input.size() == 6 );
+	CHECK( Near( drawn.input[ 4 ].x, 150, 0.01f ) && Near( drawn.input[ 4 ].y, 350, 0.01f ) );
+	Slice onInput = AdvancedOutputSetup::MakePolygonFrom( "L", l, false, 960, 540, 1920, 1080 );
+	CHECK( Near( onInput.output[ 4 ].x, 600, 0.01f ) && Near( onInput.input[ 4 ].x, 300, 0.01f ) );
+
+	// Concave shapes (the L, a five-pointed star) cut into n - 2 triangles whose areas add up to the shape's.
+	auto area = []( const std::vector< Vec2 >& p ) {
+		double a = 0;
+		for( size_t i = 0; i < p.size(); ++i )
+		{
+			const Vec2 &u = p[ i ], &v = p[ ( i + 1 ) % p.size() ];
+			a += (double)u.x * v.y - (double)v.x * u.y;
+		}
+		return std::fabs( a ) / 2;
+	};
+	std::vector< Vec2 > star;
+	for( int i = 0; i < 10; ++i )
+	{
+		float r = i % 2 ? 40.0f : 100.0f, a = -1.5707963f + i * 0.62831853f;
+		star.push_back( { 200 + r * std::cos( a ), 200 + r * std::sin( a ) } );
+	}
+	for( const std::vector< Vec2 >& shape : { l, star } )
+	{
+		std::vector< int > t = Triangulate( shape );
+		CHECK( t.size() == ( shape.size() - 2 ) * 3 );
+		double sum = 0;
+		for( size_t k = 0; k + 2 < t.size(); k += 3 )
+			sum += area( { shape[ t[ k ] ], shape[ t[ k + 1 ] ], shape[ t[ k + 2 ] ] } );
+		CHECK( std::fabs( sum - area( shape ) ) < area( shape ) * 1e-4 );
+	}
+}
+
 int main()
 {
+	TestPolygonShapes();
 	TestPerspective();
 	TestDisplayIds();
 	TestChaserStage();

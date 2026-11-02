@@ -154,6 +154,12 @@ struct AdvancedOutputSetup
 	static AdvancedOutputSetup MakeDefault( int compWidth, int compHeight );
 	static Slice MakeSlice( const std::string& name, float compWidth, float compHeight, float screenWidth, float screenHeight );
 	static Slice MakePolygon( const std::string& name, float compWidth, float compHeight, float screenWidth, float screenHeight );
+	// A regular shape of `sides` points (3: triangle, 4: square, many: a circle) in the middle of the composition.
+	static Slice MakeRegularPolygon( const std::string& name, int sides, float compWidth, float compHeight, float screenWidth, float screenHeight );
+	// A polygon through points drawn by hand: in composition pixels (the input), or in screen pixels (the output,
+	// `onOutput`); the other side follows, scaled between composition and screen.
+	static Slice MakePolygonFrom( const std::string& name, const std::vector< Vec2 >& points, bool onOutput, float compWidth, float compHeight,
+	                              float screenWidth, float screenHeight );
 	// A rectangle or an ellipse in the middle of the screen.
 	static Slice MakeMask( const std::string& name, float screenWidth, float screenHeight, bool ellipse );
 	// Gives every slice an id, and a new one to a slice sharing another's (a duplicate); true if any changed.
