@@ -290,14 +290,19 @@ static void DrawOutputModeItems( App& app )
 		}
 		ImGui::EndMenu();
 	}
-	// As Resolume's "Advanced...": shows the Advanced Output setup and opens its editor; chosen again, back to the
-	// mode before. Under it STLT-CHASER's editor, for sequences on the Advanced Output's slices.
-	ImGui::Separator();
-	if( ImGui::MenuItem( "Advanced...", nullptr, app.outputMode == OutputMode::Advanced ) )
+	// Advanced is a mode like the others: chosen, the Advanced Output's screens are on show (chosen again, back to the
+	// mode before). Its settings open apart, without touching what is on show. Under them STLT-CHASER's editor, for
+	// sequences on the Advanced Output's slices.
+	if( ImGui::MenuItem( "Advanced", nullptr, app.outputMode == OutputMode::Advanced ) )
 		app.ToggleAdvancedOutput();
 	if( ImGui::IsItemHovered() )
 		ImGui::SetTooltip( app.outputMode == OutputMode::Advanced ? "Advanced is on: choose it again to go back to the output before it"
-		                                                          : "Screens with slices, warps and masks: opens the Advanced Output editor (Ctrl+Shift+A)" );
+		                                                          : "Show the Advanced Output's screens (slices, warps, masks)" );
+	ImGui::Separator();
+	if( ImGui::MenuItem( "Advanced Output Settings...", "Ctrl+Shift+A", app.panels.advancedOutput ) )
+		app.panels.advancedOutput = true;
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "Opens the Advanced Output editor: screens, slices, warps, masks.\nWhat is on show stays as it is." );
 	if( ImGui::MenuItem( "Chaser..." ) )
 		app.OpenChaser();
 	if( ImGui::IsItemHovered() )
@@ -1207,23 +1212,15 @@ static void DrawDeck( App& app, bool layersPart )
 		std::string generatorId;
 	} pendingLoad;
 
-	// The Layers panel's bar, as high as the deck tabs beside it.
-	if( layersPart )
-	{
-		ImGui::PushStyleVar( ImGuiStyleVar_FramePadding, ImVec2( Ui( 10 ), Ui( 3 ) ) );
-		if( ImGui::Button( "+ Layer" ) )
-			comp.AddLayer();
-		if( ImGui::IsItemHovered() && !app.learning )
-			ImGui::SetTooltip( "New layer, on top" );
-		ImGui::PopStyleVar();
-	}
-	else
-	// Decks, as in Resolume: a tab each (a dot when a clip of it plays while another deck is shown), + adds one.
-	// Double-click or right-click a tab to rename or remove it.
+	// Decks, as in Resolume, under the cells (level with the Layers panel's crossfader): a tab each (a dot when a clip
+	// of it plays while another deck is shown), + adds one. Double-click or right-click a tab to rename or remove it.
+	// The two panels start with the composition's row, so the layers' rows line up across them; + Layer is at the
+	// bottom of the Layers panel.
+	auto deckTabs = [ & ]()
 	{
 		static std::string renameText;
 		static int renaming = -1;
-		ImGui::PushStyleVar( ImGuiStyleVar_FramePadding, ImVec2( Ui( 10 ), Ui( 3 ) ) );
+		ImGui::PushStyleVar( ImGuiStyleVar_FramePadding, ImVec2( Ui( 10 ), Ui( 2 ) ) );
 		for( int d = 0; d < comp.DeckCount(); ++d )
 		{
 			ImGui::PushID( d );
@@ -1291,7 +1288,7 @@ static void DrawDeck( App& app, bool layersPart )
 		if( ImGui::IsItemHovered() && !app.learning )
 			ImGui::SetTooltip( "New deck: another page of clips over the same layers.\nWhat plays keeps playing when you change deck." );
 		ImGui::PopStyleVar();
-	}
+	};
 
 	// Move mode: a banner with what to do, and the box being dragged to pick clips.
 	struct PickBox
@@ -1912,8 +1909,23 @@ static void DrawDeck( App& app, bool layersPart )
 	float bottom = origin.y + headerH + layerCount * ( cellH + gap );
 	if( layersPart )
 		Crossfader( app, ImVec2( stickyX, bottom ), ImVec2( headerW, nameH ) );
+	else
+	{
+		ImGui::SetCursorScreenPos( ImVec2( stickyX + Ui( 2 ), bottom ) );
+		deckTabs();
+	}
 	ImGui::PopStyleVar();
 	ImGui::SetCursorScreenPos( ImVec2( stickyX, bottom + nameH + gap ) );
+	if( layersPart )
+	{
+		ImGui::PushStyleVar( ImGuiStyleVar_FramePadding, ImVec2( Ui( 10 ), ImGui::GetStyle().FramePadding.y ) );
+		if( ImGui::Button( "+ Layer" ) )
+			comp.AddLayer();
+		ImGui::PopStyleVar();
+		if( ImGui::IsItemHovered() && !app.learning )
+			ImGui::SetTooltip( "New layer, on top" );
+		ImGui::SameLine();
+	}
 	ImGui::AlignTextToFramePadding();
 	if( layersPart )
 		ImGui::TextDisabled( "Click a layer to select it; drop effects on its name." );

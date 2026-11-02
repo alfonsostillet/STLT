@@ -57,6 +57,13 @@ Correzioni già fatte e verificate dai test automatici, da provare sul PC vero p
 - [ ] Su un poligono già fatto: **doppio clic sul bordo** aggiunge un punto, oppure tasto destro sul bordo → *Add Point Here*; Canc toglie il punto selezionato. Nelle proprietà, *Points* dice quanti sono (il (?) spiega come).
 - [ ] Le forme concave (una stella, una L) devono riempirsi giuste, senza triangoli che escono.
 
+## Ritocchi veloci (nuovo)
+
+- [ ] Menu **Output**: *Advanced* accende/spegne solo l'uscita Advanced; **Advanced Output Settings...** (Ctrl+Shift+A) apre l'editor senza toccare l'uscita. Apri e chiudi l'editor più volte: l'uscita non si spegne.
+- [ ] Le schede **Deck 1, Deck 2, +** sono sotto le celle, alla stessa altezza del crossfader; *+ Layer* è in fondo al pannello Layers.
+- [ ] **Separatori**: tra i pannelli c'è uno stacco scuro (si illumina quando ci passi sopra per trascinarlo), niente linee sotto le schede, niente X a destra di ogni barra; la X di una scheda appare solo passandoci sopra.
+- [ ] **STLT-CHASER**: con sequenze scritte nell'editor, nel gruppo *Sequences* c'è un pulsante per ogni sequenza col suo nome; quella che suona ha ▶ ed è evidenziata. Ctrl+M, clicca un pulsante e premi un pad: il pad cambia sequenza. Senza sequenze resta il menu con "open the editor".
+
 ## Griglia e Timeline separate, tracce sugli schermi, Multiview (nuovo)
 
 - [ ] **Advanced Output**: in alto le schede **Grid** e **Timeline**, due configurazioni diverse. Quella della vista in uso dice *(on show)*; passando da griglia a timeline (o con Tab) cambia anche l'uscita. Si può modificare anche quella non in uscita: in basso lo dice, con un pulsante per andarci.

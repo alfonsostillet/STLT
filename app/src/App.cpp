@@ -1,6 +1,7 @@
 #include "App.h"
 #include <GLFW/glfw3.h>
 #include <imgui.h>
+#include <imgui_internal.h> // ImGuiDockNodeFlags_NoCloseButton
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 #include <algorithm>
@@ -285,6 +286,7 @@ bool App::Init( const LaunchOptions& launch )
 		LoadGenerator( source.layer - 1, source.column - 1, source.path );
 		Launch( source.layer - 1, source.column - 1, true );
 	}
+	outputTab = view == View::Arrangement ? 1 : 0; // the editor (and a Resolume import) on the setup of the view in use
 	if( !options.outputSetup.empty() )
 	{
 		std::string text, setupError;
@@ -316,7 +318,6 @@ bool App::Init( const LaunchOptions& launch )
 			std::fprintf( stderr, "Ignoring --fx %s=%s\n", fx.scope.c_str(), fx.id.c_str() );
 	}
 	lastTime = startTime = glfwGetTime();
-	outputTab            = view == View::Arrangement ? 1 : 0;
 	savedOutput          = OutputText();
 	history.Reset( Snapshot() );
 	return true;
@@ -1960,14 +1961,11 @@ void App::RevertOutputSetup()
 
 void App::ToggleAdvancedOutput()
 {
+	// The mode only: the editor opens on its own (Output > Advanced Output Settings..., Ctrl+Shift+A).
 	if( outputMode == OutputMode::Advanced )
-	{
 		SetOutputMode( beforeAdvanced, outputDisplay );
-		panels.advancedOutput = false;
-		return;
-	}
-	SetOutputMode( OutputMode::Advanced );
-	panels.advancedOutput = true;
+	else
+		SetOutputMode( OutputMode::Advanced );
 }
 
 void App::SetOutputMode( OutputMode mode, const std::string& display )
@@ -2768,7 +2766,10 @@ void App::DrawUi()
 	ImGui::PushStyleVar( ImGuiStyleVar_WindowRounding, 0 );
 	ImGui::PushStyleVar( ImGuiStyleVar_WindowBorderSize, 0 );
 	ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( 0, 0 ) );
+	// The darker background the docked panels sit on: it shows in the gutters between them.
+	ImGui::PushStyleColor( ImGuiCol_WindowBg, ImGui::ColorConvertU32ToFloat4( theme::Base ) );
 	ImGui::Begin( "##Host", nullptr, hostFlags );
+	ImGui::PopStyleColor();
 	ImGui::PopStyleVar( 3 );
 
 	DrawMainMenu( *this );
@@ -2781,7 +2782,8 @@ void App::DrawUi()
 	dockSize.y -= statusHeight;
 	ImGuiID dockspace = ImGui::GetID( "MainDock" );
 	workspaces.BuildDefaultIfNeeded( dockspace, dockSize );
-	ImGui::DockSpace( dockspace, dockSize, ImGuiDockNodeFlags_None );
+	// No close button at the right of each tab bar: a panel's own tab closes it (its X shows on the chosen tab).
+	ImGui::DockSpace( dockspace, dockSize, (ImGuiDockNodeFlags)ImGuiDockNodeFlags_NoCloseButton );
 	DrawStatusBar( *this );
 	ImGui::End();
 

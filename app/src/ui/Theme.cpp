@@ -1,4 +1,5 @@
 #include "Theme.h"
+#include <cfloat>
 #include <cstddef>
 
 namespace stltvj
@@ -59,12 +60,12 @@ void ApplyTheme( float scale )
 	style.IndentSpacing            = 14;
 	style.ScrollbarSize            = 10;
 	style.GrabMinSize              = 10;
-	style.WindowBorderSize         = 1;
+	style.WindowBorderSize         = 0; // panels are told apart by the gutters between them, not by lines
 	style.ChildBorderSize          = 0;
 	style.PopupBorderSize          = 1;
 	style.FrameBorderSize          = 0;
 	style.TabBorderSize            = 0;
-	style.TabBarBorderSize         = 1;
+	style.TabBarBorderSize         = 0; // no line under the tabs: the chosen tab joins its panel
 	style.TabBarOverlineSize       = 2;
 	style.WindowRounding           = 8;
 	style.ChildRounding            = 6;
@@ -78,7 +79,11 @@ void ApplyTheme( float scale )
 	style.SeparatorTextBorderSize  = 1;
 	style.SeparatorTextPadding     = ImVec2( 0, 6 );
 	style.SeparatorTextAlign       = ImVec2( 0, 0.5f );
-	style.DockingSeparatorSize     = 2;
+	// Docked panels as cards on the darker background: a gutter between them (it lights up to be dragged), no lines.
+	style.DockingSeparatorSize     = 5;
+	// A tab's close button only on the chosen tab, when the mouse is over it.
+	style.TabCloseButtonMinWidthSelected   = 0;
+	style.TabCloseButtonMinWidthUnselected = FLT_MAX;
 	style.DisabledAlpha            = 0.45f;
 
 	ImVec4* c                               = style.Colors;
@@ -109,7 +114,7 @@ void ApplyTheme( float scale )
 	c[ ImGuiCol_Header ]                    = Rgb( 255, 255, 255, 0.05f );
 	c[ ImGuiCol_HeaderHovered ]             = Rgb( 255, 255, 255, 0.08f );
 	c[ ImGuiCol_HeaderActive ]              = Color( theme::AccentFill );
-	c[ ImGuiCol_Separator ]                 = Color( theme::Line );
+	c[ ImGuiCol_Separator ]                 = Color( theme::Base ); // the gutter between docked panels (and Separator lines)
 	c[ ImGuiCol_SeparatorHovered ]          = Color( theme::Accent, 0.6f );
 	c[ ImGuiCol_SeparatorActive ]           = Color( theme::Accent );
 	c[ ImGuiCol_ResizeGrip ]                = Rgb( 0, 0, 0, 0 );
@@ -117,11 +122,11 @@ void ApplyTheme( float scale )
 	c[ ImGuiCol_ResizeGripActive ]          = Color( theme::Accent );
 	c[ ImGuiCol_Tab ]                       = Rgb( 0, 0, 0, 0 );
 	c[ ImGuiCol_TabHovered ]                = Color( theme::RaisedHover );
-	c[ ImGuiCol_TabSelected ]               = Color( theme::Raised );
+	c[ ImGuiCol_TabSelected ]               = Color( theme::Panel ); // the tab joins its panel, like a folder's
 	c[ ImGuiCol_TabSelectedOverline ]       = Color( theme::Accent );
 	c[ ImGuiCol_TabDimmed ]                 = Rgb( 0, 0, 0, 0 );
-	c[ ImGuiCol_TabDimmedSelected ]         = Rgb( 26, 29, 34 );
-	c[ ImGuiCol_TabDimmedSelectedOverline ] = Rgb( 255, 255, 255, 0.15f );
+	c[ ImGuiCol_TabDimmedSelected ]         = Color( theme::Panel );
+	c[ ImGuiCol_TabDimmedSelectedOverline ] = Rgb( 0, 0, 0, 0 ); // the accent line only on the panel in use
 	c[ ImGuiCol_DockingPreview ]            = Color( theme::Accent, 0.35f );
 	c[ ImGuiCol_DockingEmptyBg ]            = Color( theme::Base );
 	c[ ImGuiCol_PlotLines ]                 = Color( theme::Accent );

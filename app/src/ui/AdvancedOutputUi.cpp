@@ -1681,6 +1681,9 @@ void SendTrackTo( App& app, int track, int screen )
 	std::vector< TimelineTrack >& tracks = app.composition.timeline.tracks;
 	if( track < 0 || track >= (int)tracks.size() )
 		return;
+	// Choosing a track's screen is a choice of its own (it may give a screen its picture): saved at once, unless the
+	// editor holds unsaved edits.
+	bool clean = !app.OutputUnsaved();
 	std::string before = tracks[ track ].output;
 	tracks[ track ].output = screen >= 0 && screen < (int)setup.screens.size()
 	                             ? setup.MakeScreenPicture( (size_t)screen, app.composition.width, app.composition.height )
@@ -1689,6 +1692,8 @@ void SendTrackTo( App& app, int track, int screen )
 	if( !before.empty() && before != tracks[ track ].output && setup.ScreenOfPicture( before ) >= 0
 	    && std::none_of( tracks.begin(), tracks.end(), [ & ]( const TimelineTrack& t ) { return t.output == before; } ) )
 		setup.RemoveCanvas( before, app.composition.width, app.composition.height );
+	if( clean && app.OutputUnsaved() )
+		app.SaveOutputSetup();
 }
 
 int TrackScreen( const App& app, int track )

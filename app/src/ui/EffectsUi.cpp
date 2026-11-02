@@ -408,9 +408,15 @@ void DrawEffectParams( Effect& effect )
 		const ParamInfo& p = params[ i ];
 		if( p.group != group )
 		{
-			// Consecutive parameters with the same group fold together (FFGL 2.2 groups).
-			group = p.group;
-			if( !group.empty() )
+			// Consecutive parameters with the same group fold together (FFGL 2.2 groups); a group with nothing to
+			// show (STLT-CHASER's sequence buttons before there are sequences) has no header either.
+			group           = p.group;
+			bool anyVisible = false;
+			for( int k = i; k < (int)params.size() && params[ k ].group == group && !anyVisible; ++k )
+				anyVisible = params[ k ].visible;
+			if( !group.empty() && !anyVisible )
+				groupOpen = false;
+			else if( !group.empty() )
 			{
 				ImGui::TableNextRow();
 				ImGui::TableSetColumnIndex( 0 );
@@ -427,6 +433,51 @@ void DrawEffectParams( Effect& effect )
 		if( !p.visible || !groupOpen )
 		{
 			++i;
+			continue;
+		}
+		if( p.kind == ParamKind::Event )
+		{
+			// Buttons in a row, wrapping, as long as they follow each other in the same group (STLT-CHASER's
+			// sequences): each one mappable to a key or a MIDI pad. One whose name starts with ▶ is the one in use.
+			bool anyVisible = false;
+			for( int k = i; k < (int)params.size() && params[ k ].kind == ParamKind::Event && params[ k ].group == group && !anyVisible; ++k )
+				anyVisible = params[ k ].visible;
+			if( anyVisible )
+			{
+				ImGui::TableNextRow();
+				ImGui::TableSetColumnIndex( 1 );
+			}
+			float right = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+			bool first  = true;
+			for( ; i < (int)params.size() && params[ i ].kind == ParamKind::Event && params[ i ].group == group; ++i )
+			{
+				const ParamInfo& e = params[ i ];
+				if( !e.visible )
+					continue;
+				ImVec2 size = ImGui::CalcTextSize( e.displayName.c_str() );
+				float width = size.x + ImGui::GetStyle().FramePadding.x * 2;
+				if( !first )
+				{
+					ImGui::SameLine( 0, Ui( 4 ) );
+					if( ImGui::GetCursorScreenPos().x + width > right )
+						ImGui::NewLine();
+				}
+				first     = false;
+				bool used = e.displayName.rfind( "\xe2\x96\xb6", 0 ) == 0;
+				if( used )
+				{
+					ImGui::PushStyleColor( ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4( theme::Accent ) );
+					ImGui::PushStyleColor( ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4( theme::OnAccent ) );
+				}
+				ImGui::PushID( i );
+				if( ImGui::Button( e.displayName.c_str() ) )
+					effect.Trigger( i );
+				ImGui::PopID();
+				if( used )
+					ImGui::PopStyleColor( 2 );
+				if( mapApp && mapSlot >= 0 )
+					MapTarget( *mapApp, EffectParamAddress( mapScope, mapSlot, e.name ) );
+			}
 			continue;
 		}
 		i += ParamWidget( effect, i );

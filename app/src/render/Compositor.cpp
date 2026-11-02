@@ -589,6 +589,9 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame, bool 
 			Layer& layer  = composition.layers[ index ];
 			float opacity = layer.ShownOpacity( frame.beat ) * layer.master * layer.CrossfadeGain( composition.crossfader );
 			Clip* playing = composition.ActiveClip( index );
+			// The monitor's Layer view shows a layer even when it is bypassed, soloed out or faded.
+			if( index == soloLayer && playing && ready( *playing ) && ( layer.bypass || ( anySolo && !layer.solo ) || opacity <= 0 ) )
+				soloOnly.push_back( { playing, nullptr, 1, TransitionMode::Fade, 1, BlendMode::Alpha, &layer.effects, true } );
 			if( layer.bypass || ( anySolo && !layer.solo ) || !playing || opacity <= 0 )
 				continue;
 			// The clip may sit in another row (a layer based launch).

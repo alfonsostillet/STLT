@@ -90,6 +90,7 @@ struct State
 	float headerWidth  = 250; // the track headers' column (at 15 px type): drag its edge
 	int renaming       = -1;  // the track whose name is being typed (double-click its header)
 	bool renameFocus   = false;
+	int renameWait     = 0; // frames the field gets to take the keyboard before it counts as left
 } state;
 
 // The tracks top to bottom as shown, as in an editing program: the video tracks (the top one, drawn over the others,
@@ -547,9 +548,14 @@ void TrackHeader( App& app, int k, ImVec2 pos, ImVec2 size )
 		{
 			ImGui::SetKeyboardFocusHere();
 			state.renameFocus = false;
+			state.renameWait  = 2;
 		}
 		ImGui::InputText( "##rename", &track.name, ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_EnterReturnsTrue );
-		if( ImGui::IsItemDeactivated() || ImGui::IsKeyPressed( ImGuiKey_Escape ) )
+		// Done when the field is left (Enter, a click elsewhere, Escape), or when it lost the keyboard while out of
+		// sight (scrolled away) and so never got to be left.
+		if( state.renameWait > 0 )
+			--state.renameWait;
+		if( ImGui::IsItemDeactivated() || ImGui::IsKeyPressed( ImGuiKey_Escape ) || ( state.renameWait == 0 && !ImGui::IsItemActive() ) )
 			state.renaming = -1;
 	}
 	else
