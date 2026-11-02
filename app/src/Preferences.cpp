@@ -28,6 +28,9 @@ std::string Preferences::Save() const
 	root[ "audioBuffer" ]       = audioBuffer;
 	root[ "audioInput" ]        = audioInput;
 	root[ "audioInputGain" ]    = audioInputGain;
+	root[ "linkEnabled" ]       = linkEnabled;
+	root[ "midiClockInput" ]    = midiClockInput;
+	root[ "syncLatencyMs" ]     = syncLatencyMs;
 	root[ "hardwareDecoding" ]  = hardwareDecoding;
 	root[ "frameCacheMegabytes" ] = frameCacheMegabytes;
 	root[ "clipFit" ]           = FitModeName( clipFit );
@@ -53,6 +56,9 @@ bool Preferences::Load( const std::string& text )
 	p.audioBuffer       = std::clamp( root.value( "audioBuffer", 256 ), 64, 4096 );
 	p.audioInput        = root.value( "audioInput", "" );
 	p.audioInputGain    = std::clamp( root.value( "audioInputGain", 1.0f ), 0.0f, 16.0f );
+	p.linkEnabled       = root.value( "linkEnabled", false );
+	p.midiClockInput    = root.value( "midiClockInput", "" );
+	p.syncLatencyMs     = std::clamp( root.value( "syncLatencyMs", 0.0f ), -500.0f, 500.0f );
 	p.hardwareDecoding  = root.value( "hardwareDecoding", true );
 	p.frameCacheMegabytes = std::clamp( root.value( "frameCacheMegabytes", 256 ), 0, 4096 );
 	p.clipFit           = ByName( root.value( "clipFit", nlohmann::json() ), FitModeName, FitMode::Fit );

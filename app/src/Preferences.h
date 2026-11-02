@@ -18,6 +18,11 @@ struct Preferences
 	std::string audioInput;  // what animations listen to (Audio modes); empty: the system's default input
 	float audioInputGain = 1; // amplification of that input before it is measured
 
+	// Sync: the tempo and beat from outside.
+	bool linkEnabled = false;   // Ableton Link
+	std::string midiClockInput; // the MIDI input whose clock is followed: "" none, "*" any
+	float syncLatencyMs = 0;    // the beat is taken this much ahead, for a picture that shows late
+
 	// Video.
 	bool hardwareDecoding = true;
 	int frameCacheMegabytes = 256; // per clip that is not HAP: decoded frames kept for scratching back over them

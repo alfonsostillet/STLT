@@ -21,6 +21,7 @@ endif()
 set(CMAKE_POLICY_VERSION_MINIMUM 3.5)
 
 option(STLTVJ_BUILD_APP "Build the app itself (off: only the media engine, tools and tests)" ON)
+option(STLTVJ_WITH_LINK "Tempo and beat shared with other apps on the network through Ableton Link" ON)
 option(STLTVJ_WITH_FFMPEG "Play files that are not HAP (H.264, ProRes, DXV, PNG, JPEG...) through FFmpeg" ON)
 set(FFMPEG_ROOT "" CACHE PATH "FFmpeg install prefix (app/scripts/build-ffmpeg.sh); empty: system FFmpeg, or a download on Windows")
 
@@ -232,6 +233,8 @@ add_library(stltvj-core STATIC
     src/control/Control.h
     src/control/RemoteInputs.cpp
     src/control/RemoteInputs.h
+    src/control/TempoSync.cpp
+    src/control/TempoSync.h
     src/audio/AudioEngine.cpp
     src/audio/AudioEngine.h
     src/audio/AudioInput.cpp
@@ -251,6 +254,22 @@ elseif(APPLE)
 else()
     find_package(OpenGL REQUIRED)
     target_link_libraries(stltvj-core PUBLIC OpenGL::GL ${CMAKE_DL_LIBS})
+endif()
+
+# Ableton Link (GPL 2.0 or later; header-only, with its own copy of Asio): tempo and beat shared over the network.
+if(STLTVJ_WITH_LINK)
+    FetchContent_Declare(link
+        GIT_REPOSITORY https://github.com/Ableton/link.git
+        GIT_TAG 45931b8bd2a7066f1950f2a0beab81a0c51f28fe # Link-3.1.5
+        GIT_SUBMODULES modules/asio-standalone
+        SOURCE_SUBDIR no-cmake) # only its headers: its own CMakeLists builds examples and tests
+    FetchContent_MakeAvailable(link)
+    include("${link_SOURCE_DIR}/AbletonLinkConfig.cmake")
+    target_link_libraries(stltvj-core PRIVATE Ableton::Link)
+    target_compile_definitions(stltvj-core PRIVATE STLTVJ_HAS_LINK=1)
+    if(WIN32)
+        set_source_files_properties(src/control/TempoSync.cpp PROPERTIES COMPILE_DEFINITIONS _WIN32_WINNT=0x0601)
+    endif()
 endif()
 
 # MIDI through RtMidi: Windows Multimedia, CoreMIDI or ALSA.

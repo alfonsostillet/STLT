@@ -2,6 +2,7 @@
 #include <RtMidi.h>
 #include "control/Feedback.h"
 #include <algorithm>
+#include <chrono>
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -235,6 +236,18 @@ std::string MidiDeviceName( const std::string& name, bool numbered )
 void RemoteInputs::OnMidi( double, std::vector< unsigned char >* message, void* user )
 {
 	MidiPort* port = (MidiPort*)user;
+	if( message && !message->empty() && ( *message )[ 0 ] >= 0xF0 )
+	{
+		// System messages: the clock and transport go to whoever follows them.
+		unsigned char status = ( *message )[ 0 ];
+		bool clock           = status == 0xF8 || status == 0xFA || status == 0xFB || status == 0xFC || status == 0xF2;
+		if( clock && port->owner->onClock )
+		{
+			double now = std::chrono::duration< double >( std::chrono::steady_clock::now().time_since_epoch() ).count();
+			port->owner->onClock( port->name, message->data(), message->size(), now ); // as TempoSync::Now()
+		}
+		return;
+	}
 	Event e;
 	e.midi   = true;
 	e.device = port->name;
@@ -310,7 +323,7 @@ void RemoteInputs::Configure( const ControlSettings& settings, bool retry )
 				port->name  = name;
 				port->in    = std::make_unique< RtMidiIn >();
 				port->in->openPort( index, "STLT-VJ" );
-				port->in->ignoreTypes( true, true, true ); // no system exclusive, clock or active sensing
+				port->in->ignoreTypes( true, false, true ); // the clock, but no system exclusive or active sensing
 				port->in->setCallback( &RemoteInputs::OnMidi, port.get() );
 				midiPorts[ name ] = std::move( port );
 				failure.clear();

@@ -475,7 +475,8 @@ struct Composition
 
 // Saving and loading as JSON. Clips are stored by path; players are created by the caller. Without
 // `withShownDeck` the text leaves out which deck is shown and which clips play (for undo, where neither is a step);
-// with it a composition opens as it was saved, its clips playing (the caller starts their players).
-std::string SaveComposition( const Composition& composition, bool withShownDeck = true );
+// with it a composition opens as it was saved, its clips playing (the caller starts their players). `bpm`, when
+// not negative, is written instead of the composition's (a tempo that follows Link or a MIDI clock is no undo step).
+std::string SaveComposition( const Composition& composition, bool withShownDeck = true, double bpm = -1 );
 bool LoadComposition( const std::string& json, Composition& composition, std::string& error );
 }

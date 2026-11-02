@@ -29,13 +29,14 @@ enum class Section
 	Video,
 	Midi,
 	Osc,
+	Sync,
 	Defaults,
 	Count
 };
 
 const char* SectionName( Section s )
 {
-	static const char* names[] = { "General", "Audio", "Video", "MIDI", "OSC", "Defaults" };
+	static const char* names[] = { "General", "Audio", "Video", "MIDI", "OSC", "Sync", "Defaults" };
 	return names[ (int)s ];
 }
 
@@ -238,6 +239,70 @@ bool Audio( App& app )
 	return restart || inputChanged;
 }
 
+// Where the tempo and the beat come from besides the composition's own BPM.
+bool Sync( App& app )
+{
+	Preferences& p  = app.prefs;
+	TempoSync& sync = app.tempoSync;
+	bool changed    = false;
+	ImGui::SeparatorText( "Ableton Link" );
+	if( TempoSync::LinkBuiltIn() )
+	{
+		if( ImGui::Checkbox( "Link##link", &p.linkEnabled ) )
+			changed = true;
+		Help( "The tempo and beat shared with other apps on this network that have Link: Ableton Live, Traktor, "
+		      "rekordbox, Serato, other VJ apps. Changing the BPM here changes it for all of them. Also the LINK button "
+		      "next to the BPM." );
+		if( sync.LinkEnabled() )
+		{
+			int peers = sync.LinkPeers();
+			ImGui::TextDisabled( peers == 0 ? "No other app found yet" : peers == 1 ? "1 other app" : "%d other apps", peers );
+		}
+	}
+	else
+		ImGui::TextDisabled( "Not in this build" );
+
+	ImGui::SeparatorText( "MIDI Clock" );
+	std::vector< std::string > inputs = app.remote.OpenInputs();
+	auto shownName = []( const std::string& input ) { return input.empty() ? std::string( "Off" ) : input == "*" ? std::string( "Any MIDI input" ) : input; };
+	ImGui::SetNextItemWidth( Ui( 360 ) );
+	if( ImGui::BeginCombo( "##clock", shownName( p.midiClockInput ).c_str() ) )
+	{
+		std::vector< std::string > choices = { "", "*" };
+		choices.insert( choices.end(), inputs.begin(), inputs.end() );
+		if( !p.midiClockInput.empty() && std::find( choices.begin(), choices.end(), p.midiClockInput ) == choices.end() )
+			choices.push_back( p.midiClockInput ); // chosen before, not connected now
+		for( const std::string& c : choices )
+			if( ImGui::Selectable( shownName( c ).c_str(), p.midiClockInput == c ) && p.midiClockInput != c )
+			{
+				p.midiClockInput = c;
+				changed          = true;
+			}
+		ImGui::EndCombo();
+	}
+	Help( "Follow the MIDI clock of a DJ mixer, a drum machine or another computer: the tempo, and the beat from "
+	      "its Start and Song Position. While it ticks it leads (and Link's other apps get its tempo); when it stops, "
+	      "the beat goes on at its last tempo. The input must be on in Preferences > MIDI." );
+	std::string status = sync.Status();
+	if( !status.empty() )
+		ImGui::TextDisabled( "%s", status.c_str() );
+
+	ImGui::SeparatorText( "Delay" );
+	ImGui::SetNextItemWidth( Ui( 260 ) );
+	if( ImGui::SliderFloat( "##latency", &p.syncLatencyMs, -200, 200, "%+.0f ms", ImGuiSliderFlags_AlwaysClamp ) )
+		changed = true;
+	if( ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
+	{
+		p.syncLatencyMs = 0;
+		changed         = true;
+	}
+	Help( "Projectors and LED processors show the picture late: when the visuals trail the music, move this to the "
+	      "right until the flashes land on the kick. Applies to Link and the MIDI clock. Double-click: 0." );
+	if( changed )
+		app.ApplySync();
+	return changed;
+}
+
 bool Video( App& app )
 {
 	Preferences& p = app.prefs;
@@ -410,6 +475,7 @@ void DrawPreferences( App& app )
 			app.remote.Configure( app.control, true );
 		}
 		break;
+	case Section::Sync: changed = Sync( app ); break;
 	case Section::Defaults: changed = Defaults( app ); break;
 	default: break;
 	}

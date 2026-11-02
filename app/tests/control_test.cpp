@@ -5,6 +5,10 @@
 #include "control/Control.h"
 #include "control/Feedback.h"
 #include "control/RemoteInputs.h"
+#include "control/TempoSync.h"
+#include <chrono>
+#include <random>
+#include <thread>
 
 using namespace stltvj;
 
@@ -229,8 +233,148 @@ static void TestLights()
 	CHECK( MidiOutputNameFor( "APC mini mk2" ) == "APC mini mk2" );
 }
 
+// A MIDI clock: the tempo through the jitter of its ticks, the beat from Start, Stop, Song Position and Continue,
+// and the composition's beat following it.
+static void TestMidiClock()
+{
+	const unsigned char tick[] = { 0xF8 }, start[] = { 0xFA }, cont[] = { 0xFB }, stop[] = { 0xFC };
+	std::mt19937 random( 7 );
+	std::uniform_real_distribution< double > jitter( -0.001, 0.001 ); // a millisecond either way, as USB MIDI does
+	double t = 100;
+	auto ticks = [ & ]( MidiClock& clock, int n, double bpm ) {
+		for( int i = 0; i < n; ++i )
+		{
+			t += 60.0 / bpm / 24;
+			clock.Message( tick, 1, t + jitter( random ) );
+		}
+	};
+
+	MidiClock clock;
+	CHECK( !clock.At( t ).receiving );
+	ticks( clock, 96, 128 ); // a song already running when we joined: counted from here, not placed
+	MidiClock::State s = clock.At( t );
+	CHECK( s.receiving && s.playing && !s.placed );
+	CHECK( std::fabs( s.bpm - 128 ) < 0.1 );
+	CHECK( std::fabs( s.beat - 4 ) < 0.01 ); // the last tick came a little early or late
+	CHECK( !clock.At( t + 1 ).receiving ); // silent for a second: gone
+
+	clock.Message( start, 1, t );
+	int jumps = clock.At( t ).jumps;
+	CHECK( clock.At( t ).placed && clock.At( t ).beat == 0 ); // waiting for the first tick
+	ticks( clock, 1, 128 );
+	CHECK( clock.At( t ).beat < 0.01 ); // the first tick after Start is the top
+	ticks( clock, 48, 128 );
+	s = clock.At( t );
+	CHECK( std::fabs( s.beat - 2 ) < 0.01 );
+	// Between ticks the beat moves with time, but never past the next tick.
+	CHECK( clock.At( t + 0.01 ).beat > clock.At( t ).beat );
+	CHECK( clock.At( t + 0.2 ).beat <= 2 + 1.0 / 24 + 1e-9 );
+
+	// A new tempo shows within half a beat or so.
+	ticks( clock, 18, 140 );
+	CHECK( std::fabs( clock.At( t ).bpm - 140 ) < 0.5 );
+
+	// Stop: the position holds while the ticks go on; Song Position then Continue: from there.
+	clock.Message( stop, 1, t );
+	double held = clock.At( t ).beat;
+	ticks( clock, 24, 140 );
+	CHECK( !clock.At( t ).playing && std::fabs( clock.At( t ).beat - held ) < 0.05 );
+	const unsigned char spp[] = { 0xF2, 64 & 0x7F, 0 }; // 64 sixteenths: beat 16
+	clock.Message( spp, 3, t );
+	clock.Message( cont, 1, t );
+	CHECK( clock.At( t ).jumps != jumps );
+	ticks( clock, 1, 140 );
+	CHECK( std::fabs( clock.At( t ).beat - 16 ) < 0.01 );
+
+	// The composition's beat and tempo follow it; a Start sends the beat back to the top.
+	TempoSync sync;
+	sync.SetClockInput( "Mixer" );
+	sync.OnMidi( "Other", start, 1, t ); // another input's clock: not followed
+	ticks( sync.clock, 1, 120 );
+	double bpm = 100, beat = 37.5;
+	CHECK( !sync.Update( t, bpm, beat ) );
+	CHECK( sync.Following() == TempoSync::Source::Internal && bpm == 100 ); // one tick: no tempo yet
+	sync.OnMidi( "Mixer", start, 1, t );
+	for( int i = 0; i < 24; ++i )
+	{
+		t += 60.0 / 120 / 24;
+		sync.OnMidi( "Mixer", tick, 1, t );
+	}
+	CHECK( sync.Update( t, bpm, beat ) ); // went back: what waited for a beat should go
+	CHECK( sync.Following() == TempoSync::Source::Clock );
+	CHECK( std::fabs( bpm - 120 ) < 0.1 && std::fabs( beat - 23.0 / 24 ) < 1e-6 );
+	CHECK( sync.Status().find( "120.0 BPM" ) != std::string::npos );
+	// Resync: beat 0 now, and on from there with the clock.
+	sync.Resync( t, beat );
+	CHECK( beat == 0 );
+	for( int i = 0; i < 12; ++i )
+	{
+		t += 60.0 / 120 / 24;
+		sync.OnMidi( "Mixer", tick, 1, t );
+	}
+	CHECK( !sync.Update( t, bpm, beat ) && std::fabs( beat - 0.5 ) < 1e-6 );
+	// The clock goes quiet: the composition's own tempo and beat take over again.
+	CHECK( !sync.Update( t + 2, bpm, beat ) && sync.Following() == TempoSync::Source::Internal );
+	sync.SetClockInput( "" );
+	sync.OnMidi( "Mixer", tick, 1, t + 3 );
+	CHECK( !sync.Update( t + 3, bpm, beat ) && sync.Following() == TempoSync::Source::Internal );
+}
+
+// Ableton Link, alone: the composition's tempo and beat go in, the session's come back; a BPM changed here goes to
+// the session. Two of them on this computer find each other when the network allows it.
+static void TestLink()
+{
+	if( !TempoSync::LinkBuiltIn() )
+		return;
+	TempoSync a;
+	a.EnableLink( true, 130, 6.25 );
+	CHECK( a.LinkEnabled() );
+	double bpm = 130, beat = 6.25;
+	a.Update( TempoSync::Now(), bpm, beat );
+	CHECK( a.Following() == TempoSync::Source::Link );
+	CHECK( std::fabs( bpm - 130 ) < 1e-3 && std::fabs( beat - 6.25 ) < 0.05 );
+	bpm = 140; // typed, tapped or mapped here
+	a.Update( TempoSync::Now(), bpm, beat );
+	CHECK( std::fabs( bpm - 140 ) < 1e-3 );
+	double before = beat;
+	a.Update( TempoSync::Now() + 0.1, bpm, beat );
+	CHECK( beat >= before && std::fabs( bpm - 140 ) < 1e-3 );
+	a.Resync( TempoSync::Now(), beat );
+	CHECK( std::fabs( beat ) < 0.05 ); // alone: at once
+
+	TempoSync b;
+	b.EnableLink( true, 120, 0 );
+	for( int i = 0; i < 40 && a.LinkPeers() == 0; ++i )
+		std::this_thread::sleep_for( std::chrono::milliseconds( 50 ) );
+	std::printf( "Link: %s\n", a.LinkPeers() > 0 ? "two sessions on this computer found each other" : "no other session found (no network for it here)" );
+	if( a.LinkPeers() > 0 )
+	{
+		double bpmA = 140, beatA = 0, bpmB = 120, beatB = 0;
+		for( int i = 0; i < 40 && ( i < 4 || std::fabs( bpmA - bpmB ) > 1e-3 ); ++i )
+		{
+			a.Update( TempoSync::Now(), bpmA, beatA );
+			b.Update( TempoSync::Now(), bpmB, beatB );
+			std::this_thread::sleep_for( std::chrono::milliseconds( 50 ) );
+		}
+		CHECK( std::fabs( bpmA - bpmB ) < 1e-3 ); // one tempo for both (Link keeps it as microseconds a beat)
+		CHECK( std::fabs( std::fmod( beatA - beatB + 400, 4.0 ) ) < 0.05 || std::fabs( std::fmod( beatA - beatB + 400, 4.0 ) - 4 ) < 0.05 ); // the same bar
+		bpmA = 97;
+		a.Update( TempoSync::Now(), bpmA, beatA );
+		for( int i = 0; i < 40 && std::fabs( bpmB - 97 ) > 1e-3; ++i )
+		{
+			std::this_thread::sleep_for( std::chrono::milliseconds( 50 ) );
+			b.Update( TempoSync::Now(), bpmB, beatB );
+		}
+		CHECK( std::fabs( bpmB - 97 ) < 1e-3 );
+	}
+	a.EnableLink( false, 0, 0 );
+	CHECK( !a.LinkEnabled() && a.LinkPeers() == 0 );
+}
+
 int main()
 {
+	TestLink();
+	TestMidiClock();
 	TestLights();
 	TestMidiDeviceNames();
 	TestAddresses();

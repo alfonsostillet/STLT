@@ -856,6 +856,55 @@ void DrawToolbar( App& app )
 			}
 			ImGui::Dummy( ImVec2( radius * 2 + radius * 3.2f * 3, h ) );
 		}
+		// Ableton Link: on and off here, lit while on, with how many others share the tempo. A MIDI clock being
+		// followed shows as CLOCK (chosen in Preferences > Sync).
+		{
+			TempoSync& sync = app.tempoSync;
+			bool clock      = sync.Following() == TempoSync::Source::Clock;
+			if( TempoSync::LinkBuiltIn() || clock )
+				ImGui::SameLine( 0, Ui( 10 ) );
+			if( TempoSync::LinkBuiltIn() )
+			{
+				bool on = sync.LinkEnabled();
+				char label[ 32 ];
+				int peers = sync.LinkPeers();
+				if( on && peers > 0 )
+					std::snprintf( label, sizeof( label ), "LINK %d###link", peers );
+				else
+					std::snprintf( label, sizeof( label ), "LINK###link" );
+				if( on )
+				{
+					ImGui::PushStyleColor( ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4( theme::AccentDim ) );
+					ImGui::PushStyleColor( ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4( theme::AccentHover ) );
+				}
+				ImGui::PushFont( Fonts().bold );
+				if( ImGui::Button( label ) )
+				{
+					app.prefs.linkEnabled = !on;
+					app.ApplySync();
+					app.SavePreferences();
+				}
+				ImGui::PopFont();
+				if( on )
+					ImGui::PopStyleColor( 2 );
+				if( ImGui::IsItemHovered() )
+					ImGui::SetTooltip( "Ableton Link: the tempo and beat shared with other apps on this network (Ableton Live, "
+					                   "DJ software, other VJ apps).\n%s",
+					                   on ? sync.Status().c_str() : "Off" );
+			}
+			if( clock )
+			{
+				if( TempoSync::LinkBuiltIn() )
+					ImGui::SameLine( 0, Ui( 4 ) );
+				ImGui::PushStyleColor( ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4( theme::AccentDim ) );
+				ImGui::PushFont( Fonts().bold );
+				ImGui::Button( "CLOCK" );
+				ImGui::PopFont();
+				ImGui::PopStyleColor();
+				if( ImGui::IsItemHovered() )
+					ImGui::SetTooltip( "%s\nThe tempo follows this MIDI clock (Preferences > Sync).", sync.Status().c_str() );
+			}
+		}
 
 		// When launched clips start: at once, on the next beat or on the next bar.
 		ToolbarDivider();

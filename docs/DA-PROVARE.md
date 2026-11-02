@@ -26,3 +26,10 @@ Correzioni già fatte e verificate dai test automatici, da provare sul PC vero p
 - [ ] **Periodo in secondi**: in *Animate*, accanto a *Period*, scegli *Seconds* al posto di *Beats*: l'animazione deve andare al suo passo anche cambiando il BPM.
 - [ ] **Smooth Random**: come Random ma scivola da un valore all'altro invece di saltare.
 - [ ] Il progetto salvato e riaperto deve ricordare tutte queste impostazioni.
+
+## Ableton Link e MIDI clock (nuovo)
+
+- [ ] **Link**: con Ableton Live (o Traktor, rekordbox, Serato con Link attivo) sullo stesso PC o sulla stessa rete, premi **LINK** accanto al BPM. Al primo avvio Windows può chiedere il permesso per la rete: consenti. Il pulsante deve mostrare il numero delle altre app (per esempio *LINK 1*); il BPM di STLT-VJ diventa quello di Live e i quattro pallini della battuta vanno insieme al metronomo di Live. Cambia il BPM in Live: cambia anche in STLT-VJ. Cambialo in STLT-VJ (o con TAP): cambia anche in Live.
+- [ ] **MIDI clock**: in *Preferences → Sync → MIDI Clock* scegli l'ingresso del mixer o della drum machine (deve essere acceso in *Preferences → MIDI*). Nella barra si accende **CLOCK**, il BPM segue il clock; premendo Play/Start sul dispositivo la battuta riparte da 1. Con lo Stop le animazioni continuano al tempo di prima.
+- [ ] **Delay**: se le immagini arrivano dopo la musica (proiettore, LED), sposta *Preferences → Sync → Delay* a destra finché i flash cadono sulla cassa.
+- [ ] Con Link o clock attivi, Ctrl+Z non deve cambiare il BPM.

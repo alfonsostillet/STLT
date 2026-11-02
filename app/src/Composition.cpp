@@ -528,7 +528,7 @@ static nlohmann::json SaveClip( const Clip& clip )
 
 static nlohmann::json SaveTimeline( const Timeline& t );
 
-std::string SaveComposition( const Composition& c, bool withShownDeck )
+std::string SaveComposition( const Composition& c, bool withShownDeck, double bpm )
 {
 	using nlohmann::json;
 	json root;
@@ -540,7 +540,7 @@ std::string SaveComposition( const Composition& c, bool withShownDeck )
 	root[ "master" ]  = c.master;
 	root[ "audioVolume" ] = c.audioVolume;
 	root[ "speed" ]   = c.speed;
-	root[ "bpm" ]     = c.bpm;
+	root[ "bpm" ]     = bpm >= 0 ? bpm : c.bpm;
 	root[ "launchQuantize" ] = LaunchQuantizeName( c.quantize );
 	root[ "crossfader" ] = c.crossfader;
 	root[ "clipTarget" ] = ClipTargetName( c.target );

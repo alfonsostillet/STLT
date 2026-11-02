@@ -9,6 +9,7 @@
 #include "History.h"
 #include "audio/AudioEngine.h"
 #include "audio/AudioInput.h"
+#include "control/TempoSync.h"
 #include "control/Feedback.h"
 #include "control/RemoteInputs.h"
 #include "fx/EffectRegistry.h"
@@ -213,6 +214,9 @@ public:
 	std::string ShortcutPresetDirectory() const;
 	std::string shortcutPresetText; // the maps of the preset in use (control.preset), as loaded or saved
 	ControlSettings control;
+	// Tempo and beat from Ableton Link or a MIDI clock (Preferences > Sync). Before `remote`, whose MIDI threads
+	// feed it, so that it outlives them.
+	TempoSync tempoSync;
 	RemoteInputs remote;
 	AudioEngine audio;
 	// The sound coming in, for parameters that follow it: opened while an animation listens (and closed ten seconds
@@ -220,6 +224,8 @@ public:
 	AudioInput audioInput;
 	double audioInputTried = -1e9;
 	int audioInputViewed   = 0; // frames for which the input stays open because its meters are on screen
+	double undoBpm = 120; // the BPM undo steps hold: frozen while the tempo comes from outside
+	void ApplySync();
 	void UpdateAudioInput( double now, double dt );
 	void RestartAudioInput() { audioInput.Stop(); audioInputTried = -1e9; }
 	bool learning  = false; // mapping mode: a click picks a control, the next key or MIDI message maps it

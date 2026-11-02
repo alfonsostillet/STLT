@@ -123,6 +123,10 @@ bool App::Init( const LaunchOptions& launch )
 		std::fprintf( stderr, "Warning: this GPU driver reports no S3TC (DXT) support; HAP needs it\n" );
 
 	configDir = ConfigDirectory();
+	// The MIDI clock goes straight from the inputs' threads to the tempo sync, stamped as it arrives.
+	remote.onClock = [ this ]( const std::string& device, const unsigned char* bytes, size_t size, double time ) {
+		tempoSync.OnMidi( device, bytes, size, time );
+	};
 	// STLT-CHASER's sequences, for its editor and its effects (set before the effects load).
 	chaserStage = ( fs::u8path( chaser::UseDataDirectory( configDir ) ) / "stlt-vj-stage.json" ).u8string();
 	{
@@ -752,7 +756,7 @@ void App::RunQueuedLaunches( bool all )
 
 void App::ResyncBeat()
 {
-	composition.beat = 0;
+	tempoSync.Resync( TempoSync::Now(), composition.beat );
 	RunQueuedLaunches( true ); // what waited for a beat goes on the new first beat
 }
 
@@ -957,7 +961,8 @@ bool App::OpenComposition( const std::string& path )
 History::State App::Snapshot() const
 {
 	// Which deck is shown is not an undo step.
-	return { SaveComposition( composition, false ), SaveAdvancedOutput( advancedOutput ) };
+	bool external = tempoSync.Following() != TempoSync::Source::Internal;
+	return { SaveComposition( composition, false, external ? undoBpm : -1 ), SaveAdvancedOutput( advancedOutput ) };
 }
 
 namespace
@@ -1110,6 +1115,8 @@ void App::RestoreComposition( const std::string& text )
 	}
 	fresh.beat           = composition.beat;
 	fresh.paused         = composition.paused;
+	if( tempoSync.Following() != TempoSync::Source::Internal )
+		fresh.bpm = composition.bpm; // the tempo is Link's or the clock's, not an undo step
 	fresh.selectedLayer  = std::clamp( composition.selectedLayer, 0, std::max( (int)fresh.layers.size() - 1, 0 ) );
 	fresh.selectedRow    = std::clamp( composition.selectedRow, 0, std::max( (int)fresh.layers.size() - 1, 0 ) );
 	fresh.selectedColumn = composition.selectedColumn < fresh.ColumnCount() ? composition.selectedColumn : -1;
@@ -2182,8 +2189,16 @@ void App::SavePreferences()
 	WriteTextFile( ( fs::u8path( configDir ) / "preferences.json" ).u8string(), prefs.Save() );
 }
 
+void App::ApplySync()
+{
+	tempoSync.SetClockInput( prefs.midiClockInput );
+	tempoSync.latency = prefs.syncLatencyMs / 1000.0;
+	tempoSync.EnableLink( prefs.linkEnabled, composition.bpm, composition.beat );
+}
+
 void App::ApplyPreferences( bool restartAudio )
 {
+	ApplySync();
 	SetHardwareDecoding( prefs.hardwareDecoding );
 	SetFrameCacheMegabytes( prefs.frameCacheMegabytes );
 	Composition::newLayerBlend          = prefs.layerBlend;
@@ -2489,6 +2504,10 @@ void App::Frame()
 	UpdateAudio();
 	if( !composition.paused )
 		composition.beat += dt * composition.speed * composition.bpm / 60.0;
+	if( tempoSync.Update( TempoSync::Now(), composition.bpm, composition.beat ) )
+		RunQueuedLaunches( true ); // the beat went back (a Start, a new Link timeline): what waited goes now
+	if( tempoSync.Following() == TempoSync::Source::Internal )
+		undoBpm = composition.bpm;
 	RunQueuedLaunches( false );
 	frame.time  = now - startTime;
 	frame.delta = dt;
