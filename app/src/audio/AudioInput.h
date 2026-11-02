@@ -1,4 +1,5 @@
 #pragma once
+#include <complex>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -53,5 +54,6 @@ private:
 	int write      = 0;
 	int sampleRate = 48000;
 	float values[ BandCount ] = {};
+	std::vector< std::complex< float > > work; // Analyse's spectrum (main thread)
 };
 }

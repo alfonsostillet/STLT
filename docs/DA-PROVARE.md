@@ -4,7 +4,7 @@ Correzioni già fatte e verificate dai test automatici, da provare sul PC vero p
 
 ## Dalle prove della 0.3.0
 
-- [ ] **Progetto che si riapre com'era.** Prepara un set con alcune clip in riproduzione, salvalo (Ctrl+S), chiudi STLT-VJ e riaprilo: le clip devono ripartire e l'uscita mostrare l'immagine. Prova anche *Composition → Open...* su un progetto salvato, e la timeline: la testina deve tornare dove l'avevi lasciata.
+- [ ] **Progetto che si riapre com'era.** Prepara un set con alcune clip in riproduzione, salvalo (Ctrl+S), chiudi STLT e riaprilo: le clip devono ripartire e l'uscita mostrare l'immagine. Prova anche *Composition → Open...* su un progetto salvato, e la timeline: la testina deve tornare dove l'avevi lasciata.
   - Se dopo la riapertura la griglia è **vuota** (non solo ferma), segnalalo: vorrebbe dire un problema diverso, nel salvataggio o nella finestra Salva/Apri.
 - [ ] **Effetto STLT-CHASER senza la finestra "MESSAGE FROM DEAR IMGUI"** quando apri le sue sezioni Delayer, Wiper e Outliner.
 - [ ] **Timeline con il Chaser attivo nella griglia.** Metti STLT-CHASER sulla composizione nella vista a griglia, passa alla timeline: l'uscita deve mostrare la timeline normalmente.
@@ -15,7 +15,7 @@ Correzioni già fatte e verificate dai test automatici, da provare sul PC vero p
 
 ## Luci dei controller (nuovo)
 
-- [ ] **APC mini mk2**: i pad mappati sulle clip si accendono **blu** se c'è una clip, **verde** quando suona, **verde pulsante** se parte al prossimo beat (Launch su Beat o Bar); i pulsanti delle tracce e delle scene si accendono o lampeggiano (per esempio su Bypass, Solo, colonne); il pad mappato su TAP lampeggia col tempo. Chiudendo STLT-VJ si spengono.
+- [ ] **APC mini mk2**: i pad mappati sulle clip si accendono **blu** se c'è una clip, **verde** quando suona, **verde pulsante** se parte al prossimo beat (Launch su Beat o Bar); i pulsanti delle tracce e delle scene si accendono o lampeggiano (per esempio su Bypass, Solo, colonne); il pad mappato su TAP lampeggia col tempo. Chiudendo STLT si spengono.
   - Le mappature fatte prima di questa versione non sanno da quale controller vengono: le luci vanno a tutti i controller collegati. Rimappando un pad, va solo al suo.
   - Se un controller si comporta male, *Preferences → MIDI → Controller lights* le spegne.
 
@@ -29,7 +29,7 @@ Correzioni già fatte e verificate dai test automatici, da provare sul PC vero p
 
 ## Ableton Link e MIDI clock (nuovo)
 
-- [ ] **Link**: con Ableton Live (o Traktor, rekordbox, Serato con Link attivo) sullo stesso PC o sulla stessa rete, premi **LINK** accanto al BPM. Al primo avvio Windows può chiedere il permesso per la rete: consenti. Il pulsante deve mostrare il numero delle altre app (per esempio *LINK 1*); il BPM di STLT-VJ diventa quello di Live e i quattro pallini della battuta vanno insieme al metronomo di Live. Cambia il BPM in Live: cambia anche in STLT-VJ. Cambialo in STLT-VJ (o con TAP): cambia anche in Live.
+- [ ] **Link**: con Ableton Live (o Traktor, rekordbox, Serato con Link attivo) sullo stesso PC o sulla stessa rete, premi **LINK** accanto al BPM. Al primo avvio Windows può chiedere il permesso per la rete: consenti. Il pulsante deve mostrare il numero delle altre app (per esempio *LINK 1*); il BPM di STLT diventa quello di Live e i quattro pallini della battuta vanno insieme al metronomo di Live. Cambia il BPM in Live: cambia anche in STLT. Cambialo in STLT (o con TAP): cambia anche in Live.
 - [ ] **MIDI clock**: in *Preferences → Sync → MIDI Clock* scegli l'ingresso del mixer o della drum machine (deve essere acceso in *Preferences → MIDI*). Nella barra si accende **CLOCK**, il BPM segue il clock; premendo Play/Start sul dispositivo la battuta riparte da 1. Con lo Stop le animazioni continuano al tempo di prima.
 - [ ] **Delay**: se le immagini arrivano dopo la musica (proiettore, LED), sposta *Preferences → Sync → Delay* a destra finché i flash cadono sulla cassa.
 - [ ] Con Link o clock attivi, Ctrl+Z non deve cambiare il BPM.
@@ -37,7 +37,7 @@ Correzioni già fatte e verificate dai test automatici, da provare sul PC vero p
 ## Timeline che segue il timecode (nuovo)
 
 - [ ] **Art-Net** (il più facile da provare): in *Preferences → Sync → Timecode* scegli *Art-Net*; manda timecode da una console luci o da un programma (per esempio TouchDesigner, o un generatore Art-Net gratuito). Nella timeline accendi **TC** e scrivi l'inizio (per esempio 01:00:00:00): la testina deve andare dove dice il timecode, suonare quando scorre, fermarsi quando si ferma, saltare quando salta. Windows può chiedere il permesso per la rete: consenti.
-- [ ] **MTC**: da Ableton Live (o Reaper) sullo stesso PC con una porta MIDI virtuale (loopMIDI): in Live *Preferences → Link/Tempo/MIDI*, sulla porta di loopMIDI attiva *Sync* in uscita e il tipo *MTC*. In STLT-VJ accendi la porta in *Preferences → MIDI* e scegli *MTC* come sorgente. Play, stop e salti in Live devono muovere la timeline.
+- [ ] **MTC**: da Ableton Live (o Reaper) sullo stesso PC con una porta MIDI virtuale (loopMIDI): in Live *Preferences → Link/Tempo/MIDI*, sulla porta di loopMIDI attiva *Sync* in uscita e il tipo *MTC*. In STLT accendi la porta in *Preferences → MIDI* e scegli *MTC* come sorgente. Play, stop e salti in Live devono muovere la timeline.
 - [ ] **LTC**: un file audio di LTC (si trovano generatori online) suonato in un ingresso della scheda audio (o con un cavo da un'uscita a un ingresso): scegli *LTC*, l'ingresso e il canale. Lo stato sotto deve mostrare il timecode e il frame rate giusto.
 - [ ] **Take**: con il timecode che arriva, sposta la testina dove deve partire lo show e premi *Take*: da lì in poi la timeline segue con quell'inizio.
 - [ ] **Freewheel**: scollegando il cavo (o fermando l'invio) per un attimo, la timeline deve andare avanti per il tempo scelto e poi fermarsi.
@@ -48,7 +48,7 @@ Correzioni già fatte e verificate dai test automatici, da provare sul PC vero p
 - [ ] Nel pannello *Effects* c'è la sezione **ISF** con circa 200 effetti divisi per categoria (Blur, Color, Glitch, Halftone, Distortion, Kaleidoscope, Feedback...); nella scheda *Sources* le sorgenti ISF (gradienti, pattern, rumore, forme). Trascinane qualcuno su clip, layer e composizione: devono funzionare come gli altri effetti, con i loro parametri (colori con il selettore colore, punti con X e Y, menu), animabili e mappabili.
 - [ ] Prova soprattutto quelli **Feedback** e **Glitch** (usano più passaggi e buffer): per esempio *Echo Trace*, *Comet Tails*, *RGB Trails 3.0*, *Time Glitch RGB*, *Slit Scan*.
 - [ ] Un progetto salvato con effetti ISF si riapre con gli stessi effetti e valori.
-- [ ] Se hai altri shader ISF (per esempio da VDMX o scaricati), mettili in `C:\ProgramData\ISF` o nella cartella `isf` delle impostazioni di STLT-VJ: devono comparire dopo il riavvio.
+- [ ] Se hai altri shader ISF (per esempio da VDMX o scaricati), mettili in `C:\ProgramData\ISF` o nella cartella `isf` delle impostazioni di STLT: devono comparire dopo il riavvio.
 
 ## Poligoni di qualsiasi forma (nuovo)
 

@@ -1,14 +1,16 @@
-# STLT-VJ
+<img src="docs/images/stlt-logo.png" alt="STLT" width="128">
+
+# STLT
 
 A live video player for VJs, built around HAP: a clip deck with layers, columns and decks, beat-synced effects and animations, FFGL plugins, keyboard, MIDI and OSC control, and an Advanced Output with slices, warps, masks and soft edges, with STLT-CHASER included: its editor opens from the Output menu and its effects play the sequences on the slices.
 
-![STLT-VJ: the clip deck on top, monitors, composition, clip and performance panels below](docs/images/stlt-vj.png)
+![STLT: the clip deck on top, monitors, composition, clip and performance panels below](docs/images/stlt-vj.png)
 
-> 🇮🇹 STLT-VJ è un programma per VJ: griglia di clip con layer, colonne e deck, effetti e animazioni a tempo di BPM, plugin FFGL, comandi da tastiera, MIDI e OSC, e un Advanced Output con slice, warp, maschere e soft edge, con STLT-CHASER incluso: il suo editor si apre dal menu Output e i suoi effetti suonano le sequenze sulle slice. La guida completa è in [app/README.md](app/README.md).
+> 🇮🇹 STLT è un programma per VJ: griglia di clip con layer, colonne e deck, effetti e animazioni a tempo di BPM, plugin FFGL, comandi da tastiera, MIDI e OSC, e un Advanced Output con slice, warp, maschere e soft edge, con STLT-CHASER incluso: il suo editor si apre dal menu Output e i suoi effetti suonano le sequenze sulle slice. La guida completa è in [app/README.md](app/README.md).
 
 Everything about the program (features, shortcuts, building) is in **[app/README.md](app/README.md)**. The source is in [app/](app/).
 
-STLT-VJ is an independent project. It is not affiliated with or endorsed by Resolume or by the makers of any other product.
+STLT is an independent project. It is not affiliated with or endorsed by Resolume or by the makers of any other product.
 
 ## Building
 
@@ -19,7 +21,7 @@ cmake -S app -B app/build -DCMAKE_BUILD_TYPE=Release
 cmake --build app/build --config Release --parallel
 ```
 
-Every push builds Windows, macOS and Linux versions and runs the tests (GitHub Actions, *STLT-VJ app*); the builds are attached to each run.
+Every push builds Windows, macOS and Linux versions and runs the tests (GitHub Actions, *STLT app*); the builds are attached to each run.
 
 ## License
 

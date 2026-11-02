@@ -156,7 +156,15 @@ void AudioInput::Feed( const float* samples, int frames, int rate )
 
 void AudioInput::Analyse( double seconds )
 {
-	std::vector< std::complex< float > > spectrum( kWindow );
+	// The Hann window, once; the spectrum's buffer, kept between frames.
+	static const std::vector< float > hann = [] {
+		std::vector< float > w( kWindow );
+		for( int i = 0; i < kWindow; ++i )
+			w[ i ] = 0.5f - 0.5f * std::cos( 6.2831853f * (float)i / ( kWindow - 1 ) );
+		return w;
+	}();
+	std::vector< std::complex< float > >& spectrum = work;
+	spectrum.resize( kWindow );
 	int rate = 48000;
 	{
 		std::lock_guard< std::mutex > lock( mutex );
@@ -172,7 +180,7 @@ void AudioInput::Analyse( double seconds )
 	measured[ Level ] = Meter( (float)std::sqrt( 2.0 * square / kWindow ) );
 	// The bands, through a Hann window: each band's amplitude from its energy (a full-scale sine in a band: 0 dB).
 	for( int i = 0; i < kWindow; ++i )
-		spectrum[ i ] *= 0.5f - 0.5f * std::cos( 6.2831853f * (float)i / ( kWindow - 1 ) );
+		spectrum[ i ] *= hann[ i ];
 	Fft( spectrum );
 	const float edges[][ 2 ] = { { 20, 200 }, { 200, 2000 }, { 2000, 12000 } };
 	for( int b = 0; b < 3; ++b )

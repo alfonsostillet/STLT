@@ -32,6 +32,8 @@ public:
 	// Opens what `source` needs and closes the rest; nothing happens when nothing changed. `ltcDevice` "" is the
 	// system's default input; `ltcChannel` counts from 0; `mtcInput` "*" is any MIDI input.
 	void Configure( Source source, const std::string& ltcDevice, int ltcChannel, const std::string& mtcInput );
+	// The source could not be opened (a port taken, a sound card gone): Configure tries it again.
+	bool Failed() const { return !error.empty(); }
 	Source Current() const { return source.load(); }
 	// From the MIDI threads: quarter frames and SysEx, with the input they came from.
 	void OnMidi( const std::string& device, const unsigned char* bytes, size_t size, double time );

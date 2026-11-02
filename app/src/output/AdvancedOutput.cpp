@@ -1013,7 +1013,8 @@ std::string SaveChaserStage( const AdvancedOutputSetup& setup, int compWidth, in
 		screens.push_back( { { "id", screenId }, { "name", screen.name }, { "width", screen.width }, { "height", screen.height } } );
 		for( const Slice& slice : screen.slices )
 		{
-			if( slice.mask || slice.input.size() < 3 )
+			// STLT-CHASER's effects run on the composition: a slice taking from a canvas is not on it.
+			if( slice.mask || slice.input.size() < 3 || !slice.source.empty() )
 				continue;
 			std::vector< Vec2 > out;
 			if( slice.polygon )
@@ -1033,7 +1034,7 @@ bool LoadAdvancedOutput( const std::string& text, AdvancedOutputSetup& out, std:
 	json root = json::parse( text, nullptr, false );
 	if( root.is_discarded() || !root.is_object() || root.value( "format", "" ) != "stlt-vj-advanced-output" )
 	{
-		error = "Not an STLT-VJ output setup";
+		error = "Not an STLT output setup";
 		return false;
 	}
 	AdvancedOutputSetup setup;

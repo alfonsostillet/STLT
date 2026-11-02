@@ -683,6 +683,7 @@ void DrawPolygonTool( App& app, Screen& screen, int tab, ImDrawList* draw, ImVec
 		pts.clear();
 	};
 	bool clicked = hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) && !ImGui::IsKeyDown( ImGuiKey_Space );
+	bool keys    = !io.WantTextInput; // not while a name or a number is being typed elsewhere
 	if( clicked && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
 		finish(); // its first click already placed the last point
 	else if( clicked && closable )
@@ -696,11 +697,11 @@ void DrawPolygonTool( App& app, Screen& screen, int tab, ImDrawList* draw, ImVec
 			editor.drawTab = tab; // drawn on this pane from now on
 		}
 	}
-	else if( ImGui::IsKeyPressed( ImGuiKey_Enter ) || ImGui::IsKeyPressed( ImGuiKey_KeypadEnter ) )
+	else if( keys && ( ImGui::IsKeyPressed( ImGuiKey_Enter ) || ImGui::IsKeyPressed( ImGuiKey_KeypadEnter ) ) )
 		finish();
-	else if( ( ImGui::IsKeyPressed( ImGuiKey_Backspace ) || ImGui::IsKeyPressed( ImGuiKey_Delete ) ) && !pts.empty() )
+	else if( keys && ( ImGui::IsKeyPressed( ImGuiKey_Backspace ) || ImGui::IsKeyPressed( ImGuiKey_Delete ) ) && !pts.empty() )
 		pts.pop_back();
-	else if( ImGui::IsKeyPressed( ImGuiKey_Escape ) || ( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) ) )
+	else if( ( keys && ImGui::IsKeyPressed( ImGuiKey_Escape ) ) || ( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) ) )
 	{
 		editor.drawing = false;
 		pts.clear();
@@ -1285,7 +1286,11 @@ void DrawCanvas( App& app, Screen& screen, int tab )
 				return;
 			}
 			if( ImGui::MenuItem( "Match Output to Input" ) )
-				s.MatchOutputToInput( (float)app.composition.width, (float)app.composition.height, (float)screen.width, (float)screen.height );
+			{
+				int w, h; // the picture it takes from: the composition or its canvas
+				app.advancedOutput.SourceSize( s.source, app.composition.width, app.composition.height, w, h );
+				s.MatchOutputToInput( (float)w, (float)h, (float)screen.width, (float)screen.height );
+			}
 			if( ImGui::MenuItem( "Fit Output to Screen" ) )
 				s.FitOutput( (float)screen.width, (float)screen.height );
 			if( !s.polygon && ImGui::MenuItem( s.source.empty() ? "Input: Whole Composition" : "Input: Whole Canvas" ) )
@@ -1363,12 +1368,12 @@ void DrawScreenProps( App& app, Screen& screen )
 		Row( local );
 		ImGui::Checkbox( "##share", &screen.share );
 		if( ImGui::IsItemHovered() )
-			ImGui::SetTooltip( "Send this screen to other programs on this computer as \"STLT-VJ %s\"", screen.name.c_str() );
+			ImGui::SetTooltip( "Send this screen to other programs on this computer as \"STLT %s\"", screen.name.c_str() );
 	}
 	Row( "NDI" );
 	ImGui::Checkbox( "##ndi", &screen.ndi );
 	if( ImGui::IsItemHovered() )
-		ImGui::SetTooltip( "Send this screen over the network as the NDI source \"STLT-VJ %s\"", screen.name.c_str() );
+		ImGui::SetTooltip( "Send this screen over the network as the NDI source \"STLT %s\"", screen.name.c_str() );
 	std::string sharing = app.outputs.SharingStatus( (size_t)editor.screen );
 	if( !sharing.empty() )
 	{

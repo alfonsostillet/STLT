@@ -104,7 +104,7 @@ void TimecodeInput::Configure( Source wanted, const std::string& device, int cha
 		std::lock_guard< std::mutex > lock( mtcMutex );
 		mtcInput = midiInput;
 	}
-	if( wanted == source && device == ltcDevice && channel == ltcChannel )
+	if( wanted == source && device == ltcDevice && channel == ltcChannel && error.empty() )
 		return;
 	Close();
 	source     = wanted;

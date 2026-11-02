@@ -90,7 +90,7 @@ void MidiClock::Message( const unsigned char* bytes, size_t size, double time )
 			int sixteenths = ( bytes[ 1 ] & 0x7F ) | ( ( bytes[ 2 ] & 0x7F ) << 7 );
 			if( playing && started )
 			{
-				count  = (int64_t)sixteenths * 6;
+				count  = (int64_t)sixteenths * 6 - 1; // the next tick is that position, as after Continue
 				placed = true;
 				++jumps;
 			}

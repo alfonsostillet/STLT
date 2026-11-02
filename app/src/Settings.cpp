@@ -67,16 +67,23 @@ std::string ExecutableDirectory()
 
 std::string ConfigDirectory()
 {
+	// The program was called STLT-VJ: the settings it kept there are copied over the first time (and left where
+	// they were, for an older copy of the program).
 #if defined( _WIN32 )
 	std::string base = Env( "APPDATA" );
-	fs::path dir     = fs::u8path( base.empty() ? HomeDirectory() : base ) / "STLT-VJ";
+	fs::path root    = fs::u8path( base.empty() ? HomeDirectory() : base );
+	fs::path dir = root / "STLT", old = root / "STLT-VJ";
 #elif defined( __APPLE__ )
-	fs::path dir = fs::u8path( HomeDirectory() ) / "Library" / "Application Support" / "STLT-VJ";
+	fs::path root = fs::u8path( HomeDirectory() ) / "Library" / "Application Support";
+	fs::path dir = root / "STLT", old = root / "STLT-VJ";
 #else
 	std::string base = Env( "XDG_CONFIG_HOME" );
-	fs::path dir     = ( base.empty() ? fs::u8path( HomeDirectory() ) / ".config" : fs::u8path( base ) ) / "stlt-vj";
+	fs::path root    = base.empty() ? fs::u8path( HomeDirectory() ) / ".config" : fs::u8path( base );
+	fs::path dir = root / "stlt", old = root / "stlt-vj";
 #endif
 	std::error_code ignored;
+	if( !fs::exists( dir, ignored ) && fs::is_directory( old, ignored ) )
+		fs::copy( old, dir, fs::copy_options::recursive, ignored );
 	fs::create_directories( dir, ignored );
 	return dir.u8string();
 }

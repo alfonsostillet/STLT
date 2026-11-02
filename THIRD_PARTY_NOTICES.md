@@ -1,6 +1,6 @@
 # Third-party notices
 
-STLT-VJ is Copyright © 2026 STILLET and licensed under the GNU General Public License v3.0 (see LICENSE). It includes or links the following third-party software, each under its own license, all compatible with the GPL-3.0.
+STLT is Copyright © 2026 STILLET and licensed under the GNU General Public License v3.0 (see LICENSE). It includes or links the following third-party software, each under its own license, all compatible with the GPL-3.0.
 
 ## FFGL SDK (Resolume / FreeFrame) — plugins
 
@@ -155,7 +155,7 @@ OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-## Dear ImGui 1.91.9b (docking) — STLT-VJ app
+## Dear ImGui 1.91.9b (docking) — STLT app
 
 https://github.com/ocornut/imgui
 
@@ -183,7 +183,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## GLFW 3.4 — STLT-VJ app
+## GLFW 3.4 — STLT app
 
 https://github.com/glfw/glfw
 
@@ -212,7 +212,7 @@ freely, subject to the following restrictions:
    distribution.
 ```
 
-## HAP — STLT-VJ app
+## HAP — STLT app
 
 https://github.com/Vidvox/hap
 
@@ -241,7 +241,7 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## Snappy 1.2.1 — STLT-VJ app
+## Snappy 1.2.1 — STLT app
 
 https://github.com/google/snappy
 
@@ -302,7 +302,7 @@ Some of the benchmark data in testdata/ is licensed differently:
    (http://www.gutenberg.org/ebooks/53).
 ```
 
-## Khronos OpenGL headers (glcorearb.h, khrplatform.h) — STLT-VJ app
+## Khronos OpenGL headers (glcorearb.h, khrplatform.h) — STLT app
 
 https://github.com/KhronosGroup/OpenGL-Registry
 
@@ -329,7 +329,7 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 MATERIALS OR THE USE OR OTHER DEALINGS IN THE MATERIALS.
 ```
 
-## Native File Dialog Extended 1.2.1 — STLT-VJ app
+## Native File Dialog Extended 1.2.1 — STLT app
 
 https://github.com/btzy/nativefiledialog-extended
 
@@ -351,7 +351,7 @@ freely, subject to the following restrictions:
 3. This notice may not be removed or altered from any source distribution.
 ```
 
-## Inter 4.001 — STLT-VJ app (interface font, compiled in)
+## Inter 4.001 — STLT app (interface font, compiled in)
 
 https://github.com/rsms/inter — static Regular and SemiBold instances and a Latin subset made from the variable font in google/fonts.
 
@@ -451,7 +451,7 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 
-## JetBrains Mono — STLT-VJ app (interface font for numbers, compiled in)
+## JetBrains Mono — STLT app (interface font for numbers, compiled in)
 
 https://github.com/JetBrains/JetBrainsMono — a static Medium instance and a Latin subset made from the variable font in google/fonts.
 
@@ -551,7 +551,7 @@ FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
 OTHER DEALINGS IN THE FONT SOFTWARE.
 ```
 
-## miniaudio 0.11.21 — STLT-VJ app
+## miniaudio 0.11.21 — STLT app
 
 https://github.com/mackron/miniaudio
 
@@ -605,7 +605,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## RtMidi 6.0.0 — STLT-VJ app
+## RtMidi 6.0.0 — STLT app
 
 https://github.com/thestk/rtmidi
 
@@ -638,7 +638,7 @@ CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION
 WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ```
 
-## Ableton Link 3.1.5 — STLT-VJ app
+## Ableton Link 3.1.5 — STLT app
 
 https://github.com/Ableton/link — licensed under the GNU General Public License version 2 or (at your option) any later version, used here under version 3.
 
@@ -662,7 +662,7 @@ If you would like to incorporate Link into a proprietary software application,
 please contact <link-devs@ableton.com>.
 ```
 
-## Asio (standalone, bundled with Ableton Link) — STLT-VJ app
+## Asio (standalone, bundled with Ableton Link) — STLT app
 
 https://github.com/chriskohlhoff/asio
 
@@ -694,7 +694,7 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 DEALINGS IN THE SOFTWARE.
 ```
 
-## ISF Files (VIDVOX) — STLT-VJ app, the shaders in `isf/`
+## ISF Files (VIDVOX) — STLT app, the shaders in `isf/`
 
 https://github.com/Vidvox/ISF-Files — the shaders by VIDVOX in `app/isf` (see `app/isf/README.md`), unchanged.
 
@@ -722,7 +722,7 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-## Spout 2.007.017 (SpoutGL) — STLT-VJ app, Windows
+## Spout 2.007.017 (SpoutGL) — STLT app, Windows
 
 https://github.com/leadedge/Spout2
 
@@ -754,7 +754,7 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## Syphon Framework 5 — STLT-VJ app, macOS
+## Syphon Framework 5 — STLT app, macOS
 
 https://github.com/Syphon/Syphon-Framework (commit f4761677a45b8034a3c2069ec0f3d2553da81fba)
 
@@ -790,15 +790,15 @@ ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 ```
 
-## NDI — STLT-VJ app
+## NDI — STLT app
 
-STLT-VJ sends NDI through the NDI runtime installed on the user's computer (with NDI Tools); it does not include it. NDI® is a registered trademark of Vizrt NDI AB.
+STLT sends NDI through the NDI runtime installed on the user's computer (with NDI Tools); it does not include it. NDI® is a registered trademark of Vizrt NDI AB.
 
-## FFmpeg — STLT-VJ app
+## FFmpeg — STLT app
 
 https://ffmpeg.org
 
-STLT-VJ uses FFmpeg's libavformat, libavcodec, libswscale and libavutil to decode files that are not HAP.
+STLT uses FFmpeg's libavformat, libavcodec, libswscale and libavutil to decode files that are not HAP.
 `app/src/media/DxvFrame.cpp` is a port of FFmpeg's DXV decoder (`libavcodec/dxv.c`, Copyright (C) 2015 Vittorio
 Giovara, Copyright (C) 2018 Paul B Mahol) and LZF decompression (`libavcodec/lzf.c`, Copyright (C) 2015 Luca
 Barbato), under the same LGPL 2.1 or later, distributed here under the GPL 3 that it permits.
@@ -812,4 +812,4 @@ some builds, are under the GNU General Public License version 2 or later. The so
   under the GNU General Public License version 3; their source and licence texts are linked from that release.
 - Linux development builds may use the system's FFmpeg packages under their own licence.
 
-STLT-VJ itself is GPL-3.0, compatible with all of the above.
+STLT itself is GPL-3.0, compatible with all of the above.

@@ -409,7 +409,7 @@ void OutputRenderer::Render( const AdvancedOutputSetup& setup, GLuint compositio
 
 void OutputRenderer::Share( const Screen& screen, ScreenState& state )
 {
-	std::string name = "STLT-VJ " + screen.name;
+	std::string name = "STLT " + screen.name;
 	bool local = screen.enabled && screen.share && LocalSharingName();
 	if( !local || state.localName != name )
 		state.local.reset();
@@ -519,7 +519,7 @@ void OutputRenderer::SyncWindows( const AdvancedOutputSetup& setup, GLFWwindow* 
 		// Windows keep the screen's aspect, at most 1280 wide.
 		float scale = std::min( 1.0f, 1280.0f / std::max( screen.width, 1 ) );
 		state.window = std::make_unique< OutputWindow >();
-		if( !state.window->Open( main, monitor, "STLT-VJ - " + screen.name, (int)( screen.width * scale ), (int)( screen.height * scale ), !vsyncTaken ) )
+		if( !state.window->Open( main, monitor, "STLT - " + screen.name, (int)( screen.width * scale ), (int)( screen.height * scale ), !vsyncTaken ) )
 			state.window.reset();
 		else
 			vsyncTaken = true;

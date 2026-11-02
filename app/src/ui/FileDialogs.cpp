@@ -29,8 +29,8 @@ const nfdu8filteritem_t kMediaFilters[] = {
 	{ "Images", "png,jpg,jpeg,bmp,gif,tif,tiff,webp" },
 	{ "Sound (timeline)", "mp3,wav,aif,aiff,flac,m4a,aac,ogg,opus,wma" },
 };
-const nfdu8filteritem_t kCompositionFilters[] = { { "STLT-VJ composition", "stltvj" } };
-const nfdu8filteritem_t kShortcutFilters[]    = { { "STLT-VJ shortcuts", "json" } };
+const nfdu8filteritem_t kCompositionFilters[] = { { "STLT composition", "stltvj" } };
+const nfdu8filteritem_t kShortcutFilters[]    = { { "STLT shortcuts", "json" } };
 
 // The folder part of a default path: dialogs want an existing folder to start in.
 std::string StartFolder( const std::string& path )

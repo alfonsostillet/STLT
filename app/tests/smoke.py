@@ -2,9 +2,9 @@
 """Runs the real program on clips of each kind and checks what it draws (CI on Windows, with Mesa's software
 OpenGL; also on Linux under Xvfb).
 
-usage: smoke.py <stlt-vj executable> <fixtures folder>
+usage: smoke.py <STLT executable> <fixtures folder>
 
-Each case starts STLT-VJ with an empty setup and its own settings folder, launches a clip, captures the
+Each case starts STLT with an empty setup and its own settings folder, launches a clip, captures the
 composition after some frames and checks pixels whose colour is known. The program must exit by itself;
 a crash, a hang or a wrong picture fails the run. When the STLT-CHASER effects sit next to the program
 (plugins/), they must load and run on the composition.
@@ -210,6 +210,11 @@ else:
     for number, colour in ((1, (0, 255, 0)), (2, (0, 0, 255))):
         image, _ = run(f"Routing screen {number}", ["--output-setup", setup, "--capture-screen", str(number)], home=routing_home, fresh=False)
         expect(f"Routing screen {number}", image, [(blue_bar[0], blue_bar[1], colour)], 16)
+    # In the Session view (the deck) the canvas shows the composition, so screen 2 does not go black.
+    with open(os.path.join(config, "view.txt"), "w") as f:
+        f.write("session")
+    image, _ = run("Routing screen 2 in Session", ["--output-setup", setup, "--capture-screen", "2", "--launch", "1,1"], home=routing_home, fresh=False)
+    expect("Routing screen 2 in Session", image, [(blue_bar[0], blue_bar[1], (0, 255, 0))], 16)
 
 # ISF shaders, when they come with the program: every one builds and runs, and two of them on the green clip draw
 # what they should (Color Invert: magenta; Fast Blur, in several passes: green still).

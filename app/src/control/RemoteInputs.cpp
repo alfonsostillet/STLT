@@ -109,7 +109,7 @@ void RemoteInputs::ConfigureOutputs()
 			try
 			{
 				auto out = std::make_unique< RtMidiOut >();
-				out->openPort( found->second, "STLT-VJ" );
+				out->openPort( found->second, "STLT" );
 				midiOuts[ port.first ] = std::move( out );
 				outputsVersion++;
 			}
@@ -324,7 +324,7 @@ void RemoteInputs::Configure( const ControlSettings& settings, bool retry )
 				port->owner = this;
 				port->name  = name;
 				port->in    = std::make_unique< RtMidiIn >();
-				port->in->openPort( index, "STLT-VJ" );
+				port->in->openPort( index, "STLT" );
 				port->in->ignoreTypes( false, false, true ); // SysEx (MTC full frames) and the clock, but no active sensing
 				port->in->setCallback( &RemoteInputs::OnMidi, port.get() );
 				midiPorts[ name ] = std::move( port );

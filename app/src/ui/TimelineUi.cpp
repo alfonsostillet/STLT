@@ -585,10 +585,15 @@ void TrackHeader( App& app, int k, ImVec2 pos, ImVec2 size )
 			ImGui::SameLine( 0, Ui( 2 ) );
 			ImGui::SetNextItemWidth( size.x - Ui( 14 ) - ImGui::GetFrameHeight() );
 			float percent = current * 100;
-			if( FilledSlider( "##volume", &percent, 0, 100, keyed ? "Volume %.0f %% (keys)" : "Volume %.0f %%" ) )
+			bool edited = FilledSlider( "##volume", &percent, 0, 100, keyed ? "Volume %.0f %% (keys)" : "Volume %.0f %%" );
+			// One drag, one point: where the playhead was when it began (the timeline may play on meanwhile).
+			static double heldAt = 0;
+			if( ImGui::IsItemActivated() )
+				heldAt = now;
+			if( edited )
 			{
 				if( keyed )
-					SetKeyIn( track.volumeKeys, now, percent / 100 );
+					SetKeyIn( track.volumeKeys, ImGui::IsItemActive() ? heldAt : now, percent / 100 );
 				else
 					track.volume = percent / 100;
 			}

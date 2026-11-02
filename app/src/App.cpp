@@ -14,6 +14,7 @@
 #include "audio/AudioEngine.h"
 #include "fx/BuiltinEffects.h"
 #include "fx/IsfEffect.h"
+#include "ui/AppIcon.h"
 #include "gl/Gl.h"
 #include "ui/AdvancedOutputUi.h"
 #include "ui/ControlUi.h"
@@ -102,13 +103,22 @@ bool App::Init( const LaunchOptions& launch )
 	glfwWindowHint( GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE );
 	glfwWindowHint( GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE );
 	glfwWindowHint( GLFW_MAXIMIZED, options.width > 0 ? GLFW_FALSE : GLFW_TRUE );
-	window = glfwCreateWindow( options.width > 0 ? options.width : 1600, options.height > 0 ? options.height : 900, "STLT-VJ", nullptr, nullptr );
+	window = glfwCreateWindow( options.width > 0 ? options.width : 1600, options.height > 0 ? options.height : 900, "STLT", nullptr, nullptr );
 	glfwDefaultWindowHints();
 	if( !window )
 	{
 		std::fprintf( stderr, "Could not create an OpenGL 4.1 window\n" );
 		return false;
 	}
+#ifndef __APPLE__
+	// The window's icon (macOS takes the bundle's).
+	{
+		std::vector< GLFWimage > icons;
+		for( const AppIconImage& icon : kAppIcons )
+			icons.push_back( { icon.size, icon.size, const_cast< unsigned char* >( icon.pixels ) } );
+		glfwSetWindowIcon( window, (int)icons.size(), icons.data() );
+	}
+#endif
 	glfwMakeContextCurrent( window );
 	glfwSwapInterval( 1 );
 	glfwSetWindowUserPointer( window, this );
@@ -1299,7 +1309,7 @@ bool App::ImportShortcuts( const std::string& path )
 	std::string text;
 	if( !ReadTextFile( path, text ) || !control.LoadShortcuts( text ) )
 	{
-		SetStatus( "Not an STLT-VJ shortcut file: " + path, true );
+		SetStatus( "Not an STLT shortcut file: " + path, true );
 		return false;
 	}
 	// It becomes a preset of its own, named after the file.
@@ -1334,7 +1344,7 @@ void App::PollRemote()
 			float previous = v <= 0 ? lastOscValues[ e.address ] : 0.0f;
 			lastOscValues[ e.address ] = v;
 			if( !ApplyControl( e.address, has, v, false, previous ) )
-				lastControl += "  (not an STLT-VJ address)";
+				lastControl += "  (not an STLT address)";
 			continue;
 		}
 		int id         = (int)e.key.type * 4096 + e.key.channel * 128 + e.key.number;
@@ -2406,6 +2416,12 @@ bool App::FollowTimecode( double dt )
 {
 	Timeline& t    = composition.timeline;
 	timecodeLocked = false;
+	// A source that would not open (Art-Net's port taken, a sound card unplugged): tried again every few seconds.
+	if( timecode.Failed() && TempoSync::Now() - timecodeRetried > 5 )
+	{
+		timecodeRetried = TempoSync::Now();
+		ApplySync();
+	}
 	if( !t.followTimecode || timecode.Current() == TimecodeInput::Source::Off )
 		return false;
 	TimecodeReceiver::State in = timecode.At( TempoSync::Now() + prefs.syncLatencyMs / 1000.0, prefs.timecodeFreewheelMs / 1000.0 );
@@ -2596,9 +2612,11 @@ void App::Frame()
 	frame.delta = dt;
 	frame.bpm   = composition.bpm;
 	frame.beat  = composition.beat;
+	// The canvases only matter to the Advanced Output: drawn while it is on show, edited or captured.
 	std::vector< Compositor::CanvasSize > canvases;
-	for( const Canvas& c : advancedOutput.canvases )
-		canvases.push_back( { c.id, c.width, c.height } );
+	if( outputMode == OutputMode::Advanced || panels.advancedOutput || options.captureScreen > 0 )
+		for( const Canvas& c : advancedOutput.canvases )
+			canvases.push_back( { c.id, c.width, c.height } );
 	compositor.Render( composition, frame, view == View::Arrangement, canvases );
 	UpdateQuickOutput();
 	bool advancedLive = outputMode == OutputMode::Advanced;

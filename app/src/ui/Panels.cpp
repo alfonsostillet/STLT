@@ -248,7 +248,12 @@ std::string DefaultCompositionPath( App& app )
 {
 	if( !app.compositionPath.empty() )
 		return app.compositionPath;
-	return ( fs::u8path( HomeDirectory() ) / "STLT-VJ" / fs::u8path( app.composition.name + ".stltvj" ) ).u8string();
+	// Compositions go to ~/STLT; while only the folder of STLT-VJ (the program's old name) is there, to that one.
+	fs::path folder = fs::u8path( HomeDirectory() ) / "STLT";
+	std::error_code ignored;
+	if( !fs::exists( folder, ignored ) && fs::is_directory( fs::u8path( HomeDirectory() ) / "STLT-VJ", ignored ) )
+		folder = fs::u8path( HomeDirectory() ) / "STLT-VJ";
+	return ( folder / fs::u8path( app.composition.name + ".stltvj" ) ).u8string();
 }
 }
 
@@ -507,7 +512,7 @@ void DrawMainMenu( App& app )
 				ShowFileDialog( FileDialog::OpenShortcuts, DocumentsDirectory(), [ &app ]( const std::vector< std::string >& paths ) { app.ImportShortcuts( paths[ 0 ] ); } );
 			if( ImGui::MenuItem( "Export Shortcuts..." ) )
 				ShowFileDialog( FileDialog::SaveShortcuts, DocumentsDirectory(), [ &app ]( const std::vector< std::string >& paths ) { app.ExportShortcuts( paths[ 0 ] ); },
-				                ( app.control.preset.empty() ? std::string( "STLT-VJ shortcuts" ) : app.control.preset ) + ".json" );
+				                ( app.control.preset.empty() ? std::string( "STLT shortcuts" ) : app.control.preset ) + ".json" );
 			ImGui::Separator();
 			if( ImGui::MenuItem( "Clear All Keys", nullptr, false, !app.control.keys.empty() ) )
 			{
@@ -2816,7 +2821,7 @@ void DrawStatusBar( App& app )
 		ImGui::TextColored( app.statusIsError ? ImVec4( 0.9f, 0.35f, 0.3f, 1 ) : ImVec4( 0.7f, 0.7f, 0.7f, 1 ), "%s", app.status.c_str() );
 	else
 		ImGui::TextDisabled( "%s", app.compositionPath.empty() ? "Unsaved composition" : app.compositionPath.c_str() );
-	const char* version = "STLT-VJ 0.1";
+	const char* version = "STLT " STLT_VERSION;
 	ImGui::SameLine( ImGui::GetWindowWidth() - ImGui::CalcTextSize( version ).x - Ui( 12 ) );
 	ImGui::TextDisabled( "%s", version );
 }

@@ -848,7 +848,7 @@ bool LoadComposition( const std::string& text, Composition& out, std::string& er
 	json root = json::parse( text, nullptr, false );
 	if( root.is_discarded() || !root.is_object() || root.value( "format", "" ) != "stlt-vj-composition" )
 	{
-		error = "Not an STLT-VJ composition";
+		error = "Not an STLT composition";
 		return false;
 	}
 	Composition c;

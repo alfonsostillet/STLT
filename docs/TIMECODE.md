@@ -16,8 +16,8 @@ Fonti: [l'articolo di Resolume sul SMPTE](https://resolume.com/article/46), le r
 
 ## Cosa facciamo
 
-1. **LTC, MTC e Art-Net Timecode, tutti e tre**: STLT-VJ legge direttamente quello che Resolume legge solo con un convertitore (MTC, Art-Net). Così con un DAW basta un cavo MIDI virtuale, con le luci basta la rete.
-2. **Pro DJ Link: attraverso Ableton Link.** Il protocollo è proprietario e il modo pulito è PRO DJ LINK Bridge (gratuito, di Pioneer), che manda il tempo e la battuta dei CDJ come Ableton Link: STLT-VJ ora lo segue (pulsante LINK). La posizione nel brano dei CDJ (per agganciare la timeline a un brano preciso) richiederebbe di fare da "CDJ virtuale" sulla rete Pioneer, cosa che solo le aziende con licenza fanno ufficialmente: per ora no.
+1. **LTC, MTC e Art-Net Timecode, tutti e tre**: STLT legge direttamente quello che Resolume legge solo con un convertitore (MTC, Art-Net). Così con un DAW basta un cavo MIDI virtuale, con le luci basta la rete.
+2. **Pro DJ Link: attraverso Ableton Link.** Il protocollo è proprietario e il modo pulito è PRO DJ LINK Bridge (gratuito, di Pioneer), che manda il tempo e la battuta dei CDJ come Ableton Link: STLT ora lo segue (pulsante LINK). La posizione nel brano dei CDJ (per agganciare la timeline a un brano preciso) richiederebbe di fare da "CDJ virtuale" sulla rete Pioneer, cosa che solo le aziende con licenza fanno ufficialmente: per ora no.
 
 ## Come funziona per chi lo usa
 

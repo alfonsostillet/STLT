@@ -39,7 +39,7 @@ public:
 
 	~OutputWindow();
 	// monitor null: a window of windowWidth x windowHeight. Re-opening moves the output.
-	bool Open( GLFWwindow* shareWith, GLFWmonitor* monitor, const std::string& title = "STLT-VJ Output", int windowWidth = 1280, int windowHeight = 720,
+	bool Open( GLFWwindow* shareWith, GLFWmonitor* monitor, const std::string& title = "STLT Output", int windowWidth = 1280, int windowHeight = 720,
 	           bool vsync = true );
 	void Close();
 	bool IsOpen() const { return window != nullptr; }

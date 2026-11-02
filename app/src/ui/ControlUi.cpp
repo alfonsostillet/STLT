@@ -238,7 +238,7 @@ void DrawControlPanel( App& app )
 		ImGui::SameLine();
 		if( ImGui::Button( "Export...", ImVec2( third, 0 ) ) )
 			ShowFileDialog( FileDialog::SaveShortcuts, DocumentsDirectory(), [ &app ]( const std::vector< std::string >& paths ) { app.ExportShortcuts( paths[ 0 ] ); },
-			                ( app.control.preset.empty() ? std::string( "STLT-VJ shortcuts" ) : app.control.preset ) + ".json" );
+			                ( app.control.preset.empty() ? std::string( "STLT shortcuts" ) : app.control.preset ) + ".json" );
 		ImGui::SameLine();
 		ImGui::BeginDisabled( app.control.preset.empty() );
 		if( ImGui::Button( "Delete", ImVec2( third, 0 ) ) )

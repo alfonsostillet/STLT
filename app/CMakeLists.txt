@@ -1,9 +1,11 @@
 cmake_minimum_required(VERSION 3.20)
 
-# STLT-VJ: a live video player built around HAP, dockable panels, FFGL effects and slice mapping.
+# STLT: a live video player built around HAP, dockable panels, FFGL and ISF effects, a timeline and slice mapping.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Oldest macOS the app runs on")
 
-project(STLT-VJ VERSION 0.1.0 LANGUAGES C CXX)
+project(STLT VERSION 0.4.0 LANGUAGES C CXX)
+# The version shown in the app and given to plugins (a release's tag without the v: 0.4.0-beta.1).
+set(STLT_VERSION "0.4.0-beta.1" CACHE STRING "The version the app reports")
 # Objective-C for Syphon and the macOS bits of the dependencies: enabled here, before any of them, or a
 # dependency enabling it in its own folder first would leave this one without the compile rules.
 if(APPLE)
@@ -250,7 +252,7 @@ add_library(stltvj-core STATIC
     src/audio/Miniaudio.c
 )
 target_include_directories(stltvj-core PUBLIC src third_party/khronos "${THIRD_PARTY}/nlohmann")
-target_compile_definitions(stltvj-core PUBLIC GLFW_INCLUDE_NONE)
+target_compile_definitions(stltvj-core PUBLIC GLFW_INCLUDE_NONE STLT_VERSION="${STLT_VERSION}")
 target_link_libraries(stltvj-core PUBLIC stltvj-media glfw)
 if(WIN32)
     target_compile_definitions(stltvj-core PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
@@ -400,8 +402,21 @@ add_executable(stlt-vj WIN32 MACOSX_BUNDLE
 )
 target_link_libraries(stlt-vj PRIVATE stltvj-core imgui nfd)
 stltvj_ffmpeg_runtime(stlt-vj)
+# The program is STLT: STLT.exe, STLT.app, stlt on Linux; with its icon (resources/stlt.svg).
 if(WIN32)
-    set_target_properties(stlt-vj PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup")
+    set_target_properties(stlt-vj PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup" OUTPUT_NAME STLT)
+    target_sources(stlt-vj PRIVATE resources/stlt.rc)
+elseif(APPLE)
+    set_source_files_properties(resources/stlt.icns PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+    target_sources(stlt-vj PRIVATE resources/stlt.icns)
+    set_target_properties(stlt-vj PROPERTIES OUTPUT_NAME STLT
+        MACOSX_BUNDLE_BUNDLE_NAME STLT
+        MACOSX_BUNDLE_ICON_FILE stlt.icns
+        MACOSX_BUNDLE_GUI_IDENTIFIER com.stillet.stlt
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${STLT_VERSION}")
+else()
+    set_target_properties(stlt-vj PROPERTIES OUTPUT_NAME stlt)
 endif()
 # The ISF shaders that come with the app (isf/README.md), next to the program; inside the bundle on macOS.
 if(APPLE)

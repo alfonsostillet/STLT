@@ -287,6 +287,11 @@ static void TestMidiClock()
 	CHECK( clock.At( t ).jumps != jumps );
 	ticks( clock, 1, 140 );
 	CHECK( std::fabs( clock.At( t ).beat - 16 ) < 0.01 );
+	// A Song Position while it runs: the next tick is that position.
+	const unsigned char spp32[] = { 0xF2, 0, 1 }; // 128 sixteenths: beat 32
+	clock.Message( spp32, 3, t );
+	ticks( clock, 1, 140 );
+	CHECK( std::fabs( clock.At( t ).beat - 32 ) < 0.01 );
 
 	// The composition's beat and tempo follow it; a Start sends the beat back to the top.
 	TempoSync sync;

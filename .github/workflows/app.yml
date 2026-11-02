@@ -1,4 +1,4 @@
-name: STLT-VJ app
+name: STLT app
 
 # Builds and tests the app on every push and pull request; a manual run with a tag also publishes a release.
 on:
@@ -58,6 +58,9 @@ jobs:
         run: |
           EXTRA=""
           if [ "$RUNNER_OS" = "macOS" ]; then EXTRA="-DFFMPEG_ROOT=$HOME/ffmpeg"; fi
+          # A release reports its own version (the tag without the v).
+          TAG="${{ inputs.release }}"
+          if [ -n "$TAG" ]; then EXTRA="$EXTRA -DSTLT_VERSION=${TAG#v}"; fi
           cmake -S app -B app/build -DCMAKE_BUILD_TYPE=Release $EXTRA
           cmake --build app/build --config Release --parallel
 
@@ -94,25 +97,26 @@ jobs:
         run: |
           mkdir -p package
           if [ "$RUNNER_OS" = "Windows" ]; then
-            mkdir -p package/STLT-VJ/plugins
-            cp app/build/Release/stlt-vj.exe app/build/Release/*.dll package/STLT-VJ/
-            cp -r app/isf package/STLT-VJ/isf
-            cp chaser/plugin/dist/*.dll package/STLT-VJ/plugins/
-            cp -r chaser/editor/release/win-unpacked package/STLT-VJ/chaser
-            test -f package/STLT-VJ/chaser/STLT-CHASER.exe
-            (cd package && 7z a -tzip -bd ../STLT-VJ-windows.zip STLT-VJ > /dev/null)
+            mkdir -p package/STLT/plugins
+            cp app/build/Release/STLT.exe app/build/Release/*.dll package/STLT/
+            cp -r app/isf package/STLT/isf
+            cp chaser/plugin/dist/*.dll package/STLT/plugins/
+            cp -r chaser/editor/release/win-unpacked package/STLT/chaser
+            test -f package/STLT/chaser/STLT-CHASER.exe
+            (cd package && 7z a -tzip -bd ../STLT-windows.zip STLT > /dev/null)
           elif [ "$RUNNER_OS" = "macOS" ]; then
-            ditto -c -k --keepParent app/build/stlt-vj.app STLT-VJ-macos.zip
+            ditto -c -k --keepParent app/build/STLT.app STLT-macos.zip
           else
-            mkdir -p package/STLT-VJ/plugins
-            cp app/build/stlt-vj package/STLT-VJ/
-            cp -r app/isf package/STLT-VJ/isf
-            cp chaser/plugin/dist/*.so package/STLT-VJ/plugins/
-            cp -r chaser/editor/release/linux-unpacked package/STLT-VJ/chaser
-            test -x package/STLT-VJ/chaser/stlt-chaser
-            tar -C package -czf STLT-VJ-linux.tar.gz STLT-VJ
+            mkdir -p package/STLT/plugins
+            cp app/build/stlt package/STLT/
+            cp app/resources/stlt.png package/STLT/
+            cp -r app/isf package/STLT/isf
+            cp chaser/plugin/dist/*.so package/STLT/plugins/
+            cp -r chaser/editor/release/linux-unpacked package/STLT/chaser
+            test -x package/STLT/chaser/stlt-chaser
+            tar -C package -czf STLT-linux.tar.gz STLT
           fi
-          ls -l STLT-VJ-*
+          ls -l STLT-*
 
       # The real program on clips of each kind (HAP, DXV, H.264) and with STLT-CHASER's effects: it must draw the
       # right picture and quit by itself. Windows runners have no GPU, so Mesa's software OpenGL stands in, next
@@ -125,20 +129,20 @@ jobs:
           curl -sSL "$URL" -o mesa.7z
           7z x -y -omesa mesa.7z > /dev/null
           mkdir -p smoke
-          cp -r package/STLT-VJ smoke/
-          cp mesa/x64/*.dll smoke/STLT-VJ/
-          python app/tests/smoke.py smoke/STLT-VJ/stlt-vj.exe app/tests/fixtures
+          cp -r package/STLT smoke/
+          cp mesa/x64/*.dll smoke/STLT/
+          python app/tests/smoke.py smoke/STLT/STLT.exe app/tests/fixtures
 
       - name: Smoke test (Linux, virtual screen)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get install -y xvfb
-          xvfb-run -a -s "-screen 0 1920x1080x24" python3 app/tests/smoke.py package/STLT-VJ/stlt-vj app/tests/fixtures
+          xvfb-run -a -s "-screen 0 1920x1080x24" python3 app/tests/smoke.py package/STLT/stlt app/tests/fixtures
 
       - uses: actions/upload-artifact@v4
         with:
-          name: STLT-VJ-${{ matrix.artifact }}
-          path: STLT-VJ-${{ matrix.artifact }}.*
+          name: STLT-${{ matrix.artifact }}
+          path: STLT-${{ matrix.artifact }}.*
           if-no-files-found: error
 
   # The tests on Windows under AddressSanitizer (MSVC): reads past a buffer, use after free and the like stop the
@@ -185,15 +189,17 @@ jobs:
         run: |
           V="${{ inputs.release || github.ref_name }}"
           mkdir -p release
-          mv artifacts/STLT-VJ-windows.zip "release/STLT-VJ-$V-windows.zip"
-          mv artifacts/STLT-VJ-linux.tar.gz "release/STLT-VJ-$V-linux.tar.gz"
-          if [ -f artifacts/STLT-VJ-macos.zip ]; then mv artifacts/STLT-VJ-macos.zip "release/STLT-VJ-$V-macos.zip"; fi
+          mv artifacts/STLT-windows.zip "release/STLT-$V-windows.zip"
+          mv artifacts/STLT-linux.tar.gz "release/STLT-$V-linux.tar.gz"
+          if [ -f artifacts/STLT-macos.zip ]; then mv artifacts/STLT-macos.zip "release/STLT-$V-macos.zip"; fi
           ls -l release
 
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ inputs.release || github.ref_name }}
           target_commitish: ${{ github.sha }}
-          name: STLT-VJ ${{ inputs.release || github.ref_name }}
+          name: STLT ${{ inputs.release || github.ref_name }}
+          # A beta or a release candidate is marked as a pre-release.
+          prerelease: ${{ contains(inputs.release || github.ref_name, 'beta') || contains(inputs.release || github.ref_name, 'rc') }}
           body_path: docs/releases/${{ inputs.release || github.ref_name }}.md
           files: release/*

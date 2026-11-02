@@ -226,6 +226,7 @@ public:
 	// The timecode the timeline can follow (Preferences > Sync; the timeline's TC button). Before `remote` too.
 	TimecodeInput timecode;
 	bool timecodeLocked = false; // the timeline follows a timecode that is coming in
+	double timecodeRetried = 0;  // when a source that would not open was last tried again
 	bool FollowTimecode( double dt );
 	RemoteInputs remote;
 	AudioEngine audio;

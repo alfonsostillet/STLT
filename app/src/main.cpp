@@ -1,5 +1,5 @@
-// STLT-VJ: live HAP playback with dockable panels.
-//   stlt-vj [--fresh] [--clip LAYER,COLUMN,PATH]... [--source LAYER,COLUMN,EFFECT-ID]...
+// STLT: live HAP playback with dockable panels.
+//   STLT [--fresh] [--clip LAYER,COLUMN,PATH]... [--source LAYER,COLUMN,EFFECT-ID]...
 //           [--fx comp|layer:L|clip:L,C=EFFECT-ID]... [--launch LAYER,COLUMN]... [--list-effects] [--check-isf [FOLDER]]
 //           [--output-setup FILE.json|AdvancedOutput.xml] [--advanced-output input|output] [--osc PORT]
 //           [--size WxH] [--capture FILE.bmp [--frames N]]

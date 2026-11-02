@@ -401,7 +401,7 @@ bool FfglEffect::Process( GLuint input, int width, int height, GLuint targetFbo,
 		instance       = result.PointerValue;
 		instanceWidth  = width;
 		instanceHeight = height;
-		ffgl::HostInfo host{ "STLT-VJ", "0.2" };
+		ffgl::HostInfo host{ "STLT", STLT_VERSION };
 		library->Call( ffgl::SET_HOSTINFO, &host, instance );
 		// Option lists and visibility can depend on the instance (dynamic menus).
 		for( size_t i = 0; i < params.size(); ++i )

@@ -573,7 +573,8 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame, bool 
 	Fbo* result = timelineView ? mixed : ApplyChain( composition.effects, mixed, mixed == &work.mix[ 0 ] ? &work.mix[ 1 ] : &work.mix[ 0 ], frame );
 	Finish( *result, final, composition );
 
-	// The canvases: their tracks, at their own sizes (black when nothing is sent to them).
+	// The canvases: in the timeline, the tracks sent to them, at their own sizes (black when none is); outside it
+	// (the deck's layers have no canvas) the composition stretched over them, so their screens keep showing.
 	for( const CanvasSize& c : canvases )
 	{
 		if( c.width <= 0 || c.height <= 0 )
@@ -583,6 +584,22 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame, bool 
 			out = std::make_unique< Fbo >();
 		if( !out->Ensure( c.width, c.height ) )
 			continue;
+		if( !timelineView )
+		{
+			float identity[ 9 ];
+			Identity( identity );
+			out->Bind();
+			glBindVertexArray( vao );
+			copyProgram.Use();
+			glUniformMatrix3fv( copyProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
+			SetTexRect( copyProgram, 0, 1, 1, 0 );
+			glUniform1f( copyProgram.Uniform( "uOpacity" ), 1.0f ); // the composition has its master already
+			glActiveTexture( GL_TEXTURE0 );
+			glBindTexture( GL_TEXTURE_2D, final.Texture() );
+			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+			ResetGlState();
+			continue;
+		}
 		std::vector< Source >& list = canvasSources[ c.id ];
 		Fbo* canvas                 = Mix( list, WorkFor( c.width, c.height ), c.width, c.height, frame );
 		if( canvas )
@@ -594,7 +611,7 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame, bool 
 	for( auto it = works.begin(); it != works.end(); )
 	{
 		bool used = it->first == std::make_pair( W, H )
-		            || std::any_of( canvases.begin(), canvases.end(), [ & ]( const CanvasSize& c ) { return it->first == std::make_pair( c.width, c.height ); } );
+		            || ( timelineView && std::any_of( canvases.begin(), canvases.end(), [ & ]( const CanvasSize& c ) { return it->first == std::make_pair( c.width, c.height ); } ) );
 		it = used ? std::next( it ) : works.erase( it );
 	}
 	glBindFramebuffer( GL_FRAMEBUFFER, 0 );

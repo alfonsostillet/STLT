@@ -1,0 +1,2 @@
+// STLT for Windows: the program's icon (Explorer, taskbar).
+IDI_ICON1 ICON "stlt.ico"

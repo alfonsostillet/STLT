@@ -32,7 +32,8 @@ public:
 	};
 	// Main context. Renders the whole composition; the result is CompositionTexture().
 	// `timelineView`: the timeline's video tracks at its playhead instead of the deck's layers; the tracks sent to
-	// one of `canvases` are mixed into that canvas (CanvasTexture) instead of the composition.
+	// one of `canvases` are mixed into that canvas (CanvasTexture) instead of the composition. Outside the timeline
+	// a canvas shows the composition, stretched to its size.
 	void Render( Composition& composition, const FrameInfo& frame, bool timelineView = false, const std::vector< CanvasSize >& canvases = {} );
 	GLuint CompositionTexture() const { return final.Texture(); }
 	GLuint CompositionFramebuffer() const { return final.Framebuffer(); }
