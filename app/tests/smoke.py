@@ -215,6 +215,19 @@ else:
         f.write("session")
     image, _ = run("Routing screen 2 in Session", ["--output-setup", setup, "--capture-screen", "2", "--launch", "1,1"], home=routing_home, fresh=False)
     expect("Routing screen 2 in Session", image, [(blue_bar[0], blue_bar[1], (0, 255, 0))], 16)
+    # The Grid's and the timeline's setups saved together: each view shows its own. The Grid's screen is faded out
+    # (opacity 0, black), the timeline's is not.
+    grid = {"format": "stlt-vj-advanced-output", "version": 1, "screens": [dict(screen("Main", ""), opacity=0)]}
+    timeline_setup = {"format": "stlt-vj-advanced-output", "version": 1, "screens": [screen("Main", "")]}
+    both = os.path.join(routing_home, "both.json")
+    json.dump({"format": "stlt-output-setups", "version": 1, "grid": grid, "timeline": timeline_setup}, open(both, "w"))
+    image, _ = run("Grid setup in Session", ["--output-setup", both, "--capture-screen", "1", "--launch", "1,1"], home=routing_home, fresh=False)
+    expect("Grid setup in Session", image, [(960, 540, (0, 0, 0))], 12)
+    with open(os.path.join(config, "view.txt"), "w") as f:
+        f.write("arrangement")
+    image, _ = run("Timeline setup in Arrangement", ["--output-setup", both, "--capture-screen", "1"], home=routing_home, fresh=False)
+    # (Its setup has no canvas "led": both tracks go to the composition, the bars on top.)
+    expect("Timeline setup in Arrangement", image, [(blue_bar[0], blue_bar[1], (0, 0, 255))], 16)
 
 # ISF shaders, when they come with the program: every one builds and runs, and two of them on the green clip draw
 # what they should (Color Invert: magenta; Fast Blur, in several passes: green still).

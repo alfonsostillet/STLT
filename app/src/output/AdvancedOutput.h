@@ -135,6 +135,7 @@ const char* OutputDeviceName( OutputDevice device );
 
 struct Screen
 {
+	std::string id; // stable (timeline tracks name the screen they go to by it); given by AdvancedOutputSetup::EnsureIds
 	std::string name = "Screen";
 	bool enabled     = true;
 	OutputDevice device = OutputDevice::Virtual;
@@ -150,12 +151,14 @@ struct Screen
 };
 
 // A picture of its own besides the composition, with its own size: the timeline's tracks can be sent to it
-// instead of the composition (a LED wall, side screens), and slices take their picture from it.
+// instead of the composition, and slices take their picture from it. Each belongs to a screen (its picture: the
+// screen's size and name, what the tracks sent to that screen are mixed into); older setups may hold free ones.
 struct Canvas
 {
 	std::string id; // what tracks and slices name it by; given by AdvancedOutputSetup::EnsureIds
 	std::string name = "Canvas";
 	int width = 1920, height = 1080;
+	std::string screen; // the id of the screen whose picture it is ("" a free canvas)
 };
 
 struct AdvancedOutputSetup
@@ -182,16 +185,34 @@ struct AdvancedOutputSetup
 	bool EnsureIds();
 	// A new canvas with a fresh id (not added).
 	Canvas MakeCanvas( const std::string& name, int width, int height ) const;
-	// A canvas for screen `index`, its size and name; the screen's slices that showed the whole composition show
-	// the whole canvas instead (the screen now shows what goes to the canvas). Returns the canvas's id.
-	std::string AddScreenCanvas( size_t index, int compWidth, int compHeight );
 	// Removes a canvas; its slices go back to the composition.
 	void RemoveCanvas( const std::string& id, int compWidth, int compHeight );
+
+	// Screens' own pictures (the timeline: a track sent to a screen). The picture of screen `index`: its canvas id,
+	// or "" when it has none.
+	std::string ScreenPictureOf( size_t index ) const;
+	// The picture of screen `index`, made when it has none: then that screen's slices (not masks) that took from the
+	// composition take from it, their inputs scaled to its size. Returns its id ("" when there is no such screen).
+	std::string MakeScreenPicture( size_t index, int compWidth, int compHeight );
+	// The screen whose picture `canvas` is (-1: none, or a free canvas).
+	int ScreenOfPicture( const std::string& canvas ) const;
+	// Keeps the screens' pictures with their screens: the screen's size and name (the slices taking from one keep
+	// their share of it), and gone with the screen. Free canvases from older setups become the picture of the first
+	// screen whose slices take from them, if it has none. True if anything changed.
+	bool SyncScreenPictures( int compWidth, int compHeight );
+	// Every canvas removed (the deck's setup has none: its layers all go to the composition).
+	void RemoveAllCanvases( int compWidth, int compHeight );
 	// Changes what a slice takes from, its input moved and scaled from the old picture's size to the new one's.
 	void SetSliceSource( Slice& slice, const std::string& source, int compWidth, int compHeight ) const;
 };
 
 std::string SaveAdvancedOutput( const AdvancedOutputSetup& setup );
+// The two setups the app keeps, saved together: the deck's (Grid, used in the Session view) and the timeline's (used
+// in the Arrangement view). Loading also takes a single setup (older files, presets, Resolume-style imports): both
+// start from it, the grid's without canvases and the timeline's with its canvases given to their screens.
+std::string SaveOutputSetups( const AdvancedOutputSetup& grid, const AdvancedOutputSetup& timeline );
+bool LoadOutputSetups( const std::string& json, AdvancedOutputSetup& grid, AdvancedOutputSetup& timeline, int compWidth, int compHeight,
+                       std::string& error );
 // The stage for the STLT-CHASER editor (chaser-stage.json): the composition size, the screens and each slice's
 // id, name, input (composition pixels) and output (screen pixels); masks left out. Ids must be set (EnsureIds).
 std::string SaveChaserStage( const AdvancedOutputSetup& setup, int compWidth, int compHeight );

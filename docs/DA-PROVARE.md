@@ -57,14 +57,16 @@ Correzioni già fatte e verificate dai test automatici, da provare sul PC vero p
 - [ ] Su un poligono già fatto: **doppio clic sul bordo** aggiunge un punto, oppure tasto destro sul bordo → *Add Point Here*; Canc toglie il punto selezionato. Nelle proprietà, *Points* dice quanti sono (il (?) spiega come).
 - [ ] Le forme concave (una stella, una L) devono riempirsi giuste, senza triangoli che escono.
 
-## Tracce su schermi diversi (nuovo, punto 9 proposta B)
+## Griglia e Timeline separate, tracce sugli schermi, Multiview (nuovo)
 
-- [ ] Nella timeline, accanto al nome di ogni traccia video c'è una pastiglia (*Composition* all'inizio). Cliccala → **New Canvas for Screen 2** (con almeno due screen nell'Advanced Output): la traccia ora va solo sullo Screen 2, e non più sugli altri; lo Screen 2 mostra quello che va sulla sua tela.
-- [ ] Manda due tracce sulla stessa tela: si mescolano tra loro (blend e opacità delle tracce come al solito).
-- [ ] Nell'Advanced Output, slice per slice, **Source** sceglie Composition o una tela; con la scheda *Input Selection* vedi l'immagine della tela e scegli la parte da prendere (per esempio metà di una tela LED larga per ogni processore).
-- [ ] Il pallino colorato accanto alle slice nella lista ha lo stesso colore della pastiglia delle tracce che vanno lì.
-- [ ] Salva l'Advanced Output e il progetto, chiudi e riapri: tele, sorgenti delle slice e uscite delle tracce restano.
-- [ ] *Remove Canvas* rimanda slice e tracce alla composizione.
+- [ ] **Advanced Output**: in alto le schede **Grid** e **Timeline**, due configurazioni diverse. Quella della vista in uso dice *(on show)*; passando da griglia a timeline (o con Tab) cambia anche l'uscita. Si può modificare anche quella non in uscita: in basso lo dice, con un pulsante per andarci.
+- [ ] Nella timeline, sotto il nome di ogni traccia video c'è *→ All Screens*. Cliccalo e scegli uno schermo: la traccia va solo lì (traccia 1 → schermo 2, traccia 3 → schermo 3...). Lo schermo mostra solo le sue tracce; gli schermi senza tracce mostrano la composizione (le tracce su *All Screens*).
+- [ ] Nell'Advanced Output, scheda *Timeline*: sotto ogni schermo c'è l'elenco delle tracce che riceve; nelle impostazioni dello schermo, *Tracks* ha una spunta per traccia (stessa cosa del menu nella timeline).
+- [ ] Togliendo l'ultima traccia da uno schermo (rimettendola su *All Screens*), lo schermo torna a mostrare la composizione.
+- [ ] Le slice su uno schermo con tracce ritagliano l'immagine di quelle tracce (prova: due layer a sinistra e ritagliati come nel tuo test).
+- [ ] I vecchi file con le "tele" (canvas) si aprono da soli: ogni tela diventa lo schermo che la usava.
+- [ ] **Timeline come un programma di montaggio**: tracce video sopra, audio sotto in verde, con uno stacco in mezzo. **Doppio clic** sull'intestazione per rinominare (Invio per confermare). **Trascina** un'intestazione su un'altra traccia dello stesso tipo per spostarla (o tasto destro → *Move Up* / *Move Down*). Il bordo destro delle intestazioni si trascina per allargarle; nome, destinazione, M/S e opacità/volume si leggono interi.
+- [ ] **Monitor**: in alto i pulsanti *Composition*, *Multiview*, *Screen ▼*, *Track ▼* (o *Layer ▼* nella griglia). Multiview: tutti gli schermi affiancati col loro nome (con un solo schermo, la composizione); doppio clic su uno schermo per vederlo da solo. *Track/Layer*: una traccia o un layer da solo, con i suoi effetti, anche se è in mute.
 
 ## Advanced Output rifatto (nuovo)
 

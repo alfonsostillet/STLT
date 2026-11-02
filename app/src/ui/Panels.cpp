@@ -12,6 +12,7 @@
 #include "Settings.h"
 #include "media/ThreadPool.h"
 #include "media/FrameSource.h"
+#include "ui/AdvancedOutputUi.h"
 #include "ui/ControlUi.h"
 #include "ui/EffectsUi.h"
 #include "ui/FileDialogs.h"
@@ -956,11 +957,11 @@ void DrawToolbar( App& app )
 	if( app.outputMode == OutputMode::Advanced )
 	{
 		int count = 0;
-		for( size_t s = 0; s < app.advancedOutput.screens.size(); ++s )
+		for( size_t s = 0; s < app.LiveOutput().screens.size(); ++s )
 			if( app.outputs.DeviceStatus( s ).rfind( "virtual", 0 ) != 0 && app.outputs.DeviceStatus( s ).find( "not connected" ) == std::string::npos )
 				count++;
 		shown = count > 0;
-		output += " " + std::to_string( count ) + "/" + std::to_string( app.advancedOutput.screens.size() );
+		output += " " + std::to_string( count ) + "/" + std::to_string( app.LiveOutput().screens.size() );
 	}
 	else
 		shown = app.quickOutputs.AnyWindowOpen();
@@ -1951,16 +1952,174 @@ void DrawCompositionMonitor( App& app )
 	ImGui::PopStyleVar();
 	if( open )
 	{
-		Composition& comp = app.composition;
-		ImVec2 area       = ImGui::GetContentRegionAvail();
+		app.monitorShown           = true;
+		Composition& comp          = app.composition;
+		AdvancedOutputSetup& setup = app.LiveOutput();
+		bool arrangement           = app.view == App::View::Arrangement;
+		using Source               = App::MonitorSource;
+		// The layers it can show alone: the deck's, or the timeline's video tracks top first.
+		std::vector< std::pair< int, std::string > > layers;
+		if( arrangement )
+		{
+			const std::vector< TimelineTrack >& tracks = comp.timeline.tracks;
+			for( int k = (int)tracks.size() - 1; k >= 0; --k )
+				if( !tracks[ k ].audio )
+					layers.push_back( { k, tracks[ k ].name } );
+		}
+		else
+			for( int k = (int)comp.layers.size() - 1; k >= 0; --k )
+				layers.push_back( { k, comp.layers[ k ].name.empty() ? "Layer " + std::to_string( k + 1 ) : comp.layers[ k ].name } );
+		auto layerName = [ & ]( int index ) {
+			for( const auto& [ k, name ] : layers )
+				if( k == index )
+					return name;
+			return std::string();
+		};
+
+		// The buttons, as on Modul8's monitor: what it shows.
+		ImGui::SetCursorPos( ImVec2( Ui( 6 ), ImGui::GetCursorPosY() + Ui( 4 ) ) );
+		auto button = [ & ]( const char* label, bool on, const char* tip ) {
+			ImGui::PushStyleColor( ImGuiCol_Button, on ? ImGui::ColorConvertU32ToFloat4( theme::Accent ) : ImGui::GetStyleColorVec4( ImGuiCol_Button ) );
+			ImGui::PushStyleColor( ImGuiCol_Text, on ? ImGui::ColorConvertU32ToFloat4( theme::OnAccent ) : ImGui::GetStyleColorVec4( ImGuiCol_Text ) );
+			bool pressed = ImGui::SmallButton( label );
+			ImGui::PopStyleColor( 2 );
+			if( ImGui::IsItemHovered() )
+				ImGui::SetTooltip( "%s", tip );
+			return pressed;
+		};
+		if( button( "Composition", app.monitorSource == Source::Composition, "The composition: what goes to All Screens" ) )
+			app.monitorSource = Source::Composition;
+		ImGui::SameLine( 0, Ui( 3 ) );
+		if( button( "Multiview", app.monitorSource == Source::Multiview,
+		            "Every screen of the output side by side (the composition when there is one screen).\nDouble-click a screen to see it alone." ) )
+			app.monitorSource = Source::Multiview;
+		ImGui::SameLine( 0, Ui( 3 ) );
+		int screenCount   = (int)setup.screens.size();
+		app.monitorScreen = std::clamp( app.monitorScreen, 0, std::max( 0, screenCount - 1 ) );
+		std::string screenLabel = ( app.monitorSource == Source::Screen && screenCount > 0 ? setup.screens[ app.monitorScreen ].name : std::string( "Screen" ) ) + " \xe2\x96\xbc##screen";
+		if( button( screenLabel.c_str(), app.monitorSource == Source::Screen, "One screen of the output, as it goes out" ) )
+			ImGui::OpenPopup( "##monitorScreen" );
+		if( ImGui::BeginPopup( "##monitorScreen" ) )
+		{
+			for( int i = 0; i < screenCount; ++i )
+				if( ImGui::Selectable( ( setup.screens[ i ].name + "##" + std::to_string( i ) ).c_str(), app.monitorSource == Source::Screen && app.monitorScreen == i ) )
+				{
+					app.monitorSource = Source::Screen;
+					app.monitorScreen = i;
+				}
+			if( screenCount == 0 )
+				ImGui::TextDisabled( "No screens" );
+			ImGui::EndPopup();
+		}
+		ImGui::SameLine( 0, Ui( 3 ) );
+		std::string shownLayer  = layerName( app.monitorLayer );
+		std::string layerLabel  = ( app.monitorSource == Source::Layer && !shownLayer.empty() ? shownLayer : std::string( arrangement ? "Track" : "Layer" ) ) + " \xe2\x96\xbc##layer";
+		if( button( layerLabel.c_str(), app.monitorSource == Source::Layer, arrangement ? "One timeline track alone, with its effects" : "One layer alone, with its effects" ) )
+			ImGui::OpenPopup( "##monitorLayer" );
+		if( ImGui::BeginPopup( "##monitorLayer" ) )
+		{
+			for( const auto& [ k, name ] : layers )
+				if( ImGui::Selectable( ( name + "##" + std::to_string( k ) ).c_str(), app.monitorSource == Source::Layer && app.monitorLayer == k ) )
+				{
+					app.monitorSource = Source::Layer;
+					app.monitorLayer  = k;
+				}
+			if( layers.empty() )
+				ImGui::TextDisabled( arrangement ? "No video tracks" : "No layers" );
+			ImGui::EndPopup();
+		}
+
+		ImVec2 area = ImGui::GetContentRegionAvail();
 		area.y -= ImGui::GetTextLineHeightWithSpacing();
-		ImVec2 offset;
-		ImVec2 size = FitSize( area, (float)comp.width / comp.height, &offset );
-		ImGui::SetCursorPos( ImVec2( ImGui::GetCursorPosX() + offset.x, ImGui::GetCursorPosY() + offset.y ) );
-		FboImage( app.compositor.CompositionTexture(), size );
-		AcceptEffectDrop( app, comp.effects );
+		ImVec2 origin = ImGui::GetCursorScreenPos();
+		std::string caption;
+		auto fitted = [ & ]( GLuint texture, int width, int height, ImVec2 at, ImVec2 room ) {
+			ImVec2 offset;
+			ImVec2 size = FitSize( room, (float)std::max( width, 1 ) / std::max( height, 1 ), &offset );
+			ImVec2 a( at.x + offset.x, at.y + offset.y ), b( a.x + size.x, a.y + size.y );
+			ImDrawList* draw = ImGui::GetWindowDrawList();
+			draw->AddRectFilled( a, b, IM_COL32( 0, 0, 0, 255 ) );
+			if( texture )
+				draw->AddImage( TextureId( texture ), a, b, ImVec2( 0, 1 ), ImVec2( 1, 0 ) );
+			return std::pair< ImVec2, ImVec2 >( a, b );
+		};
+		Source source = app.monitorSource;
+		if( source == Source::Multiview && screenCount <= 1 )
+			source = Source::Composition;
+		if( source == Source::Screen && screenCount == 0 )
+			source = Source::Composition;
+		if( source == Source::Composition )
+		{
+			fitted( app.compositor.CompositionTexture(), comp.width, comp.height, origin, area );
+			ImGui::Dummy( area );
+			AcceptEffectDrop( app, comp.effects );
+			char text[ 96 ];
+			std::snprintf( text, sizeof( text ), "Composition - %dx%d", comp.width, comp.height );
+			caption = text;
+		}
+		else if( source == Source::Screen )
+		{
+			const Screen& screen = setup.screens[ app.monitorScreen ];
+			fitted( app.outputs.ScreenTexture( (size_t)app.monitorScreen ), screen.width, screen.height, origin, area );
+			ImGui::Dummy( area );
+			char text[ 160 ];
+			std::snprintf( text, sizeof( text ), "%s - %dx%d", screen.name.c_str(), screen.width, screen.height );
+			caption = text;
+		}
+		else if( source == Source::Layer )
+		{
+			bool known = !shownLayer.empty();
+			fitted( known ? app.compositor.SoloTexture() : 0, known ? app.compositor.SoloWidth() : comp.width, known ? app.compositor.SoloHeight() : comp.height,
+			        origin, area );
+			ImGui::Dummy( area );
+			caption = known ? shownLayer + " alone" : std::string( arrangement ? "Choose a track" : "Choose a layer" );
+		}
+		else
+		{
+			// Multiview: the screens in a grid, as many columns as fill the area best.
+			int n = screenCount, bestColumns = 1;
+			float bestSize = 0;
+			for( int columns = 1; columns <= n; ++columns )
+			{
+				int rows   = ( n + columns - 1 ) / columns;
+				float cell = std::min( area.x / columns, area.y / rows * 16.0f / 9.0f );
+				if( cell > bestSize )
+				{
+					bestSize    = cell;
+					bestColumns = columns;
+				}
+			}
+			int rows = ( n + bestColumns - 1 ) / bestColumns;
+			ImVec2 cell( area.x / bestColumns, area.y / rows );
+			ImDrawList* draw = ImGui::GetWindowDrawList();
+			for( int i = 0; i < n; ++i )
+			{
+				const Screen& screen = setup.screens[ i ];
+				ImVec2 at( origin.x + ( i % bestColumns ) * cell.x + Ui( 2 ), origin.y + ( i / bestColumns ) * cell.y + Ui( 2 ) );
+				ImVec2 room( cell.x - Ui( 4 ), cell.y - Ui( 4 ) - ImGui::GetTextLineHeight() );
+				auto [ a, b ] = fitted( app.outputs.ScreenTexture( (size_t)i ), screen.width, screen.height, at, room );
+				// Its name under it, in its colour.
+				draw->AddRectFilled( ImVec2( a.x, b.y + Ui( 4 ) ), ImVec2( a.x + Ui( 8 ), b.y + Ui( 12 ) ), ScreenColour( i ), Ui( 2 ) );
+				draw->PushClipRect( ImVec2( a.x, b.y ), ImVec2( b.x, b.y + ImGui::GetTextLineHeight() + Ui( 2 ) ), true );
+				draw->AddText( ImVec2( a.x + Ui( 12 ), b.y + Ui( 1 ) ), screen.enabled ? theme::Text : theme::TextDim, screen.name.c_str() );
+				draw->PopClipRect();
+				ImGui::SetCursorScreenPos( at );
+				ImGui::PushID( i );
+				ImGui::InvisibleButton( "##tile", ImVec2( std::max( 1.0f, cell.x - Ui( 4 ) ), std::max( 1.0f, cell.y - Ui( 4 ) ) ) );
+				if( ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
+				{
+					app.monitorSource = Source::Screen;
+					app.monitorScreen = i;
+				}
+				if( ImGui::IsItemHovered() )
+					draw->AddRect( a, b, theme::Accent );
+				ImGui::PopID();
+			}
+			ImGui::SetCursorScreenPos( ImVec2( origin.x, origin.y + area.y ) );
+			caption = "Multiview - " + std::to_string( n ) + " screens (" + ( arrangement ? "Timeline" : "Grid" ) + " setup)";
+		}
 		ImGui::SetCursorPosX( Ui( 6 ) );
-		ImGui::TextDisabled( "Composition - %dx%d", comp.width, comp.height );
+		ImGui::TextDisabled( "%s", caption.c_str() );
 	}
 	ImGui::End();
 }
@@ -2689,7 +2848,7 @@ void DrawOutputPanel( App& app )
 	case OutputMode::Window:
 	case OutputMode::Fullscreen: ImGui::TextDisabled( "The whole composition - %s. Escape on the output turns it off.", app.quickOutputs.DeviceStatus( 0 ).c_str() ); break;
 	case OutputMode::Advanced:
-		if( std::none_of( app.advancedOutput.screens.begin(), app.advancedOutput.screens.end(), []( const Screen& s ) { return s.device != OutputDevice::Virtual; } ) )
+		if( std::none_of( app.LiveOutput().screens.begin(), app.LiveOutput().screens.end(), []( const Screen& s ) { return s.device != OutputDevice::Virtual; } ) )
 			ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( theme::Warning ), "Every screen is a Virtual Output, so nothing is shown: choose a display or Window for a screen below." );
 		else
 			ImGui::TextDisabled( "The screens below, with their slices, warps and masks." );
@@ -2704,9 +2863,9 @@ void DrawOutputPanel( App& app )
 	bool advanced = app.outputMode == OutputMode::Advanced;
 	if( !advanced )
 		ImGui::TextDisabled( "Not in use: press Advanced above to show it." );
-	for( size_t s = 0; s < app.advancedOutput.screens.size(); ++s )
+	for( size_t s = 0; s < app.LiveOutput().screens.size(); ++s )
 	{
-		Screen& screen = app.advancedOutput.screens[ s ];
+		Screen& screen = app.LiveOutput().screens[ s ];
 		ImGui::PushID( (int)s );
 		ImGui::AlignTextToFramePadding();
 		ImGui::TextUnformatted( screen.name.c_str() );

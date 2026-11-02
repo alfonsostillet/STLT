@@ -634,6 +634,16 @@ bool AdvancedOutputSetup::EnsureIds()
 	for( Screen& screen : screens )
 		for( Slice& slice : screen.slices )
 			ensure( slice.id );
+	std::unordered_set< std::string > screenIds;
+	for( Screen& screen : screens )
+	{
+		while( screen.id.empty() || screenIds.count( screen.id ) )
+		{
+			screen.id = NewId();
+			changed   = true;
+		}
+		screenIds.insert( screen.id );
+	}
 	std::unordered_set< std::string > canvasIds;
 	for( Canvas& canvas : canvases )
 	{
@@ -687,25 +697,6 @@ void AdvancedOutputSetup::SetSliceSource( Slice& slice, const std::string& sourc
 	slice.source = FindCanvas( source ) ? source : "";
 }
 
-std::string AdvancedOutputSetup::AddScreenCanvas( size_t index, int compWidth, int compHeight )
-{
-	if( index >= screens.size() )
-		return "";
-	Screen& screen = screens[ index ];
-	Canvas canvas  = MakeCanvas( screen.name, screen.width, screen.height );
-	canvases.push_back( canvas );
-	for( Slice& slice : screen.slices )
-	{
-		if( slice.mask || slice.polygon || !slice.source.empty() || slice.input.size() != 4 )
-			continue;
-		const std::vector< Vec2 >& in = slice.input;
-		bool whole = std::fabs( in[ 0 ].x ) < 1 && std::fabs( in[ 0 ].y ) < 1 && std::fabs( in[ 2 ].x - compWidth ) < 1 && std::fabs( in[ 2 ].y - compHeight ) < 1;
-		if( whole )
-			SetSliceSource( slice, canvas.id, compWidth, compHeight );
-	}
-	return canvas.id;
-}
-
 void AdvancedOutputSetup::RemoveCanvas( const std::string& id, int compWidth, int compHeight )
 {
 	for( Screen& screen : screens )
@@ -713,6 +704,116 @@ void AdvancedOutputSetup::RemoveCanvas( const std::string& id, int compWidth, in
 			if( slice.source == id )
 				SetSliceSource( slice, "", compWidth, compHeight );
 	canvases.erase( std::remove_if( canvases.begin(), canvases.end(), [ & ]( const Canvas& c ) { return c.id == id; } ), canvases.end() );
+}
+
+std::string AdvancedOutputSetup::ScreenPictureOf( size_t index ) const
+{
+	if( index >= screens.size() || screens[ index ].id.empty() )
+		return "";
+	for( const Canvas& c : canvases )
+		if( c.screen == screens[ index ].id )
+			return c.id;
+	return "";
+}
+
+std::string AdvancedOutputSetup::MakeScreenPicture( size_t index, int compWidth, int compHeight )
+{
+	if( index >= screens.size() )
+		return "";
+	EnsureIds();
+	std::string id = ScreenPictureOf( index );
+	if( !id.empty() )
+		return id;
+	Screen& screen = screens[ index ];
+	Canvas canvas  = MakeCanvas( screen.name, screen.width, screen.height );
+	canvas.screen  = screen.id;
+	canvases.push_back( canvas );
+	for( Slice& slice : screen.slices )
+		if( !slice.mask && slice.source.empty() )
+			SetSliceSource( slice, canvas.id, compWidth, compHeight );
+	return canvas.id;
+}
+
+int AdvancedOutputSetup::ScreenOfPicture( const std::string& canvas ) const
+{
+	const Canvas* c = FindCanvas( canvas );
+	if( !c || c->screen.empty() )
+		return -1;
+	for( size_t i = 0; i < screens.size(); ++i )
+		if( screens[ i ].id == c->screen )
+			return (int)i;
+	return -1;
+}
+
+bool AdvancedOutputSetup::SyncScreenPictures( int compWidth, int compHeight )
+{
+	bool changed = EnsureIds();
+	auto screenIndex = [ & ]( const std::string& id ) {
+		for( size_t i = 0; i < screens.size(); ++i )
+			if( screens[ i ].id == id )
+				return (int)i;
+		return -1;
+	};
+	// Pictures whose screen is gone (or that another picture of the same screen came before) go.
+	std::vector< std::string > gone;
+	std::unordered_set< std::string > owned;
+	for( const Canvas& c : canvases )
+		if( !c.screen.empty() && ( screenIndex( c.screen ) < 0 || !owned.insert( c.screen ).second ) )
+			gone.push_back( c.id );
+	for( const std::string& id : gone )
+	{
+		RemoveCanvas( id, compWidth, compHeight );
+		changed = true;
+	}
+	// Free canvases: to the first screen taking from them that has no picture.
+	for( Canvas& c : canvases )
+	{
+		if( !c.screen.empty() )
+			continue;
+		for( const Screen& screen : screens )
+		{
+			bool uses = std::any_of( screen.slices.begin(), screen.slices.end(), [ & ]( const Slice& s ) { return s.source == c.id; } );
+			if( uses && !owned.count( screen.id ) )
+			{
+				c.screen = screen.id;
+				owned.insert( screen.id );
+				changed = true;
+				break;
+			}
+		}
+	}
+	// Size and name follow the screen.
+	for( Canvas& c : canvases )
+	{
+		int index = c.screen.empty() ? -1 : screenIndex( c.screen );
+		if( index < 0 )
+			continue;
+		const Screen& screen = screens[ index ];
+		if( c.name != screen.name )
+		{
+			c.name  = screen.name;
+			changed = true;
+		}
+		if( c.width != screen.width || c.height != screen.height )
+		{
+			float sx = (float)screen.width / std::max( c.width, 1 ), sy = (float)screen.height / std::max( c.height, 1 );
+			for( Screen& other : screens )
+				for( Slice& slice : other.slices )
+					if( slice.source == c.id )
+						for( Vec2& p : slice.input )
+							p = { p.x * sx, p.y * sy };
+			c.width  = screen.width;
+			c.height = screen.height;
+			changed  = true;
+		}
+	}
+	return changed;
+}
+
+void AdvancedOutputSetup::RemoveAllCanvases( int compWidth, int compHeight )
+{
+	while( !canvases.empty() )
+		RemoveCanvas( canvases.back().id, compWidth, compHeight );
 }
 
 Slice AdvancedOutputSetup::MakeSlice( const std::string& name, float cw, float ch, float sw, float sh )
@@ -916,7 +1017,9 @@ Enum ByName( const json& value, const char* ( *name )( Enum ), Enum fallback )
 }
 }
 
-std::string SaveAdvancedOutput( const AdvancedOutputSetup& setup )
+namespace
+{
+json OutputToJson( const AdvancedOutputSetup& setup )
 {
 	json root;
 	root[ "format" ]  = "stlt-vj-advanced-output";
@@ -926,6 +1029,8 @@ std::string SaveAdvancedOutput( const AdvancedOutputSetup& setup )
 	{
 		json j;
 		j[ "name" ]        = s.name;
+		if( !s.id.empty() )
+			j[ "id" ] = s.id;
 		j[ "enabled" ]     = s.enabled;
 		j[ "device" ]      = OutputDeviceName( s.device );
 		j[ "display" ]     = s.display;
@@ -992,10 +1097,21 @@ std::string SaveAdvancedOutput( const AdvancedOutputSetup& setup )
 	root[ "screens" ] = screens;
 	json canvases     = json::array();
 	for( const Canvas& c : setup.canvases )
-		canvases.push_back( { { "id", c.id }, { "name", c.name }, { "size", { c.width, c.height } } } );
+	{
+		json j = { { "id", c.id }, { "name", c.name }, { "size", { c.width, c.height } } };
+		if( !c.screen.empty() )
+			j[ "screen" ] = c.screen;
+		canvases.push_back( j );
+	}
 	if( !canvases.empty() )
 		root[ "canvases" ] = canvases;
-	return root.dump( 1 );
+	return root;
+}
+}
+
+std::string SaveAdvancedOutput( const AdvancedOutputSetup& setup )
+{
+	return OutputToJson( setup ).dump( 1 );
 }
 
 std::string SaveChaserStage( const AdvancedOutputSetup& setup, int compWidth, int compHeight )
@@ -1029,10 +1145,11 @@ std::string SaveChaserStage( const AdvancedOutputSetup& setup, int compWidth, in
 	return root.dump( 1 );
 }
 
-bool LoadAdvancedOutput( const std::string& text, AdvancedOutputSetup& out, std::string& error )
+namespace
 {
-	json root = json::parse( text, nullptr, false );
-	if( root.is_discarded() || !root.is_object() || root.value( "format", "" ) != "stlt-vj-advanced-output" )
+bool OutputFromJson( const json& root, AdvancedOutputSetup& out, std::string& error )
+{
+	if( !root.is_object() || root.value( "format", "" ) != "stlt-vj-advanced-output" )
 	{
 		error = "Not an STLT output setup";
 		return false;
@@ -1043,6 +1160,7 @@ bool LoadAdvancedOutput( const std::string& text, AdvancedOutputSetup& out, std:
 		{
 			Screen s;
 			s.name    = j.value( "name", s.name );
+			s.id      = j.value( "id", "" );
 			s.enabled = j.value( "enabled", true );
 			s.device  = ByName( j.value( "device", json() ), OutputDeviceName, OutputDevice::Virtual );
 			s.display = j.value( "display", "" );
@@ -1162,8 +1280,9 @@ bool LoadAdvancedOutput( const std::string& text, AdvancedOutputSetup& out, std:
 			if( !j.is_object() )
 				continue;
 			Canvas c;
-			c.id   = j.value( "id", "" );
-			c.name = j.value( "name", c.name );
+			c.id     = j.value( "id", "" );
+			c.name   = j.value( "name", c.name );
+			c.screen = j.value( "screen", "" );
 			if( j.contains( "size" ) && j[ "size" ].is_array() && j[ "size" ].size() == 2 && j[ "size" ][ 0 ].is_number() && j[ "size" ][ 1 ].is_number() )
 			{
 				c.width  = std::clamp( j[ "size" ][ 0 ].get< int >(), 16, 16384 );
@@ -1178,6 +1297,59 @@ bool LoadAdvancedOutput( const std::string& text, AdvancedOutputSetup& out, std:
 			if( !slice.source.empty() && !setup.FindCanvas( slice.source ) )
 				slice.source.clear();
 	out = std::move( setup );
+	return true;
+}
+}
+
+bool LoadAdvancedOutput( const std::string& text, AdvancedOutputSetup& out, std::string& error )
+{
+	json root = json::parse( text, nullptr, false );
+	if( root.is_discarded() )
+	{
+		error = "Not an STLT output setup";
+		return false;
+	}
+	return OutputFromJson( root, out, error );
+}
+
+std::string SaveOutputSetups( const AdvancedOutputSetup& grid, const AdvancedOutputSetup& timeline )
+{
+	json root;
+	root[ "format" ]   = "stlt-output-setups";
+	root[ "version" ]  = 1;
+	root[ "grid" ]     = OutputToJson( grid );
+	root[ "timeline" ] = OutputToJson( timeline );
+	return root.dump( 1 );
+}
+
+bool LoadOutputSetups( const std::string& text, AdvancedOutputSetup& grid, AdvancedOutputSetup& timeline, int compWidth, int compHeight,
+                       std::string& error )
+{
+	json root = json::parse( text, nullptr, false );
+	if( root.is_discarded() || !root.is_object() )
+	{
+		error = "Not an STLT output setup";
+		return false;
+	}
+	AdvancedOutputSetup g, t;
+	if( root.value( "format", "" ) == "stlt-output-setups" )
+	{
+		if( !root.contains( "grid" ) || !OutputFromJson( root[ "grid" ], g, error ) )
+			return false;
+		if( !root.contains( "timeline" ) || !OutputFromJson( root[ "timeline" ], t, error ) )
+			t = g;
+	}
+	else
+	{
+		// A single setup: both start from it.
+		if( !OutputFromJson( root, g, error ) )
+			return false;
+		t = g;
+	}
+	g.RemoveAllCanvases( compWidth, compHeight );
+	t.SyncScreenPictures( compWidth, compHeight );
+	grid     = std::move( g );
+	timeline = std::move( t );
 	return true;
 }
 

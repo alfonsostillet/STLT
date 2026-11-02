@@ -252,8 +252,32 @@ public:
 	std::unique_ptr< EffectRegistry > registry;
 	std::vector< std::string > extraPluginFolders; // added by the user, besides the default ones
 	FrameInfo frame;
-	AdvancedOutputSetup advancedOutput;
-	OutputRenderer outputs;      // the Advanced Output setup: shown in Advanced mode, drawn for the editor's views
+	// The Advanced Output has two setups: the deck's (Grid) for the Session view and the timeline's for the
+	// Arrangement view, whose tracks can go to its screens. The one of the view in use is on show.
+	AdvancedOutputSetup advancedOutput; // the Grid's
+	AdvancedOutputSetup timelineOutput;
+	AdvancedOutputSetup& LiveOutput() { return view == View::Arrangement ? timelineOutput : advancedOutput; }
+	// The setup the Advanced Output editor works on (its Grid and Timeline tabs): 0 the Grid's, 1 the timeline's.
+	int outputTab = 0;
+	AdvancedOutputSetup& EditedOutput() { return outputTab == 1 ? timelineOutput : advancedOutput; }
+	bool EditingLive() const { return ( outputTab == 1 ) == ( view == View::Arrangement ); }
+	// What draws the edited setup's screens: the live renderer, or one of its own for the setup not on show.
+	OutputRenderer& EditedRenderer() { return EditingLive() ? outputs : editOutputs; }
+	std::string OutputText() const { return SaveOutputSetups( advancedOutput, timelineOutput ); }
+	// The Composition Monitor's source (Modul8 style buttons): the composition, every screen side by side, one
+	// screen, or one layer (a timeline track in the Arrangement view) alone.
+	enum class MonitorSource
+	{
+		Composition,
+		Multiview,
+		Screen,
+		Layer
+	};
+	MonitorSource monitorSource = MonitorSource::Multiview;
+	int monitorScreen = 0, monitorLayer = 0;
+	bool monitorShown = false; // the monitor drew last frame (its screens and layer are drawn for it)
+	OutputRenderer outputs;      // the setup on show: shown in Advanced mode, drawn for the editor's views and the monitor
+	OutputRenderer editOutputs;  // the other setup, while the editor works on it
 	OutputRenderer quickOutputs; // the composition alone, in a window or fullscreen (Window and Fullscreen modes)
 	AdvancedOutputSetup quickOutput;
 	Workspaces workspaces;

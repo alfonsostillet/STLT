@@ -87,7 +87,46 @@ struct State
 	double targetStart = 0;
 	double newStart    = 0, newEnd = 0;
 	float scrollX      = -1; // a scroll to apply (-1: none)
+	float headerWidth  = 250; // the track headers' column (at 15 px type): drag its edge
+	int renaming       = -1;  // the track whose name is being typed (double-click its header)
+	bool renameFocus   = false;
 } state;
+
+// The tracks top to bottom as shown, as in an editing program: the video tracks (the top one, drawn over the others,
+// first) and under them the audio tracks.
+std::vector< int > ShownOrder( const Timeline& t )
+{
+	std::vector< int > order;
+	for( int k = (int)t.tracks.size() - 1; k >= 0; --k )
+		if( !t.tracks[ k ].audio )
+			order.push_back( k );
+	for( int k = 0; k < (int)t.tracks.size(); ++k )
+		if( t.tracks[ k ].audio )
+			order.push_back( k );
+	return order;
+}
+
+// Moves a track to another's place (video among video, audio among audio): the order video tracks lie in.
+void MoveTrack( App& app, int from, int to )
+{
+	std::vector< TimelineTrack >& tracks = app.composition.timeline.tracks;
+	if( from == to || from < 0 || to < 0 || from >= (int)tracks.size() || to >= (int)tracks.size() || tracks[ from ].audio != tracks[ to ].audio )
+		return;
+	TimelineTrack moved = std::move( tracks[ from ] );
+	tracks.erase( tracks.begin() + from );
+	tracks.insert( tracks.begin() + to, std::move( moved ) );
+	auto follow = [ & ]( int& index ) {
+		if( index == from )
+			index = to;
+		else if( from < index && index <= to )
+			--index;
+		else if( to <= index && index < from )
+			++index;
+	};
+	follow( state.track );
+	follow( state.renaming );
+	follow( state.dragTrack );
+}
 
 double Snapped( const Timeline& t, double time, bool free )
 {
@@ -468,103 +507,123 @@ void CueStrip( App& app )
 
 bool KeyButton( const char* id, bool onKey, bool animated, bool enabled, const char* tip );
 
+constexpr const char* kTrackPayload = "STLT_TRACK";
+
 void TrackHeader( App& app, int k, ImVec2 pos, ImVec2 size )
 {
 	Timeline& t          = app.composition.timeline;
 	TimelineTrack& track = t.tracks[ k ];
 	ImDrawList* draw     = ImGui::GetWindowDrawList();
-	draw->AddRectFilled( pos, ImVec2( pos.x + size.x, pos.y + size.y - Ui( 1 ) ), track.audio ? IM_COL32( 28, 34, 30, 255 ) : theme::Raised );
+	const ImU32 videoTint = IM_COL32( 74, 120, 190, 255 ), audioTint = IM_COL32( 64, 180, 104, 255 );
+	// Audio tracks green, video tracks blue: a strip at the left, the background tinted.
+	draw->AddRectFilled( pos, ImVec2( pos.x + size.x, pos.y + size.y - Ui( 1 ) ), track.audio ? IM_COL32( 30, 54, 38, 255 ) : theme::Raised );
+	draw->AddRectFilled( pos, ImVec2( pos.x + Ui( 4 ), pos.y + size.y - Ui( 1 ) ), track.audio ? audioTint : videoTint );
 	ImGui::PushID( k );
-	ImGui::SetCursorScreenPos( ImVec2( pos.x + Ui( 6 ), pos.y + Ui( 4 ) ) );
-	ImGui::PushFont( Fonts().bold );
-	ImGui::TextUnformatted( track.name.c_str() );
-	ImGui::PopFont();
-	if( ImGui::IsItemClicked( ImGuiMouseButton_Right ) || ( ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) ) )
-		ImGui::OpenPopup( "##trackMenu" );
-	if( !track.audio )
-	{
-		// Where the track's picture goes: a chip in the picture's colour; click to choose.
-		AdvancedOutputSetup& setup = app.advancedOutput;
-		// A canvas not in the output setup (removed, or a setup not saved): the composition shows the track.
-		std::string name = PictureName( app, track.output );
-		ImGui::SameLine( 0, Ui( 6 ) );
-		ImVec2 at       = ImGui::GetCursorScreenPos();
-		float maxWidth  = std::max( Ui( 30 ), pos.x + size.x - Ui( 52 ) - at.x );
-		ImVec2 textSize = ImGui::CalcTextSize( name.c_str() );
-		float width     = std::min( textSize.x + Ui( 20 ), maxWidth );
-		ImGui::InvisibleButton( "##output", ImVec2( width, ImGui::GetTextLineHeight() + Ui( 2 ) ) );
-		bool hot = ImGui::IsItemHovered();
-		ImU32 colour = PictureColour( app, track.output );
-		draw->AddRectFilled( at, ImVec2( at.x + width, at.y + ImGui::GetTextLineHeight() + Ui( 2 ) ), hot ? theme::RaisedHover : theme::Well, Ui( 8 ) );
-		draw->AddRectFilled( ImVec2( at.x + Ui( 5 ), at.y + Ui( 4 ) ), ImVec2( at.x + Ui( 11 ), at.y + Ui( 10 ) ), colour, Ui( 2 ) );
-		draw->PushClipRect( at, ImVec2( at.x + width - Ui( 3 ), at.y + Ui( 40 ) ), true );
-		draw->AddText( ImVec2( at.x + Ui( 14 ), at.y + Ui( 1 ) ), theme::Text, name.c_str() );
-		draw->PopClipRect();
-		if( hot )
-			ImGui::SetTooltip( "Goes to: %s\nClick to send this track to another picture: a canvas shown on the screens\nwhose slices take from it (Advanced Output).",
-			                   name.c_str() );
-		if( ImGui::IsItemClicked( ImGuiMouseButton_Left ) )
-			ImGui::OpenPopup( "##outputMenu" );
-		if( ImGui::BeginPopup( "##outputMenu" ) )
-		{
-			Composition& comp = app.composition;
-			auto item         = [ & ]( const std::string& id, const std::string& label ) {
-                ImVec2 p = ImGui::GetCursorScreenPos();
-                ImGui::GetWindowDrawList()->AddRectFilled( ImVec2( p.x, p.y + Ui( 4 ) ), ImVec2( p.x + Ui( 7 ), p.y + Ui( 11 ) ), PictureColour( app, id ), Ui( 2 ) );
-                ImGui::SetCursorScreenPos( ImVec2( p.x + Ui( 14 ), p.y ) );
-                if( ImGui::Selectable( label.c_str(), track.output == id ) )
-                    track.output = id;
-			};
-			char text[ 200 ];
-			std::snprintf( text, sizeof( text ), "Composition  %dx%d", comp.width, comp.height );
-			item( "", text );
-			for( const Canvas& c : setup.canvases )
-			{
-				std::snprintf( text, sizeof( text ), "%s  %dx%d##%s", c.name.c_str(), c.width, c.height, c.id.c_str() );
-				item( c.id, text );
-			}
-			ImGui::Separator();
-			for( size_t i = 0; i < setup.screens.size(); ++i )
-			{
-				std::snprintf( text, sizeof( text ), "New Canvas for %s##screen%d", setup.screens[ i ].name.c_str(), (int)i );
-				if( ImGui::Selectable( text ) )
-					track.output = setup.AddScreenCanvas( i, comp.width, comp.height );
-				if( ImGui::IsItemHovered() )
-					ImGui::SetTooltip( "A canvas the size of %s, for this track (and others you send to it).\n%s's slices that showed the whole "
-					                   "composition show the canvas instead.\nChange it any time in the Advanced Output (a slice's Source).",
-					                   setup.screens[ i ].name.c_str(), setup.screens[ i ].name.c_str() );
-			}
-			if( setup.screens.empty() )
-				ImGui::TextDisabled( "No screens: add them in the Advanced Output" );
-			ImGui::Separator();
-			if( ImGui::Selectable( "Advanced Output..." ) )
-				app.panels.advancedOutput = true;
-			ImGui::EndPopup();
-		}
-	}
+	float left = pos.x + Ui( 10 ), right = pos.x + size.x - Ui( 6 ), row = ImGui::GetFrameHeight() + Ui( 2 );
+
+	// First row: the name (double-click the header to rename it), then Vol, M and S at the right.
+	float buttonsW = Ui( track.audio ? 82 : 46 );
+	ImGui::SetCursorScreenPos( ImVec2( right - buttonsW, pos.y + Ui( 3 ) ) );
 	if( track.audio )
 	{
 		// The volume line over the track: open to draw and edit it.
-		ImGui::SetCursorScreenPos( ImVec2( pos.x + size.x - Ui( 82 ), pos.y + Ui( 3 ) ) );
 		if( SmallToggle( "Vol", track.volumeLine, IM_COL32( 245, 200, 90, 255 ),
 		                 "Volume line: draw the volume over the track with keyframes (double-click the track to add one, drag to move, "
 		                 "right-click for curve or delete); clips stay put while it is open" ) )
 			track.volumeLine = !track.volumeLine;
+		ImGui::SameLine( 0, Ui( 4 ) );
 	}
-	ImGui::SetCursorScreenPos( ImVec2( pos.x + size.x - Ui( 46 ), pos.y + Ui( 3 ) ) );
 	if( SmallToggle( "M", track.mute, theme::Warning, "Mute: the track off" ) )
 		track.mute = !track.mute;
 	ImGui::SameLine( 0, Ui( 2 ) );
 	if( SmallToggle( "S", track.solo, theme::Solo, "Solo: only this track (and other soloed ones)" ) )
 		track.solo = !track.solo;
-	if( size.y > Ui( 34 ) )
+	float nameRight = right - buttonsW - Ui( 6 );
+	if( state.renaming == k )
 	{
-		ImGui::SetCursorScreenPos( ImVec2( pos.x + Ui( 6 ), pos.y + size.y - Ui( 24 ) ) );
-		ImGui::SetNextItemWidth( size.x - Ui( 12 ) );
+		ImGui::SetCursorScreenPos( ImVec2( left - Ui( 4 ), pos.y + Ui( 2 ) ) );
+		ImGui::SetNextItemWidth( std::max( Ui( 40 ), nameRight - left + Ui( 4 ) ) );
+		if( state.renameFocus )
+		{
+			ImGui::SetKeyboardFocusHere();
+			state.renameFocus = false;
+		}
+		ImGui::InputText( "##rename", &track.name, ImGuiInputTextFlags_AutoSelectAll | ImGuiInputTextFlags_EnterReturnsTrue );
+		if( ImGui::IsItemDeactivated() || ImGui::IsKeyPressed( ImGuiKey_Escape ) )
+			state.renaming = -1;
+	}
+	else
+	{
+		draw->PushClipRect( ImVec2( left, pos.y ), ImVec2( std::max( left, nameRight ), pos.y + row + Ui( 2 ) ), true );
+		draw->AddText( Fonts().bold, ImGui::GetFontSize(), ImVec2( left, pos.y + Ui( 5 ) ), theme::Text, track.name.c_str() );
+		draw->PopClipRect();
+	}
+
+	// Second row (video): where the picture goes, a chip in that screen's colour; click to choose.
+	float y2 = pos.y + row + Ui( 3 );
+	if( !track.audio )
+	{
+		AdvancedOutputSetup& setup = app.timelineOutput;
+		// A screen not in the setup (removed, or a setup not saved): every screen shows the track.
+		std::string name = "\xe2\x86\x92 " + PictureName( app, track.output );
+		ImVec2 at( left, y2 );
+		float width = std::max( Ui( 30 ), right - left );
+		float h     = ImGui::GetFrameHeight();
+		ImGui::SetCursorScreenPos( at );
+		ImGui::InvisibleButton( "##output", ImVec2( width, h ) );
+		bool hot     = ImGui::IsItemHovered();
+		ImU32 colour = PictureColour( app, track.output );
+		draw->AddRectFilled( at, ImVec2( at.x + width, at.y + h ), hot ? theme::RaisedHover : theme::Well, Ui( 4 ) );
+		draw->AddRectFilled( ImVec2( at.x + Ui( 6 ), at.y + h / 2 - Ui( 4 ) ), ImVec2( at.x + Ui( 14 ), at.y + h / 2 + Ui( 4 ) ), colour, Ui( 2 ) );
+		draw->PushClipRect( at, ImVec2( at.x + width - Ui( 16 ), at.y + h ), true );
+		draw->AddText( ImVec2( at.x + Ui( 20 ), at.y + ( h - ImGui::GetFontSize() ) / 2 ), theme::Text, name.c_str() );
+		draw->PopClipRect();
+		draw->AddTriangleFilled( ImVec2( at.x + width - Ui( 12 ), at.y + h / 2 - Ui( 2 ) ), ImVec2( at.x + width - Ui( 4 ), at.y + h / 2 - Ui( 2 ) ),
+		                         ImVec2( at.x + width - Ui( 8 ), at.y + h / 2 + Ui( 3 ) ), theme::TextDim );
+		if( hot )
+			ImGui::SetTooltip( "Goes to: %s\nClick to send this track to one screen, or to all of them (the composition).\nThe screens are those "
+			                   "of the Advanced Output's Timeline setup.",
+			                   PictureName( app, track.output ).c_str() );
+		if( ImGui::IsItemClicked( ImGuiMouseButton_Left ) )
+			ImGui::OpenPopup( "##outputMenu" );
+		if( ImGui::BeginPopup( "##outputMenu" ) )
+		{
+			int current = TrackScreen( app, k );
+			auto item   = [ & ]( int screen, const std::string& label, bool selected ) {
+                ImVec2 p = ImGui::GetCursorScreenPos();
+                ImGui::GetWindowDrawList()->AddRectFilled( ImVec2( p.x, p.y + Ui( 4 ) ), ImVec2( p.x + Ui( 8 ), p.y + Ui( 12 ) ),
+                                                           screen >= 0 ? ScreenColour( screen ) : theme::Accent, Ui( 2 ) );
+                ImGui::SetCursorScreenPos( ImVec2( p.x + Ui( 14 ), p.y ) );
+                if( ImGui::Selectable( label.c_str(), selected ) )
+                    SendTrackTo( app, k, screen );
+			};
+			ImGui::TextDisabled( "Send %s to", track.name.c_str() );
+			char text[ 200 ];
+			std::snprintf( text, sizeof( text ), "All Screens (composition %dx%d)", app.composition.width, app.composition.height );
+			item( -1, text, !setup.FindCanvas( track.output ) );
+			for( size_t i = 0; i < setup.screens.size(); ++i )
+			{
+				std::snprintf( text, sizeof( text ), "%s  %dx%d##screen%d", setup.screens[ i ].name.c_str(), setup.screens[ i ].width, setup.screens[ i ].height, (int)i );
+				item( (int)i, text, current == (int)i );
+			}
+			ImGui::Separator();
+			if( ImGui::Selectable( "Screens: Advanced Output..." ) )
+			{
+				app.outputTab             = 1;
+				app.panels.advancedOutput = true;
+			}
+			ImGui::EndPopup();
+		}
+		y2 += ImGui::GetFrameHeight() + Ui( 3 );
+	}
+
+	// Last row: opacity, or the volume (with keyframes the slider shows the volume at the playhead, and an edit
+	// sets the keyframe there; the diamond adds or removes the keyframe at the playhead).
+	if( y2 + ImGui::GetFrameHeight() <= pos.y + size.y )
+	{
+		ImGui::SetCursorScreenPos( ImVec2( left, y2 ) );
 		if( track.audio )
 		{
-			// With keyframes the slider shows the volume at the playhead, and an edit sets the keyframe there; the
-			// diamond adds or removes the keyframe at the playhead.
 			double now    = t.position;
 			bool keyed    = !track.volumeKeys.empty();
 			bool onKey    = keyed && KeyIndex( track.volumeKeys, now ) >= 0;
@@ -582,10 +641,10 @@ void TrackHeader( App& app, int k, ImVec2 pos, ImVec2 size )
 					track.volumeLine = true;
 				}
 			}
-			ImGui::SameLine( 0, Ui( 2 ) );
-			ImGui::SetNextItemWidth( size.x - Ui( 14 ) - ImGui::GetFrameHeight() );
+			ImGui::SameLine( 0, Ui( 4 ) );
+			ImGui::SetNextItemWidth( std::max( Ui( 30 ), right - ImGui::GetCursorScreenPos().x ) );
 			float percent = current * 100;
-			bool edited = FilledSlider( "##volume", &percent, 0, 100, keyed ? "Volume %.0f %% (keys)" : "Volume %.0f %%" );
+			bool edited   = FilledSlider( "##volume", &percent, 0, 100, keyed ? "Volume %.0f %% (keys)" : "Volume %.0f %%" );
 			// One drag, one point: where the playhead was when it began (the timeline may play on meanwhile).
 			static double heldAt = 0;
 			if( ImGui::IsItemActivated() )
@@ -602,16 +661,52 @@ void TrackHeader( App& app, int k, ImVec2 pos, ImVec2 size )
 		}
 		else
 		{
+			ImGui::SetNextItemWidth( right - left );
 			float percent = track.opacity * 100;
 			if( FilledSlider( "##opacity", &percent, 0, 100, "Opacity %.0f %%" ) )
 				track.opacity = percent / 100;
 			ResetValue( &track.opacity, 1.0f );
 		}
 	}
-	// Right-click on a free part of the header: the track's menu too.
+
+	// The free part of the header: double-click to rename, drag onto another track to move it there, right-click
+	// for the track's menu.
 	ImGui::SetCursorScreenPos( pos );
 	ImGui::SetNextItemAllowOverlap();
 	ImGui::InvisibleButton( "##header", ImVec2( size.x, size.y - Ui( 1 ) ) );
+	if( ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) )
+	{
+		state.renaming    = k;
+		state.renameFocus = true;
+	}
+	if( ImGui::IsItemHovered() && state.renaming != k && !ImGui::IsPopupOpen( "##trackMenu" ) && ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) && !app.learning )
+		ImGui::SetTooltip( "%s\nDouble-click: rename. Drag onto another %s track: move it there. Right-click: menu", track.name.c_str(), track.audio ? "audio" : "video" );
+	if( ImGui::BeginDragDropSource( ImGuiDragDropFlags_SourceNoPreviewTooltip ) )
+	{
+		ImGui::SetDragDropPayload( kTrackPayload, &k, sizeof( int ) );
+		draw->AddRect( pos, ImVec2( pos.x + size.x, pos.y + size.y - Ui( 1 ) ), theme::Accent, 0, 0, Ui( 2 ) );
+		ImGui::EndDragDropSource();
+	}
+	if( ImGui::BeginDragDropTarget() )
+	{
+		const ImGuiPayload* payload = ImGui::GetDragDropPayload();
+		int from = payload && payload->IsDataType( kTrackPayload ) ? *(const int*)payload->Data : -1;
+		if( from >= 0 && from < (int)t.tracks.size() && t.tracks[ from ].audio == track.audio && from != k )
+		{
+			// Where it lands: a line above or below this header (video tracks above are higher in the list).
+			bool above = track.audio ? from > k : from < k;
+			float ly   = above ? pos.y + Ui( 1 ) : pos.y + size.y - Ui( 2 );
+			draw->AddLine( ImVec2( pos.x, ly ), ImVec2( pos.x + size.x, ly ), theme::Accent, Ui( 3 ) );
+			if( ImGui::AcceptDragDropPayload( kTrackPayload, ImGuiDragDropFlags_AcceptNoDrawDefaultRect ) )
+			{
+				MoveTrack( app, from, k );
+				ImGui::EndDragDropTarget();
+				ImGui::PopID();
+				return;
+			}
+		}
+		ImGui::EndDragDropTarget();
+	}
 	if( ImGui::IsItemClicked( ImGuiMouseButton_Right ) )
 		ImGui::OpenPopup( "##trackMenu" );
 	if( ImGui::BeginPopup( "##trackMenu" ) )
@@ -630,10 +725,21 @@ void TrackHeader( App& app, int k, ImVec2 pos, ImVec2 size )
 			}
 		}
 		ImGui::Separator();
+		// Up and down as shown: video tracks above lie later in the list.
+		std::vector< int > order = ShownOrder( t );
+		int place = (int)( std::find( order.begin(), order.end(), k ) - order.begin() );
+		int above = place > 0 && t.tracks[ order[ place - 1 ] ].audio == track.audio ? order[ place - 1 ] : -1;
+		int below = place + 1 < (int)order.size() && t.tracks[ order[ place + 1 ] ].audio == track.audio ? order[ place + 1 ] : -1;
+		if( ImGui::MenuItem( "Move Up", nullptr, false, above >= 0 ) )
+			MoveTrack( app, k, above );
+		if( ImGui::MenuItem( "Move Down", nullptr, false, below >= 0 ) )
+			MoveTrack( app, k, below );
+		ImGui::Separator();
 		if( ImGui::MenuItem( "Delete Track" ) )
 		{
 			t.tracks.erase( t.tracks.begin() + k );
 			state.clip = state.track = -1;
+			state.renaming           = -1;
 			ImGui::EndPopup();
 			ImGui::PopID();
 			return;
@@ -647,13 +753,14 @@ void Lanes( App& app, float height )
 {
 	Timeline& t      = app.composition.timeline;
 	const ImGuiIO& io = ImGui::GetIO();
-	const float headerW = Ui( 170 ), rulerH = Ui( 22 ), blockH = Ui( 26 ), topH = rulerH + blockH;
-	const float videoH = Ui( 60 ), audioH = Ui( 42 ), edge = Ui( 6 );
+	const float headerW = Ui( state.headerWidth ), rulerH = Ui( 22 ), blockH = Ui( 26 ), topH = rulerH + blockH;
+	const float row = ImGui::GetFrameHeight() + Ui( 3 );
+	const float videoH = std::max( Ui( 66 ), row * 3 + Ui( 6 ) ), audioH = std::max( Ui( 46 ), row * 2 + Ui( 6 ) ), edge = Ui( 6 );
 	const float pps = state.zoom * ImGui::GetFontSize() / 15.0f; // pixels per second
 	double length   = t.Length();
 	double shown    = std::max( length + 60.0, 120.0 );
 	float contentW  = headerW + (float)( shown * pps );
-	float tracksH   = 0;
+	float tracksH   = Ui( 6 ); // the gap between the video and the audio tracks
 	for( const TimelineTrack& k : t.tracks )
 		tracksH += k.audio ? audioH : videoH;
 
@@ -700,15 +807,25 @@ void Lanes( App& app, float height )
 			state.scrollX = std::max( 0.0f, (float)( t.position * pps ) - Ui( 40 ) );
 	}
 
-	// Lanes: track backgrounds with bar lines, top track first (the last in the list).
+	// Lanes: track backgrounds with bar lines; the video tracks over the audio ones (ShownOrder), a gap between.
 	std::vector< float > trackY( t.tracks.size() ), trackH( t.tracks.size() );
-	float y = origin.y + topH;
-	for( int k = (int)t.tracks.size() - 1; k >= 0; --k )
+	std::vector< int > order = ShownOrder( t );
+	const float gapH = Ui( 6 );
+	float y          = origin.y + topH;
+	float splitY     = -1; // where the audio tracks begin
+	for( int k : order )
 	{
+		if( t.tracks[ k ].audio && splitY < 0 )
+		{
+			splitY = y;
+			if( k != order.front() )
+				y += gapH;
+		}
 		trackY[ k ] = y;
 		trackH[ k ] = t.tracks[ k ].audio ? audioH : videoH;
 		y += trackH[ k ];
 	}
+	tracksH = y - ( origin.y + topH );
 	auto trackAt = [ & ]( float my ) {
 		for( int k = 0; k < (int)t.tracks.size(); ++k )
 			if( my >= trackY[ k ] && my < trackY[ k ] + trackH[ k ] )
@@ -719,8 +836,10 @@ void Lanes( App& app, float height )
 	for( int k = 0; k < (int)t.tracks.size(); ++k )
 	{
 		draw->AddRectFilled( ImVec2( laneLeft, trackY[ k ] ), ImVec2( viewRight, trackY[ k ] + trackH[ k ] - Ui( 1 ) ),
-		                     t.tracks[ k ].audio ? IM_COL32( 18, 23, 20, 255 ) : theme::Well );
+		                     t.tracks[ k ].audio ? IM_COL32( 18, 30, 22, 255 ) : theme::Well );
 	}
+	if( splitY > origin.y + topH )
+		draw->AddRectFilled( ImVec2( laneLeft, splitY ), ImVec2( viewRight, splitY + gapH ), theme::Panel );
 	// Bar lines (beats too when there is room).
 	{
 		double bar = t.SecondsPerBar(), beat = t.SecondsPerBeat();
@@ -1182,10 +1301,23 @@ void Lanes( App& app, float height )
 	// Track headers, at the left whatever the scroll.
 	// (ImGui's clip rect: the items' too, not only the drawing.)
 	ImGui::PushClipRect( ImVec2( stickyX, laneTop ), ImVec2( stickyX + headerW, viewBottom ), true );
-	for( int k = (int)t.tracks.size() - 1; k >= 0; --k )
-		if( k < (int)t.tracks.size() && trackY[ k ] + trackH[ k ] > laneTop && trackY[ k ] < viewBottom )
-			TrackHeader( app, k, ImVec2( stickyX, trackY[ k ] ), ImVec2( headerW - Ui( 4 ), trackH[ std::min( k, (int)trackH.size() - 1 ) ] ) );
+	size_t trackCount = t.tracks.size();
+	for( int k : order )
+		if( t.tracks.size() == trackCount && trackY[ k ] + trackH[ k ] > laneTop && trackY[ k ] < viewBottom )
+			TrackHeader( app, k, ImVec2( stickyX, trackY[ k ] ), ImVec2( headerW - Ui( 6 ), trackH[ k ] ) );
 	ImGui::PopClipRect();
+	// The headers' edge: drag it to make them wider or narrower.
+	{
+		ImGui::SetCursorScreenPos( ImVec2( stickyX + headerW - Ui( 6 ), laneTop ) );
+		ImGui::InvisibleButton( "##headerEdge", ImVec2( Ui( 6 ), std::max( 1.0f, std::min( viewBottom, origin.y + topH + tracksH ) - laneTop ) ) );
+		bool hot = ImGui::IsItemHovered() || ImGui::IsItemActive();
+		if( hot )
+			ImGui::SetMouseCursor( ImGuiMouseCursor_ResizeEW );
+		if( ImGui::IsItemActive() )
+			state.headerWidth = std::clamp( state.headerWidth + io.MouseDelta.x * 15.0f / ImGui::GetFontSize(), 160.0f, 520.0f );
+		draw->AddLine( ImVec2( stickyX + headerW - Ui( 3 ), laneTop ), ImVec2( stickyX + headerW - Ui( 3 ), std::min( viewBottom, origin.y + topH + tracksH ) ),
+		               hot ? theme::Accent : theme::Line, hot ? Ui( 2 ) : Ui( 1 ) );
+	}
 	if( t.tracks.empty() )
 	{
 		ImGui::SetCursorScreenPos( ImVec2( stickyX + Ui( 10 ), laneTop + Ui( 10 ) ) );

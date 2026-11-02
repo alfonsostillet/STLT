@@ -39,6 +39,13 @@ public:
 	GLuint CompositionFramebuffer() const { return final.Framebuffer(); }
 	// A canvas as of the last Render (0: not rendered).
 	GLuint CanvasTexture( const std::string& id ) const;
+	// One layer alone (the Composition Monitor's Layer button): the index of a deck layer, or of a timeline track in
+	// the timeline view (-1: none). Render keeps its picture, effects and all, as it goes into the mix (black when it
+	// shows nothing): SoloTexture, of SoloWidth x SoloHeight.
+	int soloLayer = -1;
+	GLuint SoloTexture() const { return solo.Texture(); }
+	int SoloWidth() const { return solo.Width(); }
+	int SoloHeight() const { return solo.Height(); }
 
 	// Main context. Draws one clip with its effects on black, fitted to the target (preview monitor).
 	void RenderClipAlone( Clip& clip, Fbo& target, int compWidth, int compHeight, const FrameInfo& frame );
@@ -74,6 +81,7 @@ private:
 		float opacity;
 		BlendMode blend;
 		EffectChain* effects;
+		bool solo = false; // its picture also kept alone (soloLayer)
 	};
 	// Mixes `sources` over opaque black at width x height; returns the target holding the result.
 	Fbo* Mix( std::vector< Source >& sources, Work& work, int width, int height, const FrameInfo& frame );
@@ -93,6 +101,9 @@ private:
 	GLuint vao = 0;
 	std::map< std::pair< int, int >, std::unique_ptr< Work > > works;
 	Fbo final;
+	Fbo solo;
+	bool soloDrawn = false;
+	void KeepSolo( Fbo& layer, int width, int height );
 	std::map< std::string, std::unique_ptr< Fbo > > canvasFinal; // by canvas id
 	std::map< std::pair< int, int >, std::unique_ptr< Pair > > pool;
 };

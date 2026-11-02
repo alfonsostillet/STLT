@@ -2,6 +2,7 @@
 #include <imgui.h>
 #include <string>
 
+
 namespace stltvj
 {
 class App;
@@ -20,4 +21,12 @@ void ShowAdvancedOutputTab( int tab, int screen, int slice );
 ImU32 PictureColour( const App& app, const std::string& source );
 // Its name: "Composition" or the canvas's.
 std::string PictureName( const App& app, const std::string& source );
+// Sends a timeline track to one screen of the timeline's setup (`screen` its index), or to every screen (-1: the
+// composition). A screen that gets its first track shows its own picture from then on; one left without tracks
+// goes back to the composition.
+void SendTrackTo( App& app, int track, int screen );
+// The screen of the timeline's setup a track goes to (-1: every screen).
+int TrackScreen( const App& app, int track );
+// The colour of the screen at `index` (the timeline's chips, the monitor's labels).
+ImU32 ScreenColour( int index );
 }

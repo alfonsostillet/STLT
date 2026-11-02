@@ -478,6 +478,8 @@ Fbo* Compositor::Mix( std::vector< Source >& sources, Work& work, int W, int H, 
 		else
 			DrawClipInto( clip, work.layer, frame, W, H, false );
 		Fbo* layerResult = ApplyChain( *source.effects, &work.layer, &work.scratch, frame );
+		if( source.solo )
+			KeepSolo( *layerResult, W, H );
 
 		work.mix[ 1 - current ].Bind();
 		glBindVertexArray( vao );
@@ -495,6 +497,29 @@ Fbo* Compositor::Mix( std::vector< Source >& sources, Work& work, int W, int H, 
 		current = 1 - current;
 	}
 	return &work.mix[ current ];
+}
+
+void Compositor::KeepSolo( Fbo& layer, int width, int height )
+{
+	if( !solo.Ensure( width, height ) )
+		return;
+	float identity[ 9 ];
+	Identity( identity );
+	solo.Bind();
+	glClearColor( 0, 0, 0, 1 );
+	glClear( GL_COLOR_BUFFER_BIT );
+	glEnable( GL_BLEND );
+	glBlendFunc( GL_ONE, GL_ONE_MINUS_SRC_ALPHA ); // premultiplied, over black
+	glBindVertexArray( vao );
+	copyProgram.Use();
+	glUniformMatrix3fv( copyProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
+	SetTexRect( copyProgram, 0, 1, 1, 0 );
+	glUniform1f( copyProgram.Uniform( "uOpacity" ), 1.0f );
+	glActiveTexture( GL_TEXTURE0 );
+	glBindTexture( GL_TEXTURE_2D, layer.Texture() );
+	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+	ResetGlState();
+	soloDrawn = true;
 }
 
 void Compositor::Finish( Fbo& from, Fbo& to, const Composition& composition )
@@ -522,7 +547,9 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame, bool 
 	// What is drawn, bottom first: the deck's layers (Session view) or the timeline's video tracks (Arrangement),
 	// each track into the composition or the canvas it is sent to.
 	std::vector< Source > sources;
+	std::vector< Source > soloOnly; // a track the monitor shows alone though it is not in the mix
 	std::map< std::string, std::vector< Source > > canvasSources;
+	soloDrawn = false;
 	auto ready = []( const Clip& clip ) { return clip.generator || ( clip.Loaded() && clip.player->HasFrame() ); };
 	auto isCanvas = [ & ]( const std::string& id ) {
 		return !id.empty() && std::any_of( canvases.begin(), canvases.end(), [ & ]( const CanvasSize& c ) { return c.id == id; } );
@@ -531,15 +558,25 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame, bool 
 	{
 		Timeline& timeline = composition.timeline;
 		bool anySolo       = std::any_of( timeline.tracks.begin(), timeline.tracks.end(), []( const TimelineTrack& t ) { return t.solo && !t.audio; } );
-		for( TimelineTrack& track : timeline.tracks )
+		for( int k = 0; k < (int)timeline.tracks.size(); ++k )
 		{
+			TimelineTrack& track = timeline.tracks[ k ];
+			// The monitor's Layer view shows a track even when it is muted, soloed out or faded.
+			bool hidden = track.mute || ( anySolo && !track.solo ) || track.opacity <= 0;
+			if( hidden && k == soloLayer && !track.audio && !timeline.black )
+			{
+				int index = track.ClipAt( timeline.position );
+				if( index >= 0 && ready( track.clips[ index ].clip ) )
+					soloOnly.push_back( { &track.clips[ index ].clip, nullptr, 1, TransitionMode::Fade, 1, BlendMode::Alpha, &track.effects, true } );
+			}
 			if( track.audio || track.mute || ( anySolo && !track.solo ) || timeline.black || track.opacity <= 0 )
 				continue;
 			// The clip's own blend; its opacity and transform (keyframed) are its fields.
 			int index = track.ClipAt( timeline.position );
 			if( index >= 0 && ready( track.clips[ index ].clip ) )
 			{
-				Source source{ &track.clips[ index ].clip, nullptr, 1, TransitionMode::Fade, track.opacity, track.clips[ index ].blend, &track.effects };
+				Source source{ &track.clips[ index ].clip, nullptr, 1, TransitionMode::Fade, track.opacity, track.clips[ index ].blend, &track.effects,
+					           k == soloLayer };
 				( isCanvas( track.output ) ? canvasSources[ track.output ] : sources ).push_back( source );
 			}
 		}
@@ -560,11 +597,13 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame, bool 
 				outgoing = nullptr;
 			if( !ready( *playing ) && !outgoing )
 				continue;
-			sources.push_back( { playing, outgoing, layer.transitionProgress, layer.transition, opacity, layer.blend, &layer.effects } );
+			sources.push_back( { playing, outgoing, layer.transitionProgress, layer.transition, opacity, layer.blend, &layer.effects, index == soloLayer } );
 		}
 	}
 
 	Work& work = WorkFor( W, H );
+	if( !soloOnly.empty() )
+		Mix( soloOnly, work, W, H, frame );
 	Fbo* mixed = Mix( sources, work, W, H, frame );
 	if( !mixed )
 		return;
@@ -604,6 +643,13 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame, bool 
 		Fbo* canvas                 = Mix( list, WorkFor( c.width, c.height ), c.width, c.height, frame );
 		if( canvas )
 			Finish( *canvas, *out, composition );
+	}
+	// The layer the monitor shows alone, when it showed nothing: black.
+	if( soloLayer >= 0 && !soloDrawn && solo.Ensure( W, H ) )
+	{
+		solo.Bind();
+		glClearColor( 0, 0, 0, 1 );
+		glClear( GL_COLOR_BUFFER_BIT );
 	}
 	// Canvases gone from the setup free their pictures, and sizes no longer mixed their targets.
 	for( auto it = canvasFinal.begin(); it != canvasFinal.end(); )

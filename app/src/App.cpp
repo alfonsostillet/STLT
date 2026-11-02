@@ -211,7 +211,7 @@ bool App::Init( const LaunchOptions& launch )
 		return false;
 	}
 	preview.Ensure( 480, 270 );
-	if( !outputs.Init( error ) || !quickOutputs.Init( error ) )
+	if( !outputs.Init( error ) || !editOutputs.Init( error ) || !quickOutputs.Init( error ) )
 	{
 		std::fprintf( stderr, "%s\n", error.c_str() );
 		return false;
@@ -252,8 +252,12 @@ bool App::Init( const LaunchOptions& launch )
 	compositionPath.clear(); // the session file is not the user's own composition
 	std::string outputText, outputError;
 	if( options.fresh || !ReadTextFile( ( fs::u8path( configDir ) / "advanced-output.json" ).u8string(), outputText )
-	    || !LoadAdvancedOutput( outputText, advancedOutput, outputError ) || advancedOutput.screens.empty() )
+	    || !LoadOutputSetups( outputText, advancedOutput, timelineOutput, composition.width, composition.height, outputError ) )
+		advancedOutput = timelineOutput = AdvancedOutputSetup::MakeDefault( composition.width, composition.height );
+	if( advancedOutput.screens.empty() )
 		advancedOutput = AdvancedOutputSetup::MakeDefault( composition.width, composition.height );
+	if( timelineOutput.screens.empty() )
+		timelineOutput = AdvancedOutputSetup::MakeDefault( composition.width, composition.height );
 	// The output mode of the last session; before modes existed the setup's screens were always live.
 	std::string modeText;
 	nlohmann::json mode;
@@ -286,7 +290,8 @@ bool App::Init( const LaunchOptions& launch )
 		std::string text, setupError;
 		if( fs::u8path( options.outputSetup ).extension() == ".xml" )
 			ImportResolumeOutput( options.outputSetup );
-		else if( !ReadTextFile( options.outputSetup, text ) || !LoadAdvancedOutput( text, advancedOutput, setupError ) )
+		else if( !ReadTextFile( options.outputSetup, text )
+		         || !LoadOutputSetups( text, advancedOutput, timelineOutput, composition.width, composition.height, setupError ) )
 			std::fprintf( stderr, "Cannot load %s %s\n", options.outputSetup.c_str(), setupError.c_str() );
 		outputMode = OutputMode::Advanced;
 	}
@@ -311,7 +316,8 @@ bool App::Init( const LaunchOptions& launch )
 			std::fprintf( stderr, "Ignoring --fx %s=%s\n", fx.scope.c_str(), fx.id.c_str() );
 	}
 	lastTime = startTime = glfwGetTime();
-	savedOutput          = SaveAdvancedOutput( advancedOutput );
+	outputTab            = view == View::Arrangement ? 1 : 0;
+	savedOutput          = OutputText();
 	history.Reset( Snapshot() );
 	return true;
 }
@@ -348,6 +354,7 @@ void App::Shutdown()
 	glfwMakeContextCurrent( window );
 	audio.Stop();
 	outputs.Shutdown();
+	editOutputs.Shutdown();
 	quickOutputs.Shutdown();
 	composition = Composition{}; // frees the players' GPU memory and plugin instances while the context is alive
 	preview.Release();
@@ -1002,7 +1009,7 @@ History::State App::Snapshot() const
 {
 	// Which deck is shown is not an undo step.
 	bool external = tempoSync.Following() != TempoSync::Source::Internal;
-	return { SaveComposition( composition, false, external ? undoBpm : -1 ), SaveAdvancedOutput( advancedOutput ) };
+	return { SaveComposition( composition, false, external ? undoBpm : -1 ), OutputText() };
 }
 
 namespace
@@ -1191,7 +1198,7 @@ bool App::Undo()
 	if( before.output != now.output )
 	{
 		std::string error;
-		LoadAdvancedOutput( before.output, advancedOutput, error );
+		LoadOutputSetups( before.output, advancedOutput, timelineOutput, composition.width, composition.height, error );
 	}
 	history.Settle( Snapshot() );
 	SetStatus( "Undo " + label );
@@ -1211,7 +1218,7 @@ bool App::Redo()
 	if( after.output != now.output )
 	{
 		std::string error;
-		LoadAdvancedOutput( after.output, advancedOutput, error );
+		LoadOutputSetups( after.output, advancedOutput, timelineOutput, composition.width, composition.height, error );
 	}
 	history.Settle( Snapshot() );
 	SetStatus( "Redo " + history.UndoLabel() );
@@ -1911,13 +1918,15 @@ void PlaceScreen( Screen& screen, OutputDevice device, const std::string& displa
 
 void App::ShowScreenOn( size_t index, OutputDevice device, const std::string& display )
 {
-	if( advancedOutput.screens.empty() )
-		advancedOutput = AdvancedOutputSetup::MakeDefault( composition.width, composition.height );
-	if( index >= advancedOutput.screens.size() )
+	// The setup on show: the Grid's in the Session view, the timeline's in the Arrangement view.
+	AdvancedOutputSetup& setup = LiveOutput();
+	if( setup.screens.empty() )
+		setup = AdvancedOutputSetup::MakeDefault( composition.width, composition.height );
+	if( index >= setup.screens.size() )
 		return;
 	// From the Output panel this is a choice of its own: saved at once, unless the editor holds unsaved edits.
 	bool clean = !OutputUnsaved();
-	PlaceScreen( advancedOutput.screens[ index ], device, display );
+	PlaceScreen( setup.screens[ index ], device, display );
 	if( clean )
 		SaveOutputSetup();
 	if( device != OutputDevice::Virtual )
@@ -1926,12 +1935,12 @@ void App::ShowScreenOn( size_t index, OutputDevice device, const std::string& di
 
 bool App::OutputUnsaved() const
 {
-	return SaveAdvancedOutput( advancedOutput ) != savedOutput;
+	return OutputText() != savedOutput;
 }
 
 void App::SaveOutputSetup()
 {
-	savedOutput = SaveAdvancedOutput( advancedOutput );
+	savedOutput = OutputText();
 	if( WriteTextFile( ( fs::u8path( configDir ) / "advanced-output.json" ).u8string(), savedOutput ) )
 		SetStatus( "Advanced Output saved" );
 	else
@@ -1941,10 +1950,11 @@ void App::SaveOutputSetup()
 void App::RevertOutputSetup()
 {
 	std::string error;
-	AdvancedOutputSetup saved;
-	if( !LoadAdvancedOutput( savedOutput, saved, error ) || saved.screens.empty() )
+	AdvancedOutputSetup grid, timeline;
+	if( !LoadOutputSetups( savedOutput, grid, timeline, composition.width, composition.height, error ) || grid.screens.empty() || timeline.screens.empty() )
 		return;
-	advancedOutput = std::move( saved );
+	advancedOutput = std::move( grid );
+	timelineOutput = std::move( timeline );
 	SetStatus( "Advanced Output: back to the saved setup" );
 }
 
@@ -2027,19 +2037,21 @@ bool App::SaveOutputPreset( const std::string& name )
 		return false;
 	std::error_code ignored;
 	fs::create_directories( fs::u8path( OutputPresetDirectory() ), ignored );
-	return WriteTextFile( ( fs::u8path( OutputPresetDirectory() ) / fs::u8path( name + ".json" ) ).u8string(), SaveAdvancedOutput( advancedOutput ) );
+	return WriteTextFile( ( fs::u8path( OutputPresetDirectory() ) / fs::u8path( name + ".json" ) ).u8string(), OutputText() );
 }
 
 bool App::LoadOutputPreset( const std::string& name )
 {
 	std::string text, error;
-	AdvancedOutputSetup loaded;
-	if( !ReadTextFile( ( fs::u8path( OutputPresetDirectory() ) / fs::u8path( name + ".json" ) ).u8string(), text ) || !LoadAdvancedOutput( text, loaded, error ) )
+	AdvancedOutputSetup grid, timeline;
+	if( !ReadTextFile( ( fs::u8path( OutputPresetDirectory() ) / fs::u8path( name + ".json" ) ).u8string(), text )
+	    || !LoadOutputSetups( text, grid, timeline, composition.width, composition.height, error ) )
 	{
 		SetStatus( "Could not load output preset " + name + ( error.empty() ? "" : ": " + error ), true );
 		return false;
 	}
-	advancedOutput = std::move( loaded );
+	advancedOutput = std::move( grid );
+	timelineOutput = std::move( timeline );
 	SetStatus( "Output preset " + name + " loaded" );
 	return true;
 }
@@ -2057,12 +2069,17 @@ bool App::ImportResolumeOutput( const std::string& path )
 	size_t slices = 0;
 	for( const Screen& s : imported.screens )
 		slices += s.slices.size();
-	advancedOutput = std::move( imported );
+	// Into the setup the editor works on (the Grid's has no canvases).
+	if( outputTab == 0 )
+		imported.RemoveAllCanvases( composition.width, composition.height );
+	else
+		imported.SyncScreenPictures( composition.width, composition.height );
+	EditedOutput() = std::move( imported );
 	std::string note;
 	if( compWidth != composition.width || compHeight != composition.height )
 		note = " (made for a " + std::to_string( compWidth ) + "x" + std::to_string( compHeight ) + " composition; this one is " + std::to_string( composition.width )
 		       + "x" + std::to_string( composition.height ) + ")";
-	SetStatus( "Imported " + std::to_string( advancedOutput.screens.size() ) + " screen(s) and " + std::to_string( slices ) + " slice(s) from Resolume" + note,
+	SetStatus( "Imported " + std::to_string( EditedOutput().screens.size() ) + " screen(s) and " + std::to_string( slices ) + " slice(s) from Resolume" + note,
 	           !note.empty() );
 	return true;
 }
@@ -2259,7 +2276,8 @@ void App::SetView( View v )
 {
 	if( view == v )
 		return;
-	view = v;
+	view      = v;
+	outputTab = v == View::Arrangement ? 1 : 0; // the editor follows to the setup now on show
 	workspaces.SwitchView( v == View::Arrangement ? 1 : 0 );
 	// A first visit: two video tracks and an audio track to start with.
 	Timeline& t = composition.timeline;
@@ -2612,29 +2630,38 @@ void App::Frame()
 	frame.delta = dt;
 	frame.bpm   = composition.bpm;
 	frame.beat  = composition.beat;
-	// The canvases only matter to the Advanced Output: drawn while it is on show, edited or captured.
-	std::vector< Compositor::CanvasSize > canvases;
-	if( outputMode == OutputMode::Advanced || panels.advancedOutput || options.captureScreen > 0 )
-		for( const Canvas& c : advancedOutput.canvases )
-			canvases.push_back( { c.id, c.width, c.height } );
-	compositor.Render( composition, frame, view == View::Arrangement, canvases );
-	UpdateQuickOutput();
+	// The setup on show is drawn when it is live, edited, captured or on the monitor; the other one while the editor
+	// works on it. The timeline's screen pictures (its canvases) are mixed when its setup is drawn.
+	AdvancedOutputSetup& live = LiveOutput();
 	bool advancedLive = outputMode == OutputMode::Advanced;
 	bool quickLive    = outputMode == OutputMode::Window || outputMode == OutputMode::Fullscreen;
-	// The Advanced Output setup is drawn when it is shown and for the editor's views.
+	bool monitorScreens = monitorShown && ( monitorSource == MonitorSource::Multiview || monitorSource == MonitorSource::Screen );
+	bool liveDrawn    = advancedLive || ( panels.advancedOutput && EditingLive() ) || options.captureScreen > 0 || monitorScreens;
+	bool otherDrawn   = panels.advancedOutput && !EditingLive();
+	timelineOutput.SyncScreenPictures( composition.width, composition.height );
+	std::vector< Compositor::CanvasSize > canvases;
+	if( ( liveDrawn && view == View::Arrangement ) || ( otherDrawn && outputTab == 1 ) )
+		for( const Canvas& c : timelineOutput.canvases )
+			canvases.push_back( { c.id, c.width, c.height } );
+	compositor.soloLayer = monitorShown && monitorSource == MonitorSource::Layer ? monitorLayer : -1;
+	compositor.Render( composition, frame, view == View::Arrangement, canvases );
+	UpdateQuickOutput();
 	if( now - chaserStageChecked > 0.5 )
 	{
 		UpdateChaserStage();
 		chaser::Reap();
 		chaserStageChecked = now;
 	}
-	if( advancedLive || panels.advancedOutput || options.captureScreen > 0 )
-	{
-		std::map< std::string, OutputRenderer::Picture > pictures;
-		for( const Canvas& c : advancedOutput.canvases )
-			pictures[ c.id ] = { compositor.CanvasTexture( c.id ), c.width, c.height };
-		outputs.Render( advancedOutput, compositor.CompositionTexture(), composition.width, composition.height, advancedLive, pictures );
-	}
+	auto pictures = [ & ]( const AdvancedOutputSetup& setup ) {
+		std::map< std::string, OutputRenderer::Picture > list;
+		for( const Canvas& c : setup.canvases )
+			list[ c.id ] = { compositor.CanvasTexture( c.id ), c.width, c.height };
+		return list;
+	};
+	if( liveDrawn )
+		outputs.Render( live, compositor.CompositionTexture(), composition.width, composition.height, advancedLive, pictures( live ) );
+	if( otherDrawn )
+		editOutputs.Render( EditedOutput(), compositor.CompositionTexture(), composition.width, composition.height, false, pictures( EditedOutput() ) );
 	if( quickLive )
 		quickOutputs.Render( quickOutput, compositor.CompositionTexture(), composition.width, composition.height );
 	UpdatePreview( dt );
@@ -2650,6 +2677,7 @@ void App::Frame()
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
+	monitorShown = false; // the monitor says again when it is drawn (its screens and layer are drawn for it next frame)
 	DrawUi();
 	// An edit has ended when nothing is held or being typed into: record it. Keyboard edits (nudges, shortcuts)
 	// end when their key comes up; anything else (a drop from the desktop, a file dialog) is caught every couple of
@@ -2692,7 +2720,7 @@ void App::Frame()
 		outputVsync = wantOutputVsync;
 	}
 	glfwSwapBuffers( window );
-	outputs.SyncWindows( advancedOutput, window, advancedLive );
+	outputs.SyncWindows( live, window, advancedLive );
 	quickOutputs.SyncWindows( quickOutput, window, quickLive );
 	outputs.TakeWindowClosed();
 	if( quickOutputs.TakeWindowClosed() )
@@ -2704,9 +2732,9 @@ void App::Frame()
 void App::Capture()
 {
 	int width = 0, height = 0;
-	if( options.captureScreen > 0 && (size_t)options.captureScreen <= advancedOutput.screens.size() )
+	if( options.captureScreen > 0 && (size_t)options.captureScreen <= LiveOutput().screens.size() )
 	{
-		const Screen& screen = advancedOutput.screens[ options.captureScreen - 1 ];
+		const Screen& screen = LiveOutput().screens[ options.captureScreen - 1 ];
 		width                = screen.width;
 		height               = screen.height;
 		glBindFramebuffer( GL_FRAMEBUFFER, outputs.ScreenFramebuffer( (size_t)options.captureScreen - 1 ) );

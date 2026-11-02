@@ -504,14 +504,18 @@ static void TestCanvases()
 	setup.screens.push_back( second );
 	setup.EnsureIds();
 
-	// A canvas for the LED screen: its size and name; the slice that showed the whole composition shows the whole
-	// canvas, the one showing a part keeps the composition.
-	std::string id = setup.AddScreenCanvas( 1, 1920, 1080 );
+	// The LED screen's own picture: its size and name; its slices that took from the composition take from it,
+	// keeping their share of it.
+	std::string id = setup.MakeScreenPicture( 1, 1920, 1080 );
 	const Canvas* led = setup.FindCanvas( id );
-	CHECK( led && led->name == "LED" && led->width == 3840 && led->height == 1080 );
+	CHECK( led && led->name == "LED" && led->width == 3840 && led->height == 1080 && led->screen == setup.screens[ 1 ].id );
+	CHECK( setup.MakeScreenPicture( 1, 1920, 1080 ) == id && setup.canvases.size() == 1 ); // made once
+	CHECK( setup.ScreenPictureOf( 1 ) == id && setup.ScreenPictureOf( 0 ).empty() && setup.ScreenOfPicture( id ) == 1 );
 	CHECK( setup.screens[ 1 ].slices[ 0 ].source == id && Near( setup.screens[ 1 ].slices[ 0 ].input[ 2 ], { 3840, 1080 } ) );
-	CHECK( setup.screens[ 1 ].slices[ 1 ].source.empty() );
+	CHECK( setup.screens[ 1 ].slices[ 1 ].source == id && Near( setup.screens[ 1 ].slices[ 1 ].input[ 2 ], { 1920, 540 } ) );
 	CHECK( setup.screens[ 0 ].slices[ 0 ].source.empty() ); // other screens untouched
+	setup.SetSliceSource( setup.screens[ 1 ].slices[ 1 ], "", 1920, 1080 );
+	CHECK( Near( setup.screens[ 1 ].slices[ 1 ].input[ 2 ], { 960, 540 } ) );
 	int w = 0, h = 0;
 	setup.SourceSize( id, 1920, 1080, w, h );
 	CHECK( w == 3840 && h == 1080 );
@@ -530,6 +534,7 @@ static void TestCanvases()
 	std::string error;
 	CHECK( LoadAdvancedOutput( SaveAdvancedOutput( setup ), back, error ) );
 	CHECK( back.canvases.size() == 1 && back.canvases[ 0 ].id == id && back.canvases[ 0 ].width == 3840 && back.canvases[ 0 ].name == "LED" );
+	CHECK( back.canvases[ 0 ].screen == setup.screens[ 1 ].id && back.screens[ 1 ].id == setup.screens[ 1 ].id );
 	CHECK( back.screens[ 1 ].slices[ 0 ].source == id );
 	back.canvases.clear();
 	AdvancedOutputSetup dangling;
@@ -542,9 +547,65 @@ static void TestCanvases()
 	CHECK( a.width == 16 && a.height == 16384 && !a.id.empty() && a.id != b.id );
 }
 
+// Screens' pictures follow their screens; the Grid's and the timeline's setups are saved together, and an older
+// single setup becomes both (the Grid's without canvases, the timeline's with its canvases given to screens).
+static void TestScreenPictures()
+{
+	AdvancedOutputSetup setup = AdvancedOutputSetup::MakeDefault( 1920, 1080 );
+	Screen side;
+	side.name   = "Side";
+	side.width  = 1280;
+	side.height = 720;
+	side.slices.push_back( AdvancedOutputSetup::MakeSlice( "Whole", 1920, 1080, 1280, 720 ) );
+	setup.screens.push_back( side );
+	setup.EnsureIds();
+	CHECK( !setup.screens[ 0 ].id.empty() && setup.screens[ 0 ].id != setup.screens[ 1 ].id );
+	std::string id = setup.MakeScreenPicture( 1, 1920, 1080 );
+	CHECK( !setup.SyncScreenPictures( 1920, 1080 ) ); // nothing to do
+
+	// The screen grows: so does its picture, and the slices keep their share; renamed: so is the picture.
+	setup.screens[ 1 ].width = 2560;
+	setup.screens[ 1 ].name  = "Left";
+	CHECK( setup.SyncScreenPictures( 1920, 1080 ) );
+	CHECK( setup.FindCanvas( id )->width == 2560 && setup.FindCanvas( id )->name == "Left" );
+	CHECK( Near( setup.screens[ 1 ].slices[ 0 ].input[ 2 ], { 2560, 720 } ) );
+
+	// A free canvas (an older setup) goes to the first screen taking from it; one whose screen is gone goes.
+	AdvancedOutputSetup old = AdvancedOutputSetup::MakeDefault( 1920, 1080 );
+	Canvas wall = old.MakeCanvas( "Wall", 3840, 1080 );
+	old.canvases.push_back( wall );
+	old.screens[ 0 ].slices[ 0 ].source = wall.id;
+	std::string single = SaveAdvancedOutput( old );
+	AdvancedOutputSetup grid, timeline;
+	std::string error;
+	CHECK( LoadOutputSetups( single, grid, timeline, 1920, 1080, error ) );
+	CHECK( grid.canvases.empty() && grid.screens[ 0 ].slices[ 0 ].source.empty() );
+	CHECK( timeline.canvases.size() == 1 && timeline.canvases[ 0 ].screen == timeline.screens[ 0 ].id && timeline.ScreenOfPicture( wall.id ) == 0 );
+	CHECK( grid.screens[ 0 ].id == timeline.screens[ 0 ].id );
+
+	// Both saved together and read back as they were.
+	timeline.screens[ 0 ].name = "Timeline screen";
+	timeline.SyncScreenPictures( 1920, 1080 ); // its picture is named after it
+	AdvancedOutputSetup grid2, timeline2;
+	CHECK( LoadOutputSetups( SaveOutputSetups( grid, timeline ), grid2, timeline2, 1920, 1080, error ) );
+	CHECK( grid2.canvases.empty() && timeline2.screens[ 0 ].name == "Timeline screen" && grid2.screens[ 0 ].name != "Timeline screen" );
+	CHECK( SaveOutputSetups( grid2, timeline2 ) == SaveOutputSetups( grid, timeline ) );
+	CHECK( !LoadOutputSetups( "{}", grid2, timeline2, 1920, 1080, error ) );
+
+	// The screen deleted: its picture goes, and the slices taking from it on other screens take from the composition,
+	// keeping their share (the slice took the left half of the 3840 wide wall, which became the screen's 1920).
+	Screen copy = timeline.screens[ 0 ];
+	copy.id.clear();
+	timeline.screens.push_back( copy );
+	timeline.screens.erase( timeline.screens.begin() );
+	CHECK( timeline.SyncScreenPictures( 1920, 1080 ) );
+	CHECK( timeline.canvases.empty() && timeline.screens[ 0 ].slices[ 0 ].source.empty() && Near( timeline.screens[ 0 ].slices[ 0 ].input[ 2 ], { 960, 1080 } ) );
+}
+
 int main()
 {
 	TestCanvases();
+	TestScreenPictures();
 	TestPolygonShapes();
 	TestPerspective();
 	TestDisplayIds();

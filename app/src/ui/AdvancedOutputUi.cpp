@@ -279,7 +279,7 @@ bool BeginProps( const char* id )
 
 void DrawList( App& app )
 {
-	AdvancedOutputSetup& setup = app.advancedOutput;
+	AdvancedOutputSetup& setup = app.EditedOutput();
 	Composition& comp          = app.composition;
 	float cw = (float)comp.width, ch = (float)comp.height;
 
@@ -672,7 +672,7 @@ void DrawPolygonTool( App& app, Screen& screen, int tab, ImDrawList* draw, ImVec
 		if( pts.size() >= 3 )
 		{
 			int sw, sh; // the picture shown on the Input tab: the new polygon takes from it
-			app.advancedOutput.SourceSize( editor.inputSource, app.composition.width, app.composition.height, sw, sh );
+			app.EditedOutput().SourceSize( editor.inputSource, app.composition.width, app.composition.height, sw, sh );
 			screen.slices.push_back( AdvancedOutputSetup::MakePolygonFrom( UniqueName( screen.slices, "Polygon" ), pts, tab == OutputTab,
 			                                                               (float)sw, (float)sh, (float)screen.width, (float)screen.height ) );
 			screen.slices.back().source = editor.inputSource;
@@ -714,10 +714,10 @@ void DrawCanvas( App& app, Screen& screen, int tab )
 	// The Input tab shows the picture the selected slice takes from (the composition or a canvas).
 	if( editor.slice >= 0 && editor.slice < (int)screen.slices.size() && !screen.slices[ editor.slice ].mask )
 		editor.inputSource = screen.slices[ editor.slice ].source;
-	if( !app.advancedOutput.FindCanvas( editor.inputSource ) )
+	if( !app.EditedOutput().FindCanvas( editor.inputSource ) )
 		editor.inputSource.clear();
 	int sourceWidth, sourceHeight;
-	app.advancedOutput.SourceSize( editor.inputSource, app.composition.width, app.composition.height, sourceWidth, sourceHeight );
+	app.EditedOutput().SourceSize( editor.inputSource, app.composition.width, app.composition.height, sourceWidth, sourceHeight );
 	float W = tab == InputTab ? (float)sourceWidth : (float)screen.width;
 	float H = tab == InputTab ? (float)sourceHeight : (float)screen.height;
 	// Slices on the Input tab: those taking from the picture shown.
@@ -770,7 +770,7 @@ void DrawCanvas( App& app, Screen& screen, int tab )
 		editor.pan[ tab ].y += io.MouseDelta.y;
 	}
 
-	GLuint texture = tab == OutputTab                ? app.outputs.ScreenTexture( (size_t)editor.screen )
+	GLuint texture = tab == OutputTab                ? app.EditedRenderer().ScreenTexture( (size_t)editor.screen )
 	                 : editor.inputSource.empty() ? app.compositor.CompositionTexture()
 	                                              : app.compositor.CanvasTexture( editor.inputSource );
 	if( texture )
@@ -1288,15 +1288,15 @@ void DrawCanvas( App& app, Screen& screen, int tab )
 			if( ImGui::MenuItem( "Match Output to Input" ) )
 			{
 				int w, h; // the picture it takes from: the composition or its canvas
-				app.advancedOutput.SourceSize( s.source, app.composition.width, app.composition.height, w, h );
+				app.EditedOutput().SourceSize( s.source, app.composition.width, app.composition.height, w, h );
 				s.MatchOutputToInput( (float)w, (float)h, (float)screen.width, (float)screen.height );
 			}
 			if( ImGui::MenuItem( "Fit Output to Screen" ) )
 				s.FitOutput( (float)screen.width, (float)screen.height );
-			if( !s.polygon && ImGui::MenuItem( s.source.empty() ? "Input: Whole Composition" : "Input: Whole Canvas" ) )
+			if( !s.polygon && ImGui::MenuItem( s.source.empty() ? "Input: Whole Composition" : "Input: Whole Screen Picture" ) )
 			{
 				int w, h;
-				app.advancedOutput.SourceSize( s.source, app.composition.width, app.composition.height, w, h );
+				app.EditedOutput().SourceSize( s.source, app.composition.width, app.composition.height, w, h );
 				SetRect( s, 0, 0, (float)w, (float)h );
 			}
 			ImGui::MenuItem( "Flip Horizontally", nullptr, &s.flipHorizontal );
@@ -1317,6 +1317,29 @@ void DrawScreenProps( App& app, Screen& screen )
 		return;
 	Row( "Name" );
 	ImGui::InputText( "##name", &screen.name );
+	if( app.outputTab == 1 )
+	{
+		// The timeline's tracks this screen shows: tick them (the same as choosing the screen next to a track's name).
+		Row( "Tracks" );
+		std::vector< TimelineTrack >& tracks = app.composition.timeline.tracks;
+		std::string own = app.timelineOutput.ScreenPictureOf( (size_t)editor.screen );
+		bool any        = false;
+		for( int k = (int)tracks.size() - 1; k >= 0; --k )
+		{
+			if( tracks[ k ].audio )
+				continue;
+			any     = true;
+			bool on = !own.empty() && tracks[ k ].output == own;
+			if( ImGui::Checkbox( ( tracks[ k ].name + "##sendTrack" + std::to_string( k ) ).c_str(), &on ) )
+				SendTrackTo( app, k, on ? editor.screen : -1 );
+			if( ImGui::IsItemHovered() )
+				ImGui::SetTooltip( on ? "Goes to this screen only. Untick: back to All Screens" : "Send this track to this screen only" );
+		}
+		if( !any )
+			ImGui::TextDisabled( "No video tracks on the timeline" );
+		else if( own.empty() )
+			ImGui::TextDisabled( "None: it shows the composition (All Screens)" );
+	}
 	Row( "Device" );
 	std::string current = screen.device == OutputDevice::Display ? OutputWindow::DisplayLabel( screen.display ) : OutputDeviceName( screen.device );
 	if( ImGui::BeginCombo( "##device", current.c_str() ) )
@@ -1340,7 +1363,7 @@ void DrawScreenProps( App& app, Screen& screen )
 	if( screen.device == OutputDevice::Virtual )
 		ImGui::TextWrapped( "Virtual Output: drawn here only. Choose a display or Window above to show it." );
 	else
-		ImGui::TextDisabled( "%s", app.outputs.DeviceStatus( (size_t)editor.screen ).c_str() );
+		ImGui::TextDisabled( "%s", app.EditedRenderer().DeviceStatus( (size_t)editor.screen ).c_str() );
 	Row( "Size" );
 	int size[ 2 ] = { screen.width, screen.height };
 	if( ImGui::InputInt2( "##size", size, ImGuiInputTextFlags_EnterReturnsTrue ) )
@@ -1374,7 +1397,7 @@ void DrawScreenProps( App& app, Screen& screen )
 	ImGui::Checkbox( "##ndi", &screen.ndi );
 	if( ImGui::IsItemHovered() )
 		ImGui::SetTooltip( "Send this screen over the network as the NDI source \"STLT %s\"", screen.name.c_str() );
-	std::string sharing = app.outputs.SharingStatus( (size_t)editor.screen );
+	std::string sharing = app.EditedRenderer().SharingStatus( (size_t)editor.screen );
 	if( !sharing.empty() )
 	{
 		Row( "" );
@@ -1475,7 +1498,7 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 		DrawMaskProps( screen, s );
 		return;
 	}
-	AdvancedOutputSetup& setup = app.advancedOutput;
+	AdvancedOutputSetup& setup = app.EditedOutput();
 	Composition& comp          = app.composition;
 	int sourceW, sourceH;
 	setup.SourceSize( s.source, comp.width, comp.height, sourceW, sourceH );
@@ -1487,13 +1510,22 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 	Row( "Name" );
 	ImGui::InputText( "##name", &s.name );
 
-	// Where its picture comes from: the composition, or a canvas the timeline's tracks can be sent to.
-	Row( "Source" );
+	// The timeline's setup: what the slice takes from, the composition (the tracks sent to every screen) or a
+	// screen's own picture (the tracks sent to that screen). The Grid's slices all take from the composition.
+	if( app.outputTab == 1 )
 	{
+		Row( "Takes from" );
+		int self = editor.screen;
 		auto label = [ & ]( const std::string& id ) {
 			const Canvas* c = setup.FindCanvas( id );
-			char text[ 160 ];
-			std::snprintf( text, sizeof( text ), "%s  %dx%d", c ? c->name.c_str() : "Composition", c ? c->width : comp.width, c ? c->height : comp.height );
+			int owner       = setup.ScreenOfPicture( id );
+			char text[ 200 ];
+			if( !c )
+				std::snprintf( text, sizeof( text ), "All Screens (composition)" );
+			else if( owner == self )
+				std::snprintf( text, sizeof( text ), "This screen's tracks" );
+			else
+				std::snprintf( text, sizeof( text ), "%s's tracks", owner >= 0 ? setup.screens[ owner ].name.c_str() : c->name.c_str() );
 			return std::string( text );
 		};
 		ImGui::SetNextItemWidth( -FLT_MIN );
@@ -1501,60 +1533,29 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 		{
 			if( ImGui::Selectable( label( "" ).c_str(), s.source.empty() ) )
 				setup.SetSliceSource( s, "", comp.width, comp.height );
-			for( const Canvas& c : setup.canvases )
-				if( ImGui::Selectable( ( label( c.id ) + "##" + c.id ).c_str(), s.source == c.id ) )
-					setup.SetSliceSource( s, c.id, comp.width, comp.height );
-			ImGui::Separator();
-			if( ImGui::Selectable( "New Canvas" ) )
+			if( ImGui::IsItemHovered() )
+				ImGui::SetTooltip( "The composition: the tracks set to All Screens" );
+			std::string own = setup.ScreenPictureOf( (size_t)self );
+			if( ImGui::Selectable( "This screen's tracks", !own.empty() && s.source == own ) )
 			{
-				setup.canvases.push_back( setup.MakeCanvas( screen.name, screen.width, screen.height ) );
-				setup.SetSliceSource( s, setup.canvases.back().id, comp.width, comp.height );
+				own = setup.MakeScreenPicture( (size_t)self, comp.width, comp.height );
+				setup.SetSliceSource( s, own, comp.width, comp.height );
 			}
 			if( ImGui::IsItemHovered() )
-				ImGui::SetTooltip( "A picture of its own, the size of this screen: send timeline tracks to it (the chip next to a track's name)" );
+				ImGui::SetTooltip( "The tracks sent to %s, at its size", screen.name.c_str() );
+			for( const Canvas& c : setup.canvases )
+				if( c.id != own && ImGui::Selectable( ( label( c.id ) + "##" + c.id ).c_str(), s.source == c.id ) )
+					setup.SetSliceSource( s, c.id, comp.width, comp.height );
 			ImGui::EndCombo();
 		}
 		if( ImGui::IsItemHovered() )
-			ImGui::SetTooltip( "What this slice shows a part of: the composition, or a canvas that timeline tracks are sent to" );
-		if( Canvas* c = const_cast< Canvas* >( setup.FindCanvas( s.source ) ) )
-		{
-			// The canvas itself, shared by every slice taking from it.
-			Row( "Canvas" );
-			ImGui::SetNextItemWidth( -FLT_MIN );
-			ImGui::InputText( "##canvasName", &c->name );
-			Row( "Canvas W, H" );
-			int size[ 2 ] = { c->width, c->height };
-			ImGui::SetNextItemWidth( -FLT_MIN );
-			if( ImGui::DragInt2( "##canvasSize", size, 1, 16, 16384 ) )
-			{
-				// The slices on it keep their share of it.
-				float sx = (float)size[ 0 ] / c->width, sy = (float)size[ 1 ] / c->height;
-				for( Screen& sc : setup.screens )
-					for( Slice& other : sc.slices )
-						if( other.source == c->id )
-							for( Vec2& p : other.input )
-								p = { p.x * sx, p.y * sy };
-				c->width  = std::clamp( size[ 0 ], 16, 16384 );
-				c->height = std::clamp( size[ 1 ], 16, 16384 );
-			}
-			std::string fed;
-			for( const TimelineTrack& t : comp.timeline.tracks )
-				if( t.output == c->id && !t.audio )
-					fed += ( fed.empty() ? "" : ", " ) + t.name;
-			Row( "Tracks" );
-			ImGui::TextDisabled( "%s", fed.empty() ? "none yet: choose this canvas on a timeline track" : fed.c_str() );
-			Row( "" );
-			if( ImGui::Button( "Remove Canvas" ) )
-			{
-				std::string id = c->id;
-				setup.RemoveCanvas( id, comp.width, comp.height );
-				for( TimelineTrack& t : comp.timeline.tracks )
-					if( t.output == id )
-						t.output.clear();
-			}
-			if( ImGui::IsItemHovered() )
-				ImGui::SetTooltip( "Its slices go back to the composition, and its tracks too" );
-		}
+			ImGui::SetTooltip( "What this slice shows a part of: the composition (tracks set to All Screens),\nor the tracks sent to one screen" );
+		std::string fed;
+		for( const TimelineTrack& t : comp.timeline.tracks )
+			if( !t.audio && ( s.source.empty() ? !setup.FindCanvas( t.output ) : t.output == s.source ) )
+				fed += ( fed.empty() ? "" : ", " ) + t.name;
+		Row( "Tracks" );
+		ImGui::TextWrapped( "%s", fed.empty() ? "none: choose this screen on a timeline track" : fed.c_str() );
 	}
 	Row( "Enabled" );
 	ImGui::Checkbox( "##enabled", &s.enabled );
@@ -1584,7 +1585,7 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 		if( changed )
 			SetRect( s, rect[ 0 ], rect[ 1 ], rect[ 0 ] + std::max( rect[ 2 ], 1.0f ), rect[ 1 ] + std::max( rect[ 3 ], 1.0f ) );
 		Row( "" );
-		if( ImGui::Button( s.source.empty() ? "Whole Composition" : "Whole Canvas" ) )
+		if( ImGui::Button( s.source.empty() ? "Whole Composition" : "Whole Screen Picture" ) )
 			SetRect( s, 0, 0, cw, ch );
 	}
 	EditModeRows( s );
@@ -1665,21 +1666,62 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 }
 }
 
-ImU32 PictureColour( const App& app, const std::string& source )
+ImU32 ScreenColour( int index )
 {
 	static const ImU32 palette[] = { IM_COL32( 245, 184, 74, 255 ), IM_COL32( 230, 130, 175, 255 ), IM_COL32( 120, 205, 140, 255 ),
 		                             IM_COL32( 180, 150, 240, 255 ), IM_COL32( 100, 205, 210, 255 ), IM_COL32( 235, 120, 95, 255 ) };
-	const std::vector< Canvas >& canvases = app.advancedOutput.canvases;
-	for( size_t i = 0; i < canvases.size(); ++i )
-		if( canvases[ i ].id == source )
-			return palette[ i % ( sizeof( palette ) / sizeof( palette[ 0 ] ) ) ];
+	if( index < 0 )
+		return theme::Accent;
+	return palette[ index % ( sizeof( palette ) / sizeof( palette[ 0 ] ) ) ];
+}
+
+void SendTrackTo( App& app, int track, int screen )
+{
+	AdvancedOutputSetup& setup = app.timelineOutput;
+	std::vector< TimelineTrack >& tracks = app.composition.timeline.tracks;
+	if( track < 0 || track >= (int)tracks.size() )
+		return;
+	std::string before = tracks[ track ].output;
+	tracks[ track ].output = screen >= 0 && screen < (int)setup.screens.size()
+	                             ? setup.MakeScreenPicture( (size_t)screen, app.composition.width, app.composition.height )
+	                             : "";
+	// The picture it left, when no track goes there any more: its screen shows the composition again.
+	if( !before.empty() && before != tracks[ track ].output && setup.ScreenOfPicture( before ) >= 0
+	    && std::none_of( tracks.begin(), tracks.end(), [ & ]( const TimelineTrack& t ) { return t.output == before; } ) )
+		setup.RemoveCanvas( before, app.composition.width, app.composition.height );
+}
+
+int TrackScreen( const App& app, int track )
+{
+	const std::vector< TimelineTrack >& tracks = app.composition.timeline.tracks;
+	if( track < 0 || track >= (int)tracks.size() )
+		return -1;
+	return app.timelineOutput.ScreenOfPicture( tracks[ track ].output );
+}
+
+// What timeline tracks go to: pictures of the timeline's setup, coloured and named after their screens.
+ImU32 PictureColour( const App& app, const std::string& source )
+{
+	const AdvancedOutputSetup& setup = app.timelineOutput;
+	if( !setup.FindCanvas( source ) )
+		return theme::Accent;
+	int screen = setup.ScreenOfPicture( source );
+	if( screen >= 0 )
+		return ScreenColour( screen );
+	for( size_t i = 0; i < setup.canvases.size(); ++i )
+		if( setup.canvases[ i ].id == source )
+			return ScreenColour( (int)( setup.screens.size() + i ) );
 	return theme::Accent;
 }
 
 std::string PictureName( const App& app, const std::string& source )
 {
-	const Canvas* c = app.advancedOutput.FindCanvas( source );
-	return c ? c->name : "Composition";
+	const AdvancedOutputSetup& setup = app.timelineOutput;
+	const Canvas* c = setup.FindCanvas( source );
+	if( !c )
+		return "All Screens";
+	int screen = setup.ScreenOfPicture( source );
+	return screen >= 0 ? setup.screens[ screen ].name : c->name;
 }
 
 void ShowAdvancedOutputTab( int tab, int screen, int slice )
@@ -1761,7 +1803,7 @@ void DrawAdvancedOutputPanel( App& app )
 		ImGui::End();
 		return;
 	}
-	AdvancedOutputSetup& setup = app.advancedOutput;
+	AdvancedOutputSetup& setup = app.EditedOutput();
 	if( setup.screens.empty() )
 		setup = AdvancedOutputSetup::MakeDefault( app.composition.width, app.composition.height );
 	editor.screen = std::clamp( editor.screen, 0, (int)setup.screens.size() - 1 );
@@ -1771,8 +1813,34 @@ void DrawAdvancedOutputPanel( App& app )
 	if( app.outputSavePrompt != 0 )
 		DrawSaveQuestion( app );
 
-	// Header: the presets and Resolume's setups.
+	// Header: which setup (the Grid's or the timeline's), the presets and Resolume's setups.
 	{
+		bool arrangement = app.view == App::View::Arrangement;
+		const char* names[] = { "Grid", "Timeline" };
+		for( int t = 0; t < 2; ++t )
+		{
+			if( t > 0 )
+				ImGui::SameLine( 0, Ui( 2 ) );
+			bool on   = app.outputTab == t;
+			bool live = ( t == 1 ) == arrangement;
+			std::string text = std::string( names[ t ] ) + ( live ? " (on show)" : "" ) + "##setupTab" + std::to_string( t );
+			ImGui::PushStyleColor( ImGuiCol_Button, on ? ImGui::ColorConvertU32ToFloat4( theme::Accent ) : ImGui::GetStyleColorVec4( ImGuiCol_Button ) );
+			ImGui::PushStyleColor( ImGuiCol_Text, on ? ImGui::ColorConvertU32ToFloat4( theme::OnAccent ) : ImGui::GetStyleColorVec4( ImGuiCol_Text ) );
+			if( ImGui::Button( text.c_str(), ImVec2( Ui( 150 ), 0 ) ) && !on )
+			{
+				app.outputTab = t;
+				editor.screen = 0;
+				editor.slice  = -1;
+				editor.inputSource.clear();
+			}
+			ImGui::PopStyleColor( 2 );
+			if( ImGui::IsItemHovered() )
+				ImGui::SetTooltip( t == 0 ? "The deck's setup: on show in the Session view (the clip grid).\nEvery layer goes to the composition, which the "
+				                            "screens' slices cut up."
+				                          : "The timeline's setup: on show in the Arrangement view.\nEach track goes to every screen (the composition) or to "
+				                            "one screen: choose it next to the track's name, or here on a screen." );
+		}
+		ImGui::SameLine( 0, Ui( 16 ) );
 		if( ImGui::Button( "Presets..." ) )
 			ImGui::OpenPopup( "##presets" );
 		if( ImGui::IsItemHovered() )
@@ -1788,7 +1856,9 @@ void DrawAdvancedOutputPanel( App& app )
 	// The stage: every screen as a card with what it shows now; click one to work on it.
 	{
 		float cardW = Ui( 190 ), thumbH = Ui( 70 );
-		ImGui::BeginChild( "##stage", ImVec2( 0, thumbH + ImGui::GetTextLineHeightWithSpacing() * 2 + Ui( 22 ) ), ImGuiChildFlags_None,
+		// The timeline's cards also say which tracks each screen shows.
+		int lines = app.outputTab == 1 ? 3 : 2;
+		ImGui::BeginChild( "##stage", ImVec2( 0, thumbH + ImGui::GetTextLineHeightWithSpacing() * lines + Ui( 22 ) ), ImGuiChildFlags_None,
 		                   ImGuiWindowFlags_HorizontalScrollbar );
 		ImDrawList* draw = ImGui::GetWindowDrawList();
 		for( int si = 0; si < (int)setup.screens.size(); ++si )
@@ -1798,7 +1868,7 @@ void DrawAdvancedOutputPanel( App& app )
 			if( si > 0 )
 				ImGui::SameLine( 0, Ui( 8 ) );
 			ImVec2 at = ImGui::GetCursorScreenPos();
-			ImVec2 cardSize( cardW, thumbH + ImGui::GetTextLineHeightWithSpacing() * 2 + Ui( 12 ) );
+			ImVec2 cardSize( cardW, thumbH + ImGui::GetTextLineHeightWithSpacing() * lines + Ui( 12 ) );
 			bool selected = editor.screen == si;
 			if( ImGui::InvisibleButton( "##card", cardSize ) )
 			{
@@ -1821,7 +1891,7 @@ void DrawAdvancedOutputPanel( App& app )
 			ImVec2 tl( box.x + ( bw - screen.width * fit ) / 2, box.y + ( bh - screen.height * fit ) / 2 );
 			ImVec2 br( tl.x + screen.width * fit, tl.y + screen.height * fit );
 			draw->AddRectFilled( tl, br, IM_COL32( 0, 0, 0, 255 ) );
-			if( GLuint texture = app.outputs.ScreenTexture( (size_t)si ) )
+			if( GLuint texture = app.EditedRenderer().ScreenTexture( (size_t)si ) )
 				draw->AddImage( TextureId( texture ), tl, br, ImVec2( 0, 1 ), ImVec2( 1, 0 ) );
 			// Name and state: green when it reaches a display, window or the network; grey when only drawn here.
 			bool reaches = screen.enabled && app.outputMode == OutputMode::Advanced && ( screen.device != OutputDevice::Virtual || screen.ndi || screen.share );
@@ -1834,9 +1904,22 @@ void DrawAdvancedOutputPanel( App& app )
 			const char* device = screen.device == OutputDevice::Display ? "Display" : screen.device == OutputDevice::Window ? "Window" : "Virtual";
 			std::snprintf( detail, sizeof( detail ), "%dx%d  %s%s", screen.width, screen.height, device, screen.ndi ? " + NDI" : "" );
 			draw->AddText( ImVec2( text.x, text.y + line ), theme::TextDim, detail );
+			if( app.outputTab == 1 )
+			{
+				std::string own = setup.ScreenPictureOf( (size_t)si ), fed;
+				for( int k = (int)app.composition.timeline.tracks.size() - 1; k >= 0; --k )
+				{
+					const TimelineTrack& t = app.composition.timeline.tracks[ k ];
+					if( !t.audio && ( own.empty() ? !setup.FindCanvas( t.output ) : t.output == own ) )
+						fed += ( fed.empty() ? "" : ", " ) + t.name;
+				}
+				draw->AddRectFilled( ImVec2( text.x, text.y + line * 2 + Ui( 4 ) ), ImVec2( text.x + Ui( 7 ), text.y + line * 2 + Ui( 11 ) ), ScreenColour( si ), Ui( 2 ) );
+				draw->AddText( ImVec2( text.x + Ui( 12 ), text.y + line * 2 ), own.empty() ? theme::TextDim : theme::Text,
+				               ( own.empty() ? "All Screens: " + ( fed.empty() ? std::string( "-" ) : fed ) : fed.empty() ? std::string( "no tracks" ) : fed ).c_str() );
+			}
 			draw->PopClipRect();
 			if( hot )
-				ImGui::SetTooltip( "%s\n%s\nClick: work on it. Right-click: on/off, duplicate, delete.", screen.name.c_str(), app.outputs.DeviceStatus( (size_t)si ).c_str() );
+				ImGui::SetTooltip( "%s\n%s\nClick: work on it. Right-click: on/off, duplicate, delete.", screen.name.c_str(), app.EditedRenderer().DeviceStatus( (size_t)si ).c_str() );
 			if( ImGui::BeginPopup( "##screenMenu" ) )
 			{
 				ImGui::MenuItem( "Enabled", nullptr, &screen.enabled );
@@ -1844,6 +1927,7 @@ void DrawAdvancedOutputPanel( App& app )
 				{
 					Screen copy = screen;
 					copy.name += " copy";
+					copy.id.clear();
 					for( Slice& sl : copy.slices )
 						sl.id.clear();
 					setup.screens.insert( setup.screens.begin() + si + 1, copy );
@@ -1865,7 +1949,7 @@ void DrawAdvancedOutputPanel( App& app )
 		}
 		// A new screen, the size of the composition, with one slice showing all of it.
 		ImGui::SameLine( 0, Ui( 8 ) );
-		if( ImGui::Button( "+ Screen", ImVec2( Ui( 100 ), thumbH + ImGui::GetTextLineHeightWithSpacing() * 2 + Ui( 12 ) ) ) )
+		if( ImGui::Button( "+ Screen", ImVec2( Ui( 100 ), thumbH + ImGui::GetTextLineHeightWithSpacing() * lines + Ui( 12 ) ) ) )
 		{
 			Composition& comp = app.composition;
 			Screen s;
@@ -1941,11 +2025,11 @@ void DrawAdvancedOutputPanel( App& app )
 			ImGui::AlignTextToFramePadding();
 			if( tab == InputTab )
 			{
-				const Canvas* c = app.advancedOutput.FindCanvas( editor.inputSource );
+				const Canvas* c = app.EditedOutput().FindCanvas( editor.inputSource );
 				ImVec2 p        = ImGui::GetCursorScreenPos();
 				ImGui::GetWindowDrawList()->AddRectFilled( ImVec2( p.x, p.y + Ui( 6 ) ), ImVec2( p.x + Ui( 8 ), p.y + Ui( 14 ) ), PictureColour( app, editor.inputSource ), Ui( 2 ) );
 				ImGui::SetCursorScreenPos( ImVec2( p.x + Ui( 14 ), p.y ) );
-				ImGui::Text( "Takes from: %s", c ? c->name.c_str() : "Composition" );
+				ImGui::Text( "Takes from: %s", c ? ( PictureName( app, editor.inputSource ) + "'s tracks" ).c_str() : "Composition" );
 				ImGui::SameLine();
 				ImGui::TextDisabled( "%dx%d", c ? c->width : app.composition.width, c ? c->height : app.composition.height );
 			}
@@ -2012,7 +2096,15 @@ void DrawAdvancedOutputPanel( App& app )
 				network += sc.ndi || sc.share;
 			}
 		bool live = app.outputMode == OutputMode::Advanced;
-		if( !live )
+		if( !app.EditingLive() )
+		{
+			pill( app.outputTab == 1 ? "Not on show: the Timeline setup is used in the Arrangement view" : "Not on show: the Grid setup is used in the Session view",
+			      theme::Warning );
+			ImGui::SameLine();
+			if( ImGui::Button( app.outputTab == 1 ? "Go to the Timeline" : "Go to the Grid" ) )
+				app.SetView( app.outputTab == 1 ? App::View::Arrangement : App::View::Session );
+		}
+		else if( !live )
 		{
 			pill( ( "Not on show (Output: " + app.OutputModeLabel() + ")" ).c_str(), theme::Warning );
 			ImGui::SameLine();
