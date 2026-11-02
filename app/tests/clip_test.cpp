@@ -438,6 +438,17 @@ static void TestTimeline()
 	c.timeline.tracks.push_back( TimelineTrack{} );
 	c.timeline.tracks[ 1 ].audio = true;
 	c.timeline.tracks[ 0 ].output = "a1b2c3"; // sent to a canvas
+	// The audio track's volume line: down from full to silence over two seconds, then an eased rise.
+	TimelineTrack& sound = c.timeline.tracks[ 1 ];
+	sound.volume         = 0.8f;
+	CHECK( Near( sound.VolumeAt( 3 ), 0.8 ) ); // no keyframes: the fader
+	SetKeyIn( sound.volumeKeys, 2, 1.0f );
+	SetKeyIn( sound.volumeKeys, 4, 0.0f );
+	SetKeyIn( sound.volumeKeys, 6, 0.5f );
+	sound.volumeKeys[ 1 ].curve = KeyCurve::EaseIn;
+	sound.volumeLine            = true;
+	CHECK( Near( sound.VolumeAt( 0 ), 1 ) && Near( sound.VolumeAt( 3 ), 0.5 ) && Near( sound.VolumeAt( 4 ), 0 ) && Near( sound.VolumeAt( 60 ), 0.5 ) );
+	CHECK( sound.VolumeAt( 5 ) < 0.25f ); // easing in: slow at first
 	std::swap( c.timeline.blocks[ 0 ], c.timeline.blocks[ 3 ] );
 	Composition loaded;
 	std::string error;
@@ -445,6 +456,8 @@ static void TestTimeline()
 	const Timeline& l = loaded.timeline;
 	CHECK( l.tracks.size() == 2 && l.tracks[ 0 ].clips.size() == 4 && l.tracks[ 1 ].audio );
 	CHECK( l.tracks[ 0 ].output == "a1b2c3" && l.tracks[ 1 ].output.empty() );
+	CHECK( l.tracks[ 1 ].volumeKeys.size() == 3 && l.tracks[ 1 ].volumeKeys[ 1 ].curve == KeyCurve::EaseIn && l.tracks[ 1 ].volumeLine );
+	CHECK( Near( l.tracks[ 1 ].VolumeAt( 3 ), 0.5 ) && l.tracks[ 0 ].volumeKeys.empty() && !l.tracks[ 0 ].volumeLine );
 	CHECK( l.blocks.size() == 4 && l.blocks[ 0 ].name == "One" && l.blocks[ 3 ].endAction == BlockEnd::Black );
 	CHECK( Near( l.tracks[ 0 ].clips[ 2 ].clip.inPoint, 5 ) && Near( l.tracks[ 0 ].clips[ 1 ].length, 2 ) );
 	CHECK( !l.playing && Near( l.position, c.timeline.position ) ); // the playhead where it was, stopped

@@ -2090,7 +2090,8 @@ void App::UpdateAudio()
 			if( !clip.audio )
 				continue;
 			bool audible = timeline.playing && !timeline.black && !composition.bypass && !track.mute && ( !anySolo || track.solo );
-			clip.audio->Follow( track.clips[ index ].MediaTime( timeline.position ), std::max( 0.0f, clip.speed ), audible ? clip.volume * track.volume : 0.0f );
+			clip.audio->Follow( track.clips[ index ].MediaTime( timeline.position ), std::max( 0.0f, clip.speed ),
+			                    audible ? clip.volume * track.VolumeAt( timeline.position ) : 0.0f );
 			voices.push_back( clip.audio );
 		}
 		audio.SetVoices( std::move( voices ), composition.audioVolume );

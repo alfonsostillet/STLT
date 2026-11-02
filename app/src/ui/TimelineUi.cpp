@@ -62,6 +62,7 @@ enum class Drag
 	BlockNew,   // a new block drawn on the block lane
 	Scrub,      // the playhead, on the ruler
 	Key,        // a keyframe (every one at that moment) along a clip
+	VolumeKey,  // a point of an audio track's volume line
 };
 
 // What the panel remembers between frames.
@@ -80,6 +81,7 @@ struct State
 	std::vector< ParamKeys > origParamKeys;
 	double keyFrom = 0; // a keyframe being dragged on a clip: where it was (from the clip's start)
 	bool keyMoved  = false;
+	float menuVolume = 1; // the volume at the right-click on a volume line
 	bool copy       = false;
 	int targetTrack = -1;
 	double targetStart = 0;
@@ -464,6 +466,8 @@ void CueStrip( App& app )
 
 // ---- the tracks
 
+bool KeyButton( const char* id, bool onKey, bool animated, bool enabled, const char* tip );
+
 void TrackHeader( App& app, int k, ImVec2 pos, ImVec2 size )
 {
 	Timeline& t          = app.composition.timeline;
@@ -538,6 +542,15 @@ void TrackHeader( App& app, int k, ImVec2 pos, ImVec2 size )
 			ImGui::EndPopup();
 		}
 	}
+	if( track.audio )
+	{
+		// The volume line over the track: open to draw and edit it.
+		ImGui::SetCursorScreenPos( ImVec2( pos.x + size.x - Ui( 82 ), pos.y + Ui( 3 ) ) );
+		if( SmallToggle( "Vol", track.volumeLine, IM_COL32( 245, 200, 90, 255 ),
+		                 "Volume line: draw the volume over the track with keyframes (double-click the track to add one, drag to move, "
+		                 "right-click for curve or delete); clips stay put while it is open" ) )
+			track.volumeLine = !track.volumeLine;
+	}
 	ImGui::SetCursorScreenPos( ImVec2( pos.x + size.x - Ui( 46 ), pos.y + Ui( 3 ) ) );
 	if( SmallToggle( "M", track.mute, theme::Warning, "Mute: the track off" ) )
 		track.mute = !track.mute;
@@ -550,10 +563,37 @@ void TrackHeader( App& app, int k, ImVec2 pos, ImVec2 size )
 		ImGui::SetNextItemWidth( size.x - Ui( 12 ) );
 		if( track.audio )
 		{
-			float percent = track.volume * 100;
-			if( FilledSlider( "##volume", &percent, 0, 100, "Volume %.0f %%" ) )
-				track.volume = percent / 100;
-			ResetValue( &track.volume, 1.0f );
+			// With keyframes the slider shows the volume at the playhead, and an edit sets the keyframe there; the
+			// diamond adds or removes the keyframe at the playhead.
+			double now    = t.position;
+			bool keyed    = !track.volumeKeys.empty();
+			bool onKey    = keyed && KeyIndex( track.volumeKeys, now ) >= 0;
+			float current = track.VolumeAt( now );
+			if( KeyButton( "##volKey", onKey, keyed, true,
+			               onKey ? "Remove the volume keyframe at the playhead"
+			               : keyed ? "Add a volume keyframe at the playhead"
+			                       : "Animate the volume: a keyframe at the playhead (then move the playhead and change the volume)" ) )
+			{
+				if( onKey )
+					track.volumeKeys.erase( track.volumeKeys.begin() + KeyIndex( track.volumeKeys, now ) );
+				else
+				{
+					SetKeyIn( track.volumeKeys, now, current );
+					track.volumeLine = true;
+				}
+			}
+			ImGui::SameLine( 0, Ui( 2 ) );
+			ImGui::SetNextItemWidth( size.x - Ui( 14 ) - ImGui::GetFrameHeight() );
+			float percent = current * 100;
+			if( FilledSlider( "##volume", &percent, 0, 100, keyed ? "Volume %.0f %% (keys)" : "Volume %.0f %%" ) )
+			{
+				if( keyed )
+					SetKeyIn( track.volumeKeys, now, percent / 100 );
+				else
+					track.volume = percent / 100;
+			}
+			if( !keyed )
+				ResetValue( &track.volume, 1.0f );
 		}
 		else
 		{
@@ -741,6 +781,8 @@ void Lanes( App& app, float height )
 				draw->AddRect( a, b, selected ? theme::Selected : IM_COL32( 0, 0, 0, 120 ), Ui( 3 ), 0, selected ? Ui( 2 ) : Ui( 1 ) );
 				draw->PopClipRect();
 
+				if( track.audio && track.volumeLine )
+					continue; // the volume line takes the mouse on this track
 				ImGui::PushID( k * 100000 + i );
 				ImGui::SetCursorScreenPos( va );
 				ImGui::InvisibleButton( "##clip", ImVec2( vb.x - va.x, vb.y - va.y ) );
@@ -870,6 +912,130 @@ void Lanes( App& app, float height )
 				ImGui::PopID();
 			}
 		}
+	}
+
+	// Audio tracks' volume lines: the volume along the timeline, faint when closed, with its points when open.
+	// Open, the track is a surface of its own: double-click adds a point, a point drags (Shift: off the grid),
+	// right-click sets its curve or deletes it.
+	for( int k = 0; k < (int)t.tracks.size(); ++k )
+	{
+		TimelineTrack& track = t.tracks[ k ];
+		if( !track.audio || ( track.volumeKeys.empty() && !track.volumeLine ) )
+			continue;
+		float top = trackY[ k ] + Ui( 5 ), bottom = trackY[ k ] + trackH[ k ] - Ui( 6 );
+		auto Y          = [ & ]( float v ) { return bottom - std::clamp( v, 0.0f, 1.0f ) * ( bottom - top ); };
+		auto valueAt    = [ & ]( float my ) { return std::clamp( ( bottom - my ) / std::max( bottom - top, 1.0f ), 0.0f, 1.0f ); };
+		bool open       = track.volumeLine;
+		ImU32 ink       = open ? IM_COL32( 245, 200, 90, 255 ) : IM_COL32( 245, 200, 90, 110 );
+		float visTop    = std::max( trackY[ k ], laneTop ), visBottom = std::min( trackY[ k ] + trackH[ k ], viewBottom );
+		if( visBottom - visTop < 2 )
+			continue;
+		draw->PushClipRect( ImVec2( laneLeft, visTop ), ImVec2( viewRight, visBottom ), true );
+		if( open )
+			draw->AddRectFilled( ImVec2( laneLeft, visTop ), ImVec2( viewRight, visBottom ), IM_COL32( 0, 0, 0, 70 ) );
+		std::vector< ImVec2 > line;
+		for( float x = laneLeft; x <= viewRight + Ui( 3 ); x += Ui( 3 ) )
+			line.push_back( ImVec2( x, Y( track.VolumeAt( timeAt( x ) ) ) ) );
+		draw->AddPolyline( line.data(), (int)line.size(), ink, 0, open ? Ui( 2 ) : Ui( 1.5f ) );
+		int hit = -1;
+		if( open )
+			for( int n = 0; n < (int)track.volumeKeys.size(); ++n )
+			{
+				const Keyframe& key = track.volumeKeys[ n ];
+				ImVec2 p( X( key.time ), Y( key.value ) );
+				bool under = std::fabs( io.MousePos.x - p.x ) < Ui( 6 ) && std::fabs( io.MousePos.y - p.y ) < Ui( 6 );
+				bool here  = std::fabs( key.time - t.position ) < 1e-3;
+				if( under && hit < 0 )
+					hit = n;
+				draw->AddCircleFilled( p, Ui( 4.5f ), under || ( state.drag == Drag::VolumeKey && state.dragTrack == k && state.dragIndex == n ) ? theme::Text
+				                                      : here                                                                          ? theme::Accent
+				                                                                                                                      : ink );
+				draw->AddCircle( p, Ui( 4.5f ), IM_COL32( 0, 0, 0, 220 ) );
+			}
+		draw->PopClipRect();
+		if( !open )
+			continue;
+
+		ImGui::PushID( 900000 + k );
+		ImGui::SetCursorScreenPos( ImVec2( laneLeft, visTop ) );
+		ImGui::InvisibleButton( "##volumeLine", ImVec2( std::max( viewRight - laneLeft, 1.0f ), visBottom - visTop ),
+		                        ImGuiButtonFlags_MouseButtonLeft | ImGuiButtonFlags_MouseButtonRight );
+		bool hovered = ImGui::IsItemHovered();
+		double at    = Snapped( t, timeAt( io.MousePos.x ), freeDrag );
+		if( ImGui::IsItemActivated() && ImGui::IsMouseClicked( ImGuiMouseButton_Left ) )
+		{
+			if( ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) && hit < 0 )
+			{
+				SetKeyIn( track.volumeKeys, at, valueAt( io.MousePos.y ) );
+				hit = KeyIndex( track.volumeKeys, at );
+			}
+			if( hit >= 0 )
+			{
+				state.drag      = Drag::VolumeKey;
+				state.dragTrack = k;
+				state.dragIndex = hit;
+				state.keyMoved  = false;
+			}
+		}
+		if( hovered && ImGui::IsMouseClicked( ImGuiMouseButton_Right ) )
+		{
+			state.dragTrack = k;
+			state.dragIndex = hit;
+			state.keyFrom   = at;
+			state.menuVolume = valueAt( io.MousePos.y ); // where a point added from the menu goes
+			ImGui::OpenPopup( "##volumeMenu" );
+		}
+		if( ImGui::BeginPopup( "##volumeMenu" ) )
+		{
+			int n = state.dragIndex;
+			if( n >= 0 && n < (int)track.volumeKeys.size() )
+			{
+				Keyframe& key = track.volumeKeys[ n ];
+				ImGui::TextDisabled( "Volume %.0f %% at %s", key.value * 100, t.BarsBeats( key.time ).c_str() );
+				ImGui::TextDisabled( "Towards the next one" );
+				for( int c = 0; c < (int)KeyCurve::Count; ++c )
+					if( ImGui::MenuItem( KeyCurveName( (KeyCurve)c ), nullptr, key.curve == (KeyCurve)c ) )
+						key.curve = (KeyCurve)c;
+				ImGui::Separator();
+				if( ImGui::MenuItem( "Delete" ) )
+					track.volumeKeys.erase( track.volumeKeys.begin() + n );
+			}
+			else
+			{
+				if( ImGui::MenuItem( "Add Point Here" ) )
+					SetKeyIn( track.volumeKeys, state.keyFrom, state.menuVolume );
+				if( ImGui::MenuItem( "Delete All Points", nullptr, false, !track.volumeKeys.empty() ) )
+					track.volumeKeys.clear();
+				ImGui::Separator();
+				if( ImGui::MenuItem( "Close the Volume Line" ) )
+					track.volumeLine = false;
+			}
+			ImGui::EndPopup();
+		}
+		if( hovered && state.drag == Drag::None )
+			ImGui::SetTooltip( "Volume %.0f %% at %s\nDouble-click: a point; drag a point (Shift: off the grid); right-click: curve, delete",
+			                   track.VolumeAt( timeAt( io.MousePos.x ) ) * 100, t.BarsBeats( timeAt( io.MousePos.x ) ).c_str() );
+		ImGui::PopID();
+	}
+	// A volume point being dragged: in time between its neighbours, and up and down.
+	if( state.drag == Drag::VolumeKey )
+	{
+		bool alive = state.dragTrack >= 0 && state.dragTrack < (int)t.tracks.size() && state.dragIndex >= 0
+		             && state.dragIndex < (int)t.tracks[ state.dragTrack ].volumeKeys.size();
+		if( alive && ImGui::IsMouseDragging( ImGuiMouseButton_Left, Ui( 2 ) ) )
+		{
+			TimelineTrack& track          = t.tracks[ state.dragTrack ];
+			std::vector< Keyframe >& keys = track.volumeKeys;
+			int n                         = state.dragIndex;
+			float top = trackY[ state.dragTrack ] + Ui( 5 ), bottom = trackY[ state.dragTrack ] + trackH[ state.dragTrack ] - Ui( 6 );
+			double lo = n > 0 ? keys[ n - 1 ].time + 0.002 : 0.0, hi = n + 1 < (int)keys.size() ? keys[ n + 1 ].time - 0.002 : 1e12;
+			keys[ n ].time  = std::clamp( Snapped( t, timeAt( io.MousePos.x ), freeDrag ), lo, std::max( lo, hi ) );
+			keys[ n ].value = std::clamp( ( bottom - io.MousePos.y ) / std::max( bottom - top, 1.0f ), 0.0f, 1.0f );
+			state.keyMoved  = true;
+			ImGui::SetTooltip( "Volume %.0f %% at %s", keys[ n ].value * 100, t.BarsBeats( keys[ n ].time ).c_str() );
+		}
+		if( !ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+			state.drag = Drag::None;
 	}
 
 	// A keyframe being dragged along its clip (with every keyframe at that moment); a click without moving it puts

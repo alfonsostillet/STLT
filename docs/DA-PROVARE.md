@@ -73,3 +73,12 @@ Correzioni già fatte e verificate dai test automatici, da provare sul PC vero p
 - [ ] Al centro **Input** (*Takes from*) e **Output** (*Shows on*) affiancati: trascinando un punto in uno si vede subito l'altro. *Input* / *Output* in alto mostrano una vista sola, grande.
 - [ ] In basso: se il setup è in uscita, quanti schermi vanno dove, *Unsaved changes*, *Discard Changes*, *Save*. I preset sono in *Presets...* in alto.
 - [ ] Dimmi se è più chiaro di prima, e cosa cambieresti.
+
+## Volume delle tracce audio con i keyframe (nuovo)
+
+- [ ] Su una traccia audio della timeline premi **Vol** (in alto a destra nell'intestazione, prima di M e S): sulla traccia compare la linea del volume.
+- [ ] **Doppio clic** sulla traccia aggiunge un punto dove clicchi (altezza = volume); **trascina** un punto per spostarlo (Shift: fuori dalla griglia); **tasto destro** su un punto: curva (Linear, Ease In, Ease Out, Ease In Out, Hold) o *Delete*.
+- [ ] In riproduzione il volume segue la linea. Spostando le clip la linea resta dov'è nel tempo.
+- [ ] Il **rombo** accanto al cursore *Volume* aggiunge o toglie il punto sotto la testina; con dei punti, muovendo il cursore si cambia il punto lì.
+- [ ] Con *Vol* acceso le clip di quella traccia non si spostano (per non spostarle per sbaglio): premi di nuovo *Vol* per tornare a muoverle.
+- [ ] Salva, chiudi e riapri: i punti restano.

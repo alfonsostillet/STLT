@@ -256,7 +256,7 @@ float CurveAt( KeyCurve curve, float f );
 
 struct Keyframe
 {
-	double time    = 0; // seconds from the clip's start
+	double time    = 0; // seconds from the clip's start (a track's volume: from the timeline's)
 	float value    = 0;
 	KeyCurve curve = KeyCurve::Linear; // towards the next keyframe
 };
@@ -333,10 +333,16 @@ struct TimelineTrack
 	// Where its picture goes: "" the composition, else the id of a canvas of the Advanced Output (a track naming a
 	// canvas that is not there goes to the composition).
 	std::string output;
+	// The volume along the timeline: keyframes at moments of the timeline (seconds), drawn as a line over the
+	// track, staying put when clips move. With any, the track's volume follows them instead of `volume`.
+	std::vector< Keyframe > volumeKeys;
+	bool volumeLine = false; // the line open for editing on the track
 	EffectChain effects;
 	std::vector< TimelineClip > clips; // in time order, not overlapping
 	// The clip playing at `t` (-1: none).
 	int ClipAt( double t ) const;
+	// The track's volume at `t`: its keyframes', else `volume`.
+	float VolumeAt( double t ) const;
 };
 
 struct TimelineBlock

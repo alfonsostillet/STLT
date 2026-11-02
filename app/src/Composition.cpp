@@ -683,6 +683,20 @@ static nlohmann::json SaveTimeline( const Timeline& t, bool withPlayhead )
 		k[ "solo" ]    = track.solo;
 		if( !track.output.empty() )
 			k[ "output" ] = track.output;
+		if( !track.volumeKeys.empty() )
+		{
+			json list = json::array();
+			for( const Keyframe& key : track.volumeKeys )
+			{
+				json item = { key.time, key.value };
+				if( key.curve != KeyCurve::Linear )
+					item.push_back( KeyCurveName( key.curve ) );
+				list.push_back( item );
+			}
+			k[ "volumeKeys" ] = list;
+		}
+		if( track.volumeLine )
+			k[ "volumeLine" ] = true;
 		k[ "effects" ] = SaveChain( track.effects );
 		json clips     = json::array();
 		for( const TimelineClip& clip : track.clips )
@@ -759,6 +773,13 @@ static Timeline LoadTimeline( const nlohmann::json& root )
 			track.mute    = k.value( "mute", false );
 			track.solo    = k.value( "solo", false );
 			track.output  = k.value( "output", "" );
+			track.volumeLine = k.value( "volumeLine", false );
+			if( k.contains( "volumeKeys" ) && k[ "volumeKeys" ].is_array() )
+				for( const json& v : k[ "volumeKeys" ] )
+					if( v.is_array() && v.size() >= 2 && v[ 0 ].is_number() && v[ 1 ].is_number() )
+						track.volumeKeys.push_back( { std::max( 0.0, v[ 0 ].get< double >() ), std::clamp( v[ 1 ].get< float >(), 0.0f, 1.0f ),
+						                              v.size() > 2 ? ByName( v[ 2 ], KeyCurveName, KeyCurve::Linear ) : KeyCurve::Linear } );
+			std::stable_sort( track.volumeKeys.begin(), track.volumeKeys.end(), []( const Keyframe& a, const Keyframe& b ) { return a.time < b.time; } );
 			if( k.contains( "effects" ) )
 				track.effects = LoadChain( k[ "effects" ] );
 			if( k.contains( "clips" ) && k[ "clips" ].is_array() )

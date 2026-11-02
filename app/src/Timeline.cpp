@@ -253,6 +253,13 @@ double TimelineClip::MediaTime( double t ) const
 	return std::max( in, out - 1e-4 ); // holds the last frame
 }
 
+float TimelineTrack::VolumeAt( double t ) const
+{
+	if( volumeKeys.empty() )
+		return volume;
+	return std::clamp( EvaluateKeys( volumeKeys, t, volume ), 0.0f, 1.0f );
+}
+
 int TimelineTrack::ClipAt( double t ) const
 {
 	for( int i = 0; i < (int)clips.size(); ++i )
