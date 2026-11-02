@@ -622,11 +622,11 @@ void DrawPolygonTool( App& app, Screen& screen, int tab, ImDrawList* draw, ImVec
 	Vec2 mouse               = Snap( toContent( io.MousePos ), screen, tab, -1, W, H, Ui( 8 ) / scale );
 	const ImU32 amber        = IM_COL32( 255, 190, 70, 255 ), black = IM_COL32( 0, 0, 0, 255 );
 	float radius             = Ui( 4.5f );
-	auto near                = [ & ]( Vec2 p ) {
+	auto atMouse              = [ & ]( Vec2 p ) {
         ImVec2 a = toScreen( p );
         return ( io.MousePos.x - a.x ) * ( io.MousePos.x - a.x ) + ( io.MousePos.y - a.y ) * ( io.MousePos.y - a.y ) < radius * radius * 4;
 	};
-	bool closable = pts.size() >= 3 && near( pts[ 0 ] );
+	bool closable = pts.size() >= 3 && atMouse( pts[ 0 ] );
 
 	// What is drawn so far, the next edge to the mouse, and the closing edge when it would close.
 	for( size_t i = 1; i < pts.size(); ++i )
@@ -689,7 +689,7 @@ void DrawPolygonTool( App& app, Screen& screen, int tab, ImDrawList* draw, ImVec
 		finish();
 	else if( clicked )
 	{
-		bool repeat = !pts.empty() && near( pts.back() ); // the same place twice adds nothing
+		bool repeat = !pts.empty() && atMouse( pts.back() ); // the same place twice adds nothing
 		if( !repeat )
 		{
 			pts.push_back( mouse );
