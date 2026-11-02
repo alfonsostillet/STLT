@@ -7,6 +7,7 @@
 #include <cmath>
 #include <cstdio>
 #include "App.h"
+#include "ui/AdvancedOutputUi.h"
 #include "ui/ControlUi.h"
 #include "ui/EffectsUi.h"
 #include "ui/Panels.h"
@@ -476,6 +477,67 @@ void TrackHeader( App& app, int k, ImVec2 pos, ImVec2 size )
 	ImGui::PopFont();
 	if( ImGui::IsItemClicked( ImGuiMouseButton_Right ) || ( ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked( ImGuiMouseButton_Left ) ) )
 		ImGui::OpenPopup( "##trackMenu" );
+	if( !track.audio )
+	{
+		// Where the track's picture goes: a chip in the picture's colour; click to choose.
+		AdvancedOutputSetup& setup = app.advancedOutput;
+		// A canvas not in the output setup (removed, or a setup not saved): the composition shows the track.
+		std::string name = PictureName( app, track.output );
+		ImGui::SameLine( 0, Ui( 6 ) );
+		ImVec2 at       = ImGui::GetCursorScreenPos();
+		float maxWidth  = std::max( Ui( 30 ), pos.x + size.x - Ui( 52 ) - at.x );
+		ImVec2 textSize = ImGui::CalcTextSize( name.c_str() );
+		float width     = std::min( textSize.x + Ui( 20 ), maxWidth );
+		ImGui::InvisibleButton( "##output", ImVec2( width, ImGui::GetTextLineHeight() + Ui( 2 ) ) );
+		bool hot = ImGui::IsItemHovered();
+		ImU32 colour = PictureColour( app, track.output );
+		draw->AddRectFilled( at, ImVec2( at.x + width, at.y + ImGui::GetTextLineHeight() + Ui( 2 ) ), hot ? theme::RaisedHover : theme::Well, Ui( 8 ) );
+		draw->AddRectFilled( ImVec2( at.x + Ui( 5 ), at.y + Ui( 4 ) ), ImVec2( at.x + Ui( 11 ), at.y + Ui( 10 ) ), colour, Ui( 2 ) );
+		draw->PushClipRect( at, ImVec2( at.x + width - Ui( 3 ), at.y + Ui( 40 ) ), true );
+		draw->AddText( ImVec2( at.x + Ui( 14 ), at.y + Ui( 1 ) ), theme::Text, name.c_str() );
+		draw->PopClipRect();
+		if( hot )
+			ImGui::SetTooltip( "Goes to: %s\nClick to send this track to another picture: a canvas shown on the screens\nwhose slices take from it (Advanced Output).",
+			                   name.c_str() );
+		if( ImGui::IsItemClicked( ImGuiMouseButton_Left ) )
+			ImGui::OpenPopup( "##outputMenu" );
+		if( ImGui::BeginPopup( "##outputMenu" ) )
+		{
+			Composition& comp = app.composition;
+			auto item         = [ & ]( const std::string& id, const std::string& label ) {
+                ImVec2 p = ImGui::GetCursorScreenPos();
+                ImGui::GetWindowDrawList()->AddRectFilled( ImVec2( p.x, p.y + Ui( 4 ) ), ImVec2( p.x + Ui( 7 ), p.y + Ui( 11 ) ), PictureColour( app, id ), Ui( 2 ) );
+                ImGui::SetCursorScreenPos( ImVec2( p.x + Ui( 14 ), p.y ) );
+                if( ImGui::Selectable( label.c_str(), track.output == id ) )
+                    track.output = id;
+			};
+			char text[ 200 ];
+			std::snprintf( text, sizeof( text ), "Composition  %dx%d", comp.width, comp.height );
+			item( "", text );
+			for( const Canvas& c : setup.canvases )
+			{
+				std::snprintf( text, sizeof( text ), "%s  %dx%d##%s", c.name.c_str(), c.width, c.height, c.id.c_str() );
+				item( c.id, text );
+			}
+			ImGui::Separator();
+			for( size_t i = 0; i < setup.screens.size(); ++i )
+			{
+				std::snprintf( text, sizeof( text ), "New Canvas for %s##screen%d", setup.screens[ i ].name.c_str(), (int)i );
+				if( ImGui::Selectable( text ) )
+					track.output = setup.AddScreenCanvas( i, comp.width, comp.height );
+				if( ImGui::IsItemHovered() )
+					ImGui::SetTooltip( "A canvas the size of %s, for this track (and others you send to it).\n%s's slices that showed the whole "
+					                   "composition show the canvas instead.\nChange it any time in the Advanced Output (a slice's Source).",
+					                   setup.screens[ i ].name.c_str(), setup.screens[ i ].name.c_str() );
+			}
+			if( setup.screens.empty() )
+				ImGui::TextDisabled( "No screens: add them in the Advanced Output" );
+			ImGui::Separator();
+			if( ImGui::Selectable( "Advanced Output..." ) )
+				app.panels.advancedOutput = true;
+			ImGui::EndPopup();
+		}
+	}
 	ImGui::SetCursorScreenPos( ImVec2( pos.x + size.x - Ui( 46 ), pos.y + Ui( 3 ) ) );
 	if( SmallToggle( "M", track.mute, theme::Warning, "Mute: the track off" ) )
 		track.mute = !track.mute;

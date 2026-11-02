@@ -489,8 +489,62 @@ static void TestPolygonShapes()
 	}
 }
 
+// Canvases: pictures of their own that slices take from, saved with the setup.
+static void TestCanvases()
+{
+	AdvancedOutputSetup setup = AdvancedOutputSetup::MakeDefault( 1920, 1080 );
+	Screen second;
+	second.name   = "LED";
+	second.width  = 3840;
+	second.height = 1080;
+	second.slices.push_back( AdvancedOutputSetup::MakeSlice( "Whole", 1920, 1080, 3840, 1080 ) );
+	Slice part = AdvancedOutputSetup::MakeSlice( "Part", 1920, 1080, 3840, 1080 );
+	part.input = { { 0, 0 }, { 960, 0 }, { 960, 540 }, { 0, 540 } };
+	second.slices.push_back( part );
+	setup.screens.push_back( second );
+	setup.EnsureIds();
+
+	// A canvas for the LED screen: its size and name; the slice that showed the whole composition shows the whole
+	// canvas, the one showing a part keeps the composition.
+	std::string id = setup.AddScreenCanvas( 1, 1920, 1080 );
+	const Canvas* led = setup.FindCanvas( id );
+	CHECK( led && led->name == "LED" && led->width == 3840 && led->height == 1080 );
+	CHECK( setup.screens[ 1 ].slices[ 0 ].source == id && Near( setup.screens[ 1 ].slices[ 0 ].input[ 2 ], { 3840, 1080 } ) );
+	CHECK( setup.screens[ 1 ].slices[ 1 ].source.empty() );
+	CHECK( setup.screens[ 0 ].slices[ 0 ].source.empty() ); // other screens untouched
+	int w = 0, h = 0;
+	setup.SourceSize( id, 1920, 1080, w, h );
+	CHECK( w == 3840 && h == 1080 );
+	setup.SourceSize( "", 1920, 1080, w, h );
+	CHECK( w == 1920 && h == 1080 );
+
+	// Moving a slice to another picture keeps its share of it.
+	Slice& p = setup.screens[ 1 ].slices[ 1 ];
+	setup.SetSliceSource( p, id, 1920, 1080 );
+	CHECK( p.source == id && Near( p.input[ 2 ], { 1920, 540 } ) );
+	setup.SetSliceSource( p, "nope", 1920, 1080 );
+	CHECK( p.source.empty() ); // not a canvas: the composition
+
+	// Saved and read back; a slice naming a canvas that is not there takes from the composition.
+	AdvancedOutputSetup back;
+	std::string error;
+	CHECK( LoadAdvancedOutput( SaveAdvancedOutput( setup ), back, error ) );
+	CHECK( back.canvases.size() == 1 && back.canvases[ 0 ].id == id && back.canvases[ 0 ].width == 3840 && back.canvases[ 0 ].name == "LED" );
+	CHECK( back.screens[ 1 ].slices[ 0 ].source == id );
+	back.canvases.clear();
+	AdvancedOutputSetup dangling;
+	CHECK( LoadAdvancedOutput( SaveAdvancedOutput( back ), dangling, error ) && dangling.screens[ 1 ].slices[ 0 ].source.empty() );
+
+	// Removing a canvas sends its slices back to the composition, scaled to it.
+	setup.RemoveCanvas( id, 1920, 1080 );
+	CHECK( setup.canvases.empty() && setup.screens[ 1 ].slices[ 0 ].source.empty() && Near( setup.screens[ 1 ].slices[ 0 ].input[ 2 ], { 1920, 1080 } ) );
+	Canvas a = setup.MakeCanvas( "A", 10, 99999 ), b = setup.MakeCanvas( "B", 640, 480 );
+	CHECK( a.width == 16 && a.height == 16384 && !a.id.empty() && a.id != b.id );
+}
+
 int main()
 {
+	TestCanvases();
 	TestPolygonShapes();
 	TestPerspective();
 	TestDisplayIds();

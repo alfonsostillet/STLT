@@ -1,4 +1,6 @@
 #pragma once
+#include <imgui.h>
+#include <string>
 
 namespace stltvj
 {
@@ -12,4 +14,9 @@ void DrawAdvancedOutputPanel( App& app );
 void DrawAdvancedOutputSavePrompt( App& app );
 // Opens the editor on a tab (0 input, 1 output) with a slice selected.
 void ShowAdvancedOutputTab( int tab, int screen, int slice );
+// The colour that marks a picture wherever it is chosen (timeline tracks, slices): "" the composition, else a
+// canvas of the setup, by its place in the list.
+ImU32 PictureColour( const App& app, const std::string& source );
+// Its name: "Composition" or the canvas's.
+std::string PictureName( const App& app, const std::string& source );
 }

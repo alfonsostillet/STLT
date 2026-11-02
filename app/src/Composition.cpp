@@ -681,6 +681,8 @@ static nlohmann::json SaveTimeline( const Timeline& t, bool withPlayhead )
 		k[ "blend" ]   = BlendModeName( track.blend );
 		k[ "mute" ]    = track.mute;
 		k[ "solo" ]    = track.solo;
+		if( !track.output.empty() )
+			k[ "output" ] = track.output;
 		k[ "effects" ] = SaveChain( track.effects );
 		json clips     = json::array();
 		for( const TimelineClip& clip : track.clips )
@@ -756,6 +758,7 @@ static Timeline LoadTimeline( const nlohmann::json& root )
 			track.blend   = ByName( k.value( "blend", json() ), BlendModeName, BlendMode::Alpha );
 			track.mute    = k.value( "mute", false );
 			track.solo    = k.value( "solo", false );
+			track.output  = k.value( "output", "" );
 			if( k.contains( "effects" ) )
 				track.effects = LoadChain( k[ "effects" ] );
 			if( k.contains( "clips" ) && k[ "clips" ].is_array() )

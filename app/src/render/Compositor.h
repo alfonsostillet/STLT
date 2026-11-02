@@ -24,11 +24,20 @@ public:
 	bool Init( std::string& error );
 	void Shutdown();
 
+	// A picture besides the composition (the Advanced Output's canvases): the timeline's tracks sent to it.
+	struct CanvasSize
+	{
+		std::string id;
+		int width = 0, height = 0;
+	};
 	// Main context. Renders the whole composition; the result is CompositionTexture().
-	// `timelineView`: the timeline's video tracks at its playhead instead of the deck's layers.
-	void Render( Composition& composition, const FrameInfo& frame, bool timelineView = false );
+	// `timelineView`: the timeline's video tracks at its playhead instead of the deck's layers; the tracks sent to
+	// one of `canvases` are mixed into that canvas (CanvasTexture) instead of the composition.
+	void Render( Composition& composition, const FrameInfo& frame, bool timelineView = false, const std::vector< CanvasSize >& canvases = {} );
 	GLuint CompositionTexture() const { return final.Texture(); }
 	GLuint CompositionFramebuffer() const { return final.Framebuffer(); }
+	// A canvas as of the last Render (0: not rendered).
+	GLuint CanvasTexture( const std::string& id ) const;
 
 	// Main context. Draws one clip with its effects on black, fitted to the target (preview monitor).
 	void RenderClipAlone( Clip& clip, Fbo& target, int compWidth, int compHeight, const FrameInfo& frame );
@@ -48,6 +57,27 @@ private:
 	{
 		Fbo a, b;
 	};
+	// The working targets of a mix at one size.
+	struct Work
+	{
+		Fbo layer, scratch, from, to, mix[ 2 ];
+	};
+	Work& WorkFor( int width, int height );
+	// What a mix draws, bottom first: a clip (with an outgoing one in a layer's transition), how it lies, its chain.
+	struct Source
+	{
+		Clip* clip;
+		Clip* outgoing;
+		float progress;
+		TransitionMode transition;
+		float opacity;
+		BlendMode blend;
+		EffectChain* effects;
+	};
+	// Mixes `sources` over opaque black at width x height; returns the target holding the result.
+	Fbo* Mix( std::vector< Source >& sources, Work& work, int width, int height, const FrameInfo& frame );
+	// Copies `from` into `to` with the composition's master and black-out.
+	void Finish( Fbo& from, Fbo& to, const Composition& composition );
 	Pair& Targets( int width, int height );
 	// The clip as an FBO texture (first row at the bottom) when it needs its own pass; null for a plain movie.
 	Fbo* RenderClipSource( Clip& clip, int compWidth, int compHeight, const FrameInfo& frame );
@@ -60,11 +90,9 @@ private:
 	Program copyProgram;
 	Program transitionProgram;
 	GLuint vao = 0;
-	Fbo layerTarget;
-	Fbo layerScratch;
-	Fbo transitionFrom, transitionTo; // the two clips of a layer in transition
-	Fbo mix[ 2 ];
+	std::map< std::pair< int, int >, std::unique_ptr< Work > > works;
 	Fbo final;
+	std::map< std::string, std::unique_ptr< Fbo > > canvasFinal; // by canvas id
 	std::map< std::pair< int, int >, std::unique_ptr< Pair > > pool;
 };
 

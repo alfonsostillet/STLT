@@ -35,6 +35,8 @@ int main( int argc, char** argv )
 			options.capturePath = argv[ ++i ];
 		else if( arg == "--capture-composition" )
 			options.captureComposition = true;
+		else if( arg == "--capture-screen" && hasValue )
+			options.captureScreen = std::max( 1, std::atoi( argv[ ++i ] ) );
 		else if( arg == "--frames" && hasValue )
 			options.captureFrames = std::max( 1, std::atoi( argv[ ++i ] ) );
 		else if( arg == "--osc" && hasValue )

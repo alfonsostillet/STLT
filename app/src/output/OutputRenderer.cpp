@@ -189,10 +189,10 @@ void OutputRenderer::Shutdown()
 	vbo = vao = 0;
 }
 
-void OutputRenderer::DrawSlice( const Slice& slice, int index, const Screen& screen, int compWidth, int compHeight )
+void OutputRenderer::DrawSlice( const Slice& slice, int index, const Screen& screen, int sourceWidth, int sourceHeight )
 {
 	float W = (float)screen.width, H = (float)screen.height;
-	float cw = (float)std::max( compWidth, 1 ), ch = (float)std::max( compHeight, 1 );
+	float cw = (float)std::max( sourceWidth, 1 ), ch = (float)std::max( sourceHeight, 1 );
 	vertices.clear();
 	auto push = [ & ]( Vec2 out, float u, float v, Vec2 src ) {
 		vertices.insert( vertices.end(), { out.x / W * 2 - 1, 1 - out.y / H * 2, u, v, src.x / cw, 1 - src.y / ch } );
@@ -329,7 +329,8 @@ void OutputRenderer::ApplyMask( const Slice& mask, const Screen& screen, Fbo& ta
 	glBindTexture( GL_TEXTURE_2D, composition );
 }
 
-void OutputRenderer::Render( const AdvancedOutputSetup& setup, GLuint composition, int compWidth, int compHeight, bool live )
+void OutputRenderer::Render( const AdvancedOutputSetup& setup, GLuint composition, int compWidth, int compHeight, bool live,
+                             const std::map< std::string, Picture >& canvases )
 {
 	Match( setup.screens.size() );
 	const float identity[ 9 ] = { 1, 0, 0, 0, 1, 0, 0, 0, 1 };
@@ -357,9 +358,23 @@ void OutputRenderer::Render( const AdvancedOutputSetup& setup, GLuint compositio
 				if( !slice.enabled )
 					continue;
 				if( slice.mask )
+				{
 					ApplyMask( slice, screen, state.target, composition );
-				else
-					DrawSlice( slice, (int)i, screen, compWidth, compHeight );
+					continue;
+				}
+				// Its picture: the composition, or the canvas it takes from.
+				Picture picture{ composition, compWidth, compHeight };
+				if( !slice.source.empty() )
+				{
+					auto it = canvases.find( slice.source );
+					if( it != canvases.end() && it->second.texture )
+						picture = it->second;
+					else if( setup.FindCanvas( slice.source ) )
+						continue; // its canvas is not drawn: nothing rather than the wrong picture
+				}
+				glActiveTexture( GL_TEXTURE0 );
+				glBindTexture( GL_TEXTURE_2D, picture.texture );
+				DrawSlice( slice, (int)i, screen, picture.width, picture.height );
 			}
 			ResetGlState();
 		}
@@ -448,6 +463,11 @@ void OutputRenderer::Match( size_t count )
 	while( screens.size() < count )
 		screens.push_back( std::make_unique< ScreenState >() );
 	screens.resize( count );
+}
+
+GLuint OutputRenderer::ScreenFramebuffer( size_t index ) const
+{
+	return index < screens.size() ? screens[ index ]->finished.Framebuffer() : 0;
 }
 
 GLuint OutputRenderer::ScreenTexture( size_t index ) const

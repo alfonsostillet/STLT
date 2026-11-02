@@ -1,4 +1,5 @@
 #pragma once
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -27,11 +28,20 @@ public:
 	bool Init( std::string& error );
 	void Shutdown();
 
-	// Main context. `composition` is an FBO texture (first row at the bottom) of compWidth x compHeight. Not
-	// `live`: the screens are drawn (for the editor's views) but not shared with other programs.
-	void Render( const AdvancedOutputSetup& setup, GLuint composition, int compWidth, int compHeight, bool live = true );
+	// A picture slices take from: an FBO texture (first row at the bottom) and its size.
+	struct Picture
+	{
+		GLuint texture = 0;
+		int width = 0, height = 0;
+	};
+	// Main context. `composition` is an FBO texture (first row at the bottom) of compWidth x compHeight; `canvases`
+	// the setup's canvases by id (a slice whose canvas is missing here shows nothing). Not `live`: the screens are
+	// drawn (for the editor's views) but not shared with other programs.
+	void Render( const AdvancedOutputSetup& setup, GLuint composition, int compWidth, int compHeight, bool live = true,
+	             const std::map< std::string, Picture >& canvases = {} );
 	// The finished picture of screen `index` (FBO texture), or 0.
 	GLuint ScreenTexture( size_t index ) const;
+	GLuint ScreenFramebuffer( size_t index ) const; // the same picture as a framebuffer to read from, or 0
 
 	// Opens, moves or closes output windows so each screen shows on its device (none when not `live`). Main
 	// context current.
@@ -66,7 +76,7 @@ private:
 		std::string localName, ndiName, ndiError;
 	};
 	void Share( const Screen& screen, ScreenState& state );
-	void DrawSlice( const Slice& slice, int index, const Screen& screen, int compWidth, int compHeight );
+	void DrawSlice( const Slice& slice, int index, const Screen& screen, int sourceWidth, int sourceHeight );
 	void ApplyMask( const Slice& mask, const Screen& screen, Fbo& target, GLuint composition );
 
 	void Match( size_t count );

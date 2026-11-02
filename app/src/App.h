@@ -30,6 +30,7 @@ struct LaunchOptions
 	std::string capturePath; // write the window to this .bmp after `captureFrames` frames, then quit
 	int captureFrames = 60;
 	bool captureComposition = false; // the composition (at its own size) rather than the window
+	int captureScreen       = 0;     // --capture-screen N: what screen N of the Advanced Output shows (from 1)
 	struct ClipArg
 	{
 		int layer, column;

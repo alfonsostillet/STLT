@@ -94,6 +94,9 @@ struct Editor
 
 	std::string presetName;
 
+	// What the Input tab shows: the selected slice's picture, "" the composition or a canvas's id.
+	std::string inputSource;
+
 	// Drawing a new polygon point by point (+ Polygon > Draw): on this screen and tab, the points so far.
 	bool drawing   = false;
 	int drawScreen = -1, drawTab = InputTab;
@@ -184,6 +187,8 @@ Vec2 Snap( Vec2 p, const Screen& screen, int tab, int self, float width, float h
 		if( i == self )
 			continue;
 		const Slice& s = screen.slices[ i ];
+		if( tab == InputTab && ( s.mask || s.source != editor.inputSource ) )
+			continue; // another picture's pixels
 		std::vector< Vec2 > pts = tab == InputTab ? s.input : ( s.polygon ? s.output : s.OutputOutline( 1 ) );
 		for( Vec2 q : pts )
 		{
@@ -368,10 +373,21 @@ void DrawList( App& app )
 				ImGui::Checkbox( "##on", &slice.enabled );
 				ImGui::SameLine();
 				std::string name = ( slice.mask ? "[M] " : slice.polygon ? "[P] " : "" ) + slice.name;
+				ImVec2 rowAt     = ImGui::GetCursorScreenPos();
 				if( ImGui::Selectable( name.c_str(), editor.screen == si && editor.slice == k ) )
 				{
 					editor.screen = si;
 					editor.slice  = k;
+				}
+				if( !slice.mask )
+				{
+					// The colour of what it takes from (the composition, or a canvas), as on the timeline's tracks.
+					float h  = ImGui::GetTextLineHeight();
+					float x  = ImGui::GetItemRectMax().x - Ui( 10 );
+					ImGui::GetWindowDrawList()->AddRectFilled( ImVec2( x, rowAt.y + h * 0.25f ), ImVec2( x + Ui( 6 ), rowAt.y + h * 0.25f + Ui( 6 ) ),
+					                                           PictureColour( app, slice.source ), Ui( 2 ) );
+					if( ImGui::IsItemHovered() )
+						ImGui::SetTooltip( "Takes from: %s", PictureName( app, slice.source ).c_str() );
 				}
 				ImGui::PopID();
 			}
@@ -641,9 +657,11 @@ void DrawPolygonTool( App& app, Screen& screen, ImDrawList* draw, ImVec2 pos, Im
 	auto finish = [ & ]() {
 		if( pts.size() >= 3 )
 		{
-			Composition& comp = app.composition;
+			int sw, sh; // the picture shown on the Input tab: the new polygon takes from it
+			app.advancedOutput.SourceSize( editor.inputSource, app.composition.width, app.composition.height, sw, sh );
 			screen.slices.push_back( AdvancedOutputSetup::MakePolygonFrom( UniqueName( screen.slices, "Polygon" ), pts, editor.drawTab == OutputTab,
-			                                                               (float)comp.width, (float)comp.height, (float)screen.width, (float)screen.height ) );
+			                                                               (float)sw, (float)sh, (float)screen.width, (float)screen.height ) );
+			screen.slices.back().source = editor.inputSource;
 			editor.slice = (int)screen.slices.size() - 1;
 			editor.point = -1;
 		}
@@ -676,8 +694,17 @@ void DrawCanvas( App& app, Screen& screen )
 {
 	ImGuiIO& io = ImGui::GetIO();
 	int tab     = editor.tab;
-	float W     = tab == InputTab ? (float)app.composition.width : (float)screen.width;
-	float H     = tab == InputTab ? (float)app.composition.height : (float)screen.height;
+	// The Input tab shows the picture the selected slice takes from (the composition or a canvas).
+	if( editor.slice >= 0 && editor.slice < (int)screen.slices.size() && !screen.slices[ editor.slice ].mask )
+		editor.inputSource = screen.slices[ editor.slice ].source;
+	if( !app.advancedOutput.FindCanvas( editor.inputSource ) )
+		editor.inputSource.clear();
+	int sourceWidth, sourceHeight;
+	app.advancedOutput.SourceSize( editor.inputSource, app.composition.width, app.composition.height, sourceWidth, sourceHeight );
+	float W = tab == InputTab ? (float)sourceWidth : (float)screen.width;
+	float H = tab == InputTab ? (float)sourceHeight : (float)screen.height;
+	// Slices on the Input tab: those taking from the picture shown.
+	auto onCanvas = [ & ]( const Slice& s ) { return tab != InputTab || ( !s.mask && s.source == editor.inputSource ); };
 
 	ImVec2 pos  = ImGui::GetCursorScreenPos();
 	ImVec2 size = ImGui::GetContentRegionAvail();
@@ -722,7 +749,9 @@ void DrawCanvas( App& app, Screen& screen )
 		editor.pan[ tab ].y += io.MouseDelta.y;
 	}
 
-	GLuint texture = tab == InputTab ? app.compositor.CompositionTexture() : app.outputs.ScreenTexture( (size_t)editor.screen );
+	GLuint texture = tab == OutputTab                ? app.outputs.ScreenTexture( (size_t)editor.screen )
+	                 : editor.inputSource.empty() ? app.compositor.CompositionTexture()
+	                                              : app.compositor.CanvasTexture( editor.inputSource );
 	if( texture )
 		draw->AddImage( TextureId( texture ), toScreen( { 0, 0 } ), toScreen( { W, H } ), ImVec2( 0, 1 ), ImVec2( 1, 0 ) );
 	draw->AddRect( toScreen( { 0, 0 } ), toScreen( { W, H } ), IM_COL32( 90, 90, 90, 255 ) );
@@ -745,7 +774,7 @@ void DrawCanvas( App& app, Screen& screen )
 	{
 		const Slice& s           = screen.slices[ i ];
 		std::vector< Vec2 > line = Outline( s, tab );
-		if( line.size() < 2 )
+		if( line.size() < 2 || !onCanvas( s ) )
 			continue;
 		std::vector< ImVec2 > pts;
 		for( Vec2 p : line )
@@ -991,7 +1020,7 @@ void DrawCanvas( App& app, Screen& screen )
 		{
 			int hit = -1;
 			for( int i = (int)screen.slices.size() - 1; i >= 0 && hit < 0; --i )
-				if( PointInPolygon( Outline( screen.slices[ i ], tab ), mouse ) )
+				if( onCanvas( screen.slices[ i ] ) && PointInPolygon( Outline( screen.slices[ i ], tab ), mouse ) )
 					hit = i;
 			editor.slice = hit;
 			editor.point = -1;
@@ -1175,7 +1204,7 @@ void DrawCanvas( App& app, Screen& screen )
 		}
 		if( editor.menuPoint < 0 && !editor.menuCanInsert )
 			for( int i = (int)screen.slices.size() - 1; i >= 0; --i )
-				if( PointInPolygon( Outline( screen.slices[ i ], tab ), mouse ) )
+				if( onCanvas( screen.slices[ i ] ) && PointInPolygon( Outline( screen.slices[ i ], tab ), mouse ) )
 				{
 					editor.slice = i;
 					break;
@@ -1233,8 +1262,12 @@ void DrawCanvas( App& app, Screen& screen )
 				s.MatchOutputToInput( (float)app.composition.width, (float)app.composition.height, (float)screen.width, (float)screen.height );
 			if( ImGui::MenuItem( "Fit Output to Screen" ) )
 				s.FitOutput( (float)screen.width, (float)screen.height );
-			if( !s.polygon && ImGui::MenuItem( "Input: Whole Composition" ) )
-				SetRect( s, 0, 0, (float)app.composition.width, (float)app.composition.height );
+			if( !s.polygon && ImGui::MenuItem( s.source.empty() ? "Input: Whole Composition" : "Input: Whole Canvas" ) )
+			{
+				int w, h;
+				app.advancedOutput.SourceSize( s.source, app.composition.width, app.composition.height, w, h );
+				SetRect( s, 0, 0, (float)w, (float)h );
+			}
 			ImGui::MenuItem( "Flip Horizontally", nullptr, &s.flipHorizontal );
 			ImGui::MenuItem( "Flip Vertically", nullptr, &s.flipVertical );
 			ImGui::MenuItem( "Enabled", nullptr, &s.enabled );
@@ -1409,12 +1442,86 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 		DrawMaskProps( screen, s );
 		return;
 	}
-	float cw = (float)app.composition.width, ch = (float)app.composition.height;
+	AdvancedOutputSetup& setup = app.advancedOutput;
+	Composition& comp          = app.composition;
+	int sourceW, sourceH;
+	setup.SourceSize( s.source, comp.width, comp.height, sourceW, sourceH );
+	float cw = (float)sourceW, ch = (float)sourceH; // the picture the slice takes from
 	ImGui::SeparatorText( s.polygon ? "Polygon" : "Slice" );
 	if( !BeginProps( "##slice" ) )
 		return;
 	Row( "Name" );
 	ImGui::InputText( "##name", &s.name );
+
+	// Where its picture comes from: the composition, or a canvas the timeline's tracks can be sent to.
+	Row( "Source" );
+	{
+		auto label = [ & ]( const std::string& id ) {
+			const Canvas* c = setup.FindCanvas( id );
+			char text[ 160 ];
+			std::snprintf( text, sizeof( text ), "%s  %dx%d", c ? c->name.c_str() : "Composition", c ? c->width : comp.width, c ? c->height : comp.height );
+			return std::string( text );
+		};
+		ImGui::SetNextItemWidth( -FLT_MIN );
+		if( ImGui::BeginCombo( "##source", label( s.source ).c_str() ) )
+		{
+			if( ImGui::Selectable( label( "" ).c_str(), s.source.empty() ) )
+				setup.SetSliceSource( s, "", comp.width, comp.height );
+			for( const Canvas& c : setup.canvases )
+				if( ImGui::Selectable( ( label( c.id ) + "##" + c.id ).c_str(), s.source == c.id ) )
+					setup.SetSliceSource( s, c.id, comp.width, comp.height );
+			ImGui::Separator();
+			if( ImGui::Selectable( "New Canvas" ) )
+			{
+				setup.canvases.push_back( setup.MakeCanvas( screen.name, screen.width, screen.height ) );
+				setup.SetSliceSource( s, setup.canvases.back().id, comp.width, comp.height );
+			}
+			if( ImGui::IsItemHovered() )
+				ImGui::SetTooltip( "A picture of its own, the size of this screen: send timeline tracks to it (the chip next to a track's name)" );
+			ImGui::EndCombo();
+		}
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "What this slice shows a part of: the composition, or a canvas that timeline tracks are sent to" );
+		if( Canvas* c = const_cast< Canvas* >( setup.FindCanvas( s.source ) ) )
+		{
+			// The canvas itself, shared by every slice taking from it.
+			Row( "Canvas" );
+			ImGui::SetNextItemWidth( -FLT_MIN );
+			ImGui::InputText( "##canvasName", &c->name );
+			Row( "Canvas W, H" );
+			int size[ 2 ] = { c->width, c->height };
+			ImGui::SetNextItemWidth( -FLT_MIN );
+			if( ImGui::DragInt2( "##canvasSize", size, 1, 16, 16384 ) )
+			{
+				// The slices on it keep their share of it.
+				float sx = (float)size[ 0 ] / c->width, sy = (float)size[ 1 ] / c->height;
+				for( Screen& sc : setup.screens )
+					for( Slice& other : sc.slices )
+						if( other.source == c->id )
+							for( Vec2& p : other.input )
+								p = { p.x * sx, p.y * sy };
+				c->width  = std::clamp( size[ 0 ], 16, 16384 );
+				c->height = std::clamp( size[ 1 ], 16, 16384 );
+			}
+			std::string fed;
+			for( const TimelineTrack& t : comp.timeline.tracks )
+				if( t.output == c->id && !t.audio )
+					fed += ( fed.empty() ? "" : ", " ) + t.name;
+			Row( "Tracks" );
+			ImGui::TextDisabled( "%s", fed.empty() ? "none yet: choose this canvas on a timeline track" : fed.c_str() );
+			Row( "" );
+			if( ImGui::Button( "Remove Canvas" ) )
+			{
+				std::string id = c->id;
+				setup.RemoveCanvas( id, comp.width, comp.height );
+				for( TimelineTrack& t : comp.timeline.tracks )
+					if( t.output == id )
+						t.output.clear();
+			}
+			if( ImGui::IsItemHovered() )
+				ImGui::SetTooltip( "Its slices go back to the composition, and its tracks too" );
+		}
+	}
 	Row( "Enabled" );
 	ImGui::Checkbox( "##enabled", &s.enabled );
 	Row( "Opacity" );
@@ -1443,7 +1550,7 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 		if( changed )
 			SetRect( s, rect[ 0 ], rect[ 1 ], rect[ 0 ] + std::max( rect[ 2 ], 1.0f ), rect[ 1 ] + std::max( rect[ 3 ], 1.0f ) );
 		Row( "" );
-		if( ImGui::Button( "Whole Composition" ) )
+		if( ImGui::Button( s.source.empty() ? "Whole Composition" : "Whole Canvas" ) )
 			SetRect( s, 0, 0, cw, ch );
 	}
 	EditModeRows( s );
@@ -1522,6 +1629,23 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 		ImGui::EndTable();
 	}
 }
+}
+
+ImU32 PictureColour( const App& app, const std::string& source )
+{
+	static const ImU32 palette[] = { IM_COL32( 245, 184, 74, 255 ), IM_COL32( 230, 130, 175, 255 ), IM_COL32( 120, 205, 140, 255 ),
+		                             IM_COL32( 180, 150, 240, 255 ), IM_COL32( 100, 205, 210, 255 ), IM_COL32( 235, 120, 95, 255 ) };
+	const std::vector< Canvas >& canvases = app.advancedOutput.canvases;
+	for( size_t i = 0; i < canvases.size(); ++i )
+		if( canvases[ i ].id == source )
+			return palette[ i % ( sizeof( palette ) / sizeof( palette[ 0 ] ) ) ];
+	return theme::Accent;
+}
+
+std::string PictureName( const App& app, const std::string& source )
+{
+	const Canvas* c = app.advancedOutput.FindCanvas( source );
+	return c ? c->name : "Composition";
 }
 
 void ShowAdvancedOutputTab( int tab, int screen, int slice )
@@ -1707,8 +1831,14 @@ void DrawAdvancedOutputPanel( App& app )
 		ImGui::SameLine();
 		ImGui::Checkbox( "Test Pattern", &screen.testPattern );
 		ImGui::SameLine();
-		ImGui::TextDisabled( "%s - %s %dx%d", screen.name.c_str(), editor.tab == InputTab ? "composition" : "screen",
-		                     editor.tab == InputTab ? app.composition.width : screen.width, editor.tab == InputTab ? app.composition.height : screen.height );
+		if( editor.tab == InputTab )
+		{
+			const Canvas* c = app.advancedOutput.FindCanvas( editor.inputSource );
+			ImGui::TextDisabled( "%s %dx%d", c ? ( "canvas " + c->name ).c_str() : "composition", c ? c->width : app.composition.width,
+			                     c ? c->height : app.composition.height );
+		}
+		else
+			ImGui::TextDisabled( "%s - screen %dx%d", screen.name.c_str(), screen.width, screen.height );
 		DrawCanvas( app, screen );
 		ImGui::EndChild();
 

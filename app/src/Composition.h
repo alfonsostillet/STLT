@@ -330,6 +330,9 @@ struct TimelineTrack
 	BlendMode blend = BlendMode::Alpha;
 	bool mute       = false;
 	bool solo       = false;
+	// Where its picture goes: "" the composition, else the id of a canvas of the Advanced Output (a track naming a
+	// canvas that is not there goes to the composition).
+	std::string output;
 	EffectChain effects;
 	std::vector< TimelineClip > clips; // in time order, not overlapping
 	// The clip playing at `t` (-1: none).

@@ -55,6 +55,9 @@ struct Slice
 {
 	std::string id; // stable (a chase's steps name slices by it); given by AdvancedOutputSetup::EnsureIds
 	std::string name = "Slice";
+	// What the slice takes its picture from: "" the composition, else the id of one of the setup's canvases. Its
+	// input points are in that picture's pixels.
+	std::string source;
 	bool enabled     = true;
 	bool polygon     = false;
 	bool mask        = false;
@@ -146,9 +149,22 @@ struct Screen
 	std::vector< Slice > slices;
 };
 
+// A picture of its own besides the composition, with its own size: the timeline's tracks can be sent to it
+// instead of the composition (a LED wall, side screens), and slices take their picture from it.
+struct Canvas
+{
+	std::string id; // what tracks and slices name it by; given by AdvancedOutputSetup::EnsureIds
+	std::string name = "Canvas";
+	int width = 1920, height = 1080;
+};
+
 struct AdvancedOutputSetup
 {
 	std::vector< Screen > screens;
+	std::vector< Canvas > canvases;
+	const Canvas* FindCanvas( const std::string& id ) const;
+	// The size of what a slice with this source takes from: the canvas, or the composition ("" or a canvas gone).
+	void SourceSize( const std::string& source, int compWidth, int compHeight, int& width, int& height ) const;
 
 	// One screen with one slice showing the whole composition.
 	static AdvancedOutputSetup MakeDefault( int compWidth, int compHeight );
@@ -162,8 +178,17 @@ struct AdvancedOutputSetup
 	                              float screenWidth, float screenHeight );
 	// A rectangle or an ellipse in the middle of the screen.
 	static Slice MakeMask( const std::string& name, float screenWidth, float screenHeight, bool ellipse );
-	// Gives every slice an id, and a new one to a slice sharing another's (a duplicate); true if any changed.
+	// Gives every slice and canvas an id, and a new one to one sharing another's (a duplicate); true if any changed.
 	bool EnsureIds();
+	// A new canvas with a fresh id (not added).
+	Canvas MakeCanvas( const std::string& name, int width, int height ) const;
+	// A canvas for screen `index`, its size and name; the screen's slices that showed the whole composition show
+	// the whole canvas instead (the screen now shows what goes to the canvas). Returns the canvas's id.
+	std::string AddScreenCanvas( size_t index, int compWidth, int compHeight );
+	// Removes a canvas; its slices go back to the composition.
+	void RemoveCanvas( const std::string& id, int compWidth, int compHeight );
+	// Changes what a slice takes from, its input moved and scaled from the old picture's size to the new one's.
+	void SetSliceSource( Slice& slice, const std::string& source, int compWidth, int compHeight ) const;
 };
 
 std::string SaveAdvancedOutput( const AdvancedOutputSetup& setup );

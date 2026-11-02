@@ -2595,7 +2595,10 @@ void App::Frame()
 	frame.delta = dt;
 	frame.bpm   = composition.bpm;
 	frame.beat  = composition.beat;
-	compositor.Render( composition, frame, view == View::Arrangement );
+	std::vector< Compositor::CanvasSize > canvases;
+	for( const Canvas& c : advancedOutput.canvases )
+		canvases.push_back( { c.id, c.width, c.height } );
+	compositor.Render( composition, frame, view == View::Arrangement, canvases );
 	UpdateQuickOutput();
 	bool advancedLive = outputMode == OutputMode::Advanced;
 	bool quickLive    = outputMode == OutputMode::Window || outputMode == OutputMode::Fullscreen;
@@ -2606,8 +2609,13 @@ void App::Frame()
 		chaser::Reap();
 		chaserStageChecked = now;
 	}
-	if( advancedLive || panels.advancedOutput )
-		outputs.Render( advancedOutput, compositor.CompositionTexture(), composition.width, composition.height, advancedLive );
+	if( advancedLive || panels.advancedOutput || options.captureScreen > 0 )
+	{
+		std::map< std::string, OutputRenderer::Picture > pictures;
+		for( const Canvas& c : advancedOutput.canvases )
+			pictures[ c.id ] = { compositor.CanvasTexture( c.id ), c.width, c.height };
+		outputs.Render( advancedOutput, compositor.CompositionTexture(), composition.width, composition.height, advancedLive, pictures );
+	}
 	if( quickLive )
 		quickOutputs.Render( quickOutput, compositor.CompositionTexture(), composition.width, composition.height );
 	UpdatePreview( dt );
@@ -2677,7 +2685,14 @@ void App::Frame()
 void App::Capture()
 {
 	int width = 0, height = 0;
-	if( options.captureComposition )
+	if( options.captureScreen > 0 && (size_t)options.captureScreen <= advancedOutput.screens.size() )
+	{
+		const Screen& screen = advancedOutput.screens[ options.captureScreen - 1 ];
+		width                = screen.width;
+		height               = screen.height;
+		glBindFramebuffer( GL_FRAMEBUFFER, outputs.ScreenFramebuffer( (size_t)options.captureScreen - 1 ) );
+	}
+	else if( options.captureComposition )
 	{
 		width  = composition.width;
 		height = composition.height;

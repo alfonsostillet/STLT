@@ -116,13 +116,13 @@ def art_timecode(frame):
     return b"Art-Net\0" + bytes([0x00, 0x97, 0, 14, 0, 0, ff, ss, mm, hh, 1])  # ArtTimeCode, 25 fps
 
 
-def clip_settings(node):
+def clip_settings(node, file="green_hap.mov"):
     if isinstance(node, dict):
-        if str(node.get("path", "")).endswith("green_hap.mov"):
+        if str(node.get("path", "")).endswith(file):
             return dict(node)
         node = list(node.values())
     for child in node if isinstance(node, list) else []:
-        found = clip_settings(child)
+        found = clip_settings(child, file)
         if found:
             return found
     return None
@@ -175,6 +175,41 @@ else:
         sending.clear()
         sender.join()
     expect("Timecode (Art-Net)", image, [(960, 540, (0, 255, 0))], 12)
+
+# Timeline tracks on canvases: the green clip's track goes to the composition, the colour bars' track to a canvas
+# "LED". Screen 1 takes from the composition, screen 2 from the canvas: the bars must show on screen 2 only.
+routing_home = tempfile.mkdtemp(prefix="stltvj-smoke-routing-")
+run("Routing (setup)", ["--clip", "1,1," + os.path.join(FIXTURES, "green_hap.mov"), "--clip", "1,2," + os.path.join(FIXTURES, "dxv_ycg6.mov")],
+    home=routing_home, fresh=False)
+sessions = [os.path.join(d, "last-session.stltvj") for d, _, files in os.walk(routing_home) if "last-session.stltvj" in files]
+if not sessions:
+    failures.append("Routing: no session saved")
+else:
+    config = os.path.dirname(sessions[0])
+    session = json.load(open(sessions[0], encoding="utf-8"))
+    green, bars = clip_settings(session), clip_settings(session, "dxv_ycg6.mov")
+    stop_playing(session)
+    session.setdefault("timeline", {}).update({"position": 1, "tracks": [
+        {"name": "Video 1", "audio": False, "clips": [{"start": 0, "length": 120, "clip": green}]},
+        {"name": "Video 2", "audio": False, "output": "led", "clips": [{"start": 0, "length": 120, "clip": bars}]}]})
+    json.dump(session, open(sessions[0], "w", encoding="utf-8"))
+    with open(os.path.join(config, "view.txt"), "w") as f:
+        f.write("arrangement")
+    whole = [[0, 0], [1920, 0], [1920, 1080], [0, 1080]]
+    def screen(name, source):
+        slice_ = {"name": "Slice 1", "type": "slice", "input": whole, "corners": whole, "warp": "Perspective"}
+        if source:
+            slice_["source"] = source
+        return {"name": name, "device": "Virtual Output", "size": [1920, 1080], "slices": [slice_]}
+    setup = os.path.join(routing_home, "routing.json")
+    json.dump({"format": "stlt-vj-advanced-output", "version": 1, "screens": [screen("Main", ""), screen("LED", "led")],
+               "canvases": [{"id": "led", "name": "LED", "size": [1920, 1080]}]}, open(setup, "w"))
+    blue_bar = (1120, 200)  # blue in the bars, green in the green clip
+    image, _ = run("Routing composition", ["--output-setup", setup], home=routing_home, fresh=False)
+    expect("Routing composition", image, [(blue_bar[0], blue_bar[1], (0, 255, 0))], 12)
+    for number, colour in ((1, (0, 255, 0)), (2, (0, 0, 255))):
+        image, _ = run(f"Routing screen {number}", ["--output-setup", setup, "--capture-screen", str(number)], home=routing_home, fresh=False)
+        expect(f"Routing screen {number}", image, [(blue_bar[0], blue_bar[1], colour)], 16)
 
 # ISF shaders, when they come with the program: every one builds and runs, and two of them on the green clip draw
 # what they should (Color Invert: magenta; Fast Blur, in several passes: green still).

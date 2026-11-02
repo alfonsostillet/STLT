@@ -437,12 +437,14 @@ static void TestTimeline()
 	c.timeline    = std::move( t );
 	c.timeline.tracks.push_back( TimelineTrack{} );
 	c.timeline.tracks[ 1 ].audio = true;
+	c.timeline.tracks[ 0 ].output = "a1b2c3"; // sent to a canvas
 	std::swap( c.timeline.blocks[ 0 ], c.timeline.blocks[ 3 ] );
 	Composition loaded;
 	std::string error;
 	CHECK( LoadComposition( SaveComposition( c ), loaded, error ) );
 	const Timeline& l = loaded.timeline;
 	CHECK( l.tracks.size() == 2 && l.tracks[ 0 ].clips.size() == 4 && l.tracks[ 1 ].audio );
+	CHECK( l.tracks[ 0 ].output == "a1b2c3" && l.tracks[ 1 ].output.empty() );
 	CHECK( l.blocks.size() == 4 && l.blocks[ 0 ].name == "One" && l.blocks[ 3 ].endAction == BlockEnd::Black );
 	CHECK( Near( l.tracks[ 0 ].clips[ 2 ].clip.inPoint, 5 ) && Near( l.tracks[ 0 ].clips[ 1 ].length, 2 ) );
 	CHECK( !l.playing && Near( l.position, c.timeline.position ) ); // the playhead where it was, stopped

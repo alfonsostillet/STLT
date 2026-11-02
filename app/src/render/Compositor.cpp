@@ -254,12 +254,8 @@ bool Compositor::Init( std::string& error )
 
 void Compositor::Shutdown()
 {
-	layerTarget.Release();
-	layerScratch.Release();
-	transitionFrom.Release();
-	transitionTo.Release();
-	mix[ 0 ].Release();
-	mix[ 1 ].Release();
+	works.clear();
+	canvasFinal.clear();
 	final.Release();
 	pool.clear();
 	if( vao )
@@ -421,31 +417,116 @@ void Compositor::DrawClipInto( Clip& clip, Fbo& target, const FrameInfo& frame, 
 	glBindFramebuffer( GL_FRAMEBUFFER, 0 );
 }
 
-void Compositor::Render( Composition& composition, const FrameInfo& frame, bool timelineView )
+Compositor::Work& Compositor::WorkFor( int width, int height )
+{
+	std::unique_ptr< Work >& w = works[ { width, height } ];
+	if( !w )
+		w = std::make_unique< Work >();
+	return *w;
+}
+
+GLuint Compositor::CanvasTexture( const std::string& id ) const
+{
+	auto it = canvasFinal.find( id );
+	return it == canvasFinal.end() ? 0 : it->second->Texture();
+}
+
+Fbo* Compositor::Mix( std::vector< Source >& sources, Work& work, int W, int H, const FrameInfo& frame )
+{
+	if( !work.layer.Ensure( W, H ) || !work.scratch.Ensure( W, H ) || !work.mix[ 0 ].Ensure( W, H ) || !work.mix[ 1 ].Ensure( W, H ) )
+		return nullptr;
+	ResetGlState();
+	int current = 0;
+	work.mix[ current ].Bind();
+	glClearColor( 0, 0, 0, 1 );
+	glClear( GL_COLOR_BUFFER_BIT );
+	auto ready = []( const Clip& clip ) { return clip.generator || ( clip.Loaded() && clip.player->HasFrame() ); };
+
+	float identity[ 9 ];
+	Identity( identity );
+	for( Source& source : sources )
+	{
+		Clip& clip = *source.clip;
+		if( source.outgoing )
+		{
+			// A transition: both clips, mixed into the layer.
+			if( !work.from.Ensure( W, H ) || !work.to.Ensure( W, H ) )
+				continue;
+			DrawClipInto( *source.outgoing, work.from, frame, W, H, false );
+			if( ready( clip ) )
+				DrawClipInto( clip, work.to, frame, W, H, false );
+			else
+			{
+				work.to.Bind();
+				glClearColor( 0, 0, 0, 0 );
+				glClear( GL_COLOR_BUFFER_BIT );
+			}
+			work.layer.Bind();
+			glBindVertexArray( vao );
+			transitionProgram.Use();
+			glUniformMatrix3fv( transitionProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
+			SetTexRect( transitionProgram, 0, 1, 1, 0 );
+			glUniform1i( transitionProgram.Uniform( "uMode" ), (int)source.transition );
+			glUniform1f( transitionProgram.Uniform( "uProgress" ), source.progress );
+			glActiveTexture( GL_TEXTURE1 );
+			glBindTexture( GL_TEXTURE_2D, work.to.Texture() );
+			glActiveTexture( GL_TEXTURE0 );
+			glBindTexture( GL_TEXTURE_2D, work.from.Texture() );
+			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+			ResetGlState();
+		}
+		else
+			DrawClipInto( clip, work.layer, frame, W, H, false );
+		Fbo* layerResult = ApplyChain( *source.effects, &work.layer, &work.scratch, frame );
+
+		work.mix[ 1 - current ].Bind();
+		glBindVertexArray( vao );
+		blendProgram.Use();
+		glUniformMatrix3fv( blendProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
+		SetTexRect( blendProgram, 0, 1, 1, 0 );
+		glUniform1i( blendProgram.Uniform( "uMode" ), (int)source.blend );
+		glUniform1f( blendProgram.Uniform( "uOpacity" ), source.opacity );
+		glActiveTexture( GL_TEXTURE1 );
+		glBindTexture( GL_TEXTURE_2D, layerResult->Texture() );
+		glActiveTexture( GL_TEXTURE0 );
+		glBindTexture( GL_TEXTURE_2D, work.mix[ current ].Texture() );
+		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+		ResetGlState();
+		current = 1 - current;
+	}
+	return &work.mix[ current ];
+}
+
+void Compositor::Finish( Fbo& from, Fbo& to, const Composition& composition )
+{
+	float identity[ 9 ];
+	Identity( identity );
+	to.Bind();
+	glBindVertexArray( vao );
+	copyProgram.Use();
+	glUniformMatrix3fv( copyProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
+	SetTexRect( copyProgram, 0, 1, 1, 0 );
+	glUniform1f( copyProgram.Uniform( "uOpacity" ), composition.bypass ? 0.0f : std::clamp( composition.master, 0.0f, 1.0f ) );
+	glBindTexture( GL_TEXTURE_2D, from.Texture() );
+	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
+	ResetGlState();
+}
+
+void Compositor::Render( Composition& composition, const FrameInfo& frame, bool timelineView, const std::vector< CanvasSize >& canvases )
 {
 	int W = composition.width, H = composition.height;
-	if( !layerTarget.Ensure( W, H ) || !layerScratch.Ensure( W, H ) || !mix[ 0 ].Ensure( W, H ) || !mix[ 1 ].Ensure( W, H ) || !final.Ensure( W, H ) )
+	if( !final.Ensure( W, H ) )
 		return;
 	ResetGlState();
 
-	int current = 0;
-	mix[ current ].Bind();
-	glClearColor( 0, 0, 0, 1 );
-	glClear( GL_COLOR_BUFFER_BIT );
-
-	// What is drawn, bottom first: the deck's layers (Session view) or the timeline's video tracks (Arrangement).
-	struct Source
-	{
-		Clip* clip;
-		Clip* outgoing; // fading out (a layer's transition)
-		float progress;
-		TransitionMode transition;
-		float opacity;
-		BlendMode blend;
-		EffectChain* effects;
-	};
+	// What is drawn, bottom first: the deck's layers (Session view) or the timeline's video tracks (Arrangement),
+	// each track into the composition or the canvas it is sent to.
 	std::vector< Source > sources;
+	std::map< std::string, std::vector< Source > > canvasSources;
 	auto ready = []( const Clip& clip ) { return clip.generator || ( clip.Loaded() && clip.player->HasFrame() ); };
+	auto isCanvas = [ & ]( const std::string& id ) {
+		return !id.empty() && std::any_of( canvases.begin(), canvases.end(), [ & ]( const CanvasSize& c ) { return c.id == id; } );
+	};
 	if( timelineView )
 	{
 		Timeline& timeline = composition.timeline;
@@ -457,7 +538,10 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame, bool 
 			// The clip's own blend; its opacity and transform (keyframed) are its fields.
 			int index = track.ClipAt( timeline.position );
 			if( index >= 0 && ready( track.clips[ index ].clip ) )
-				sources.push_back( { &track.clips[ index ].clip, nullptr, 1, TransitionMode::Fade, track.opacity, track.clips[ index ].blend, &track.effects } );
+			{
+				Source source{ &track.clips[ index ].clip, nullptr, 1, TransitionMode::Fade, track.opacity, track.clips[ index ].blend, &track.effects };
+				( isCanvas( track.output ) ? canvasSources[ track.output ] : sources ).push_back( source );
+			}
 		}
 	}
 	else
@@ -480,72 +564,39 @@ void Compositor::Render( Composition& composition, const FrameInfo& frame, bool 
 		}
 	}
 
-	float identity[ 9 ];
-	Identity( identity );
-	for( Source& source : sources )
-	{
-		Clip& clip = *source.clip;
-		if( source.outgoing )
-		{
-			// A transition: both clips, mixed into the layer.
-			if( !transitionFrom.Ensure( W, H ) || !transitionTo.Ensure( W, H ) )
-				continue;
-			DrawClipInto( *source.outgoing, transitionFrom, frame, W, H, false );
-			if( ready( clip ) )
-				DrawClipInto( clip, transitionTo, frame, W, H, false );
-			else
-			{
-				transitionTo.Bind();
-				glClearColor( 0, 0, 0, 0 );
-				glClear( GL_COLOR_BUFFER_BIT );
-			}
-			layerTarget.Bind();
-			glBindVertexArray( vao );
-			transitionProgram.Use();
-			glUniformMatrix3fv( transitionProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
-			SetTexRect( transitionProgram, 0, 1, 1, 0 );
-			glUniform1i( transitionProgram.Uniform( "uMode" ), (int)source.transition );
-			glUniform1f( transitionProgram.Uniform( "uProgress" ), source.progress );
-			glActiveTexture( GL_TEXTURE1 );
-			glBindTexture( GL_TEXTURE_2D, transitionTo.Texture() );
-			glActiveTexture( GL_TEXTURE0 );
-			glBindTexture( GL_TEXTURE_2D, transitionFrom.Texture() );
-			glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
-			ResetGlState();
-		}
-		else
-			DrawClipInto( clip, layerTarget, frame, W, H, false );
-		Fbo* layerResult = ApplyChain( *source.effects, &layerTarget, &layerScratch, frame );
-
-		mix[ 1 - current ].Bind();
-		glBindVertexArray( vao );
-		blendProgram.Use();
-		glUniformMatrix3fv( blendProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
-		SetTexRect( blendProgram, 0, 1, 1, 0 );
-		glUniform1i( blendProgram.Uniform( "uMode" ), (int)source.blend );
-		glUniform1f( blendProgram.Uniform( "uOpacity" ), source.opacity );
-		glActiveTexture( GL_TEXTURE1 );
-		glBindTexture( GL_TEXTURE_2D, layerResult->Texture() );
-		glActiveTexture( GL_TEXTURE0 );
-		glBindTexture( GL_TEXTURE_2D, mix[ current ].Texture() );
-		glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
-		ResetGlState();
-		current = 1 - current;
-	}
-
+	Work& work = WorkFor( W, H );
+	Fbo* mixed = Mix( sources, work, W, H, frame );
+	if( !mixed )
+		return;
 	// The composition's effects belong to the deck (Session view); the timeline is a show of its own, with effects
 	// on its clips, so they leave it alone (STLT-CHASER on the deck's composition would mask the timeline).
-	Fbo* result = timelineView ? &mix[ current ] : ApplyChain( composition.effects, &mix[ current ], &mix[ 1 - current ], frame );
+	Fbo* result = timelineView ? mixed : ApplyChain( composition.effects, mixed, mixed == &work.mix[ 0 ] ? &work.mix[ 1 ] : &work.mix[ 0 ], frame );
+	Finish( *result, final, composition );
 
-	final.Bind();
-	glBindVertexArray( vao );
-	copyProgram.Use();
-	glUniformMatrix3fv( copyProgram.Uniform( "uTransform" ), 1, GL_FALSE, identity );
-	SetTexRect( copyProgram, 0, 1, 1, 0 );
-	glUniform1f( copyProgram.Uniform( "uOpacity" ), composition.bypass ? 0.0f : std::clamp( composition.master, 0.0f, 1.0f ) );
-	glBindTexture( GL_TEXTURE_2D, result->Texture() );
-	glDrawArrays( GL_TRIANGLE_STRIP, 0, 4 );
-	ResetGlState();
+	// The canvases: their tracks, at their own sizes (black when nothing is sent to them).
+	for( const CanvasSize& c : canvases )
+	{
+		if( c.width <= 0 || c.height <= 0 )
+			continue;
+		std::unique_ptr< Fbo >& out = canvasFinal[ c.id ];
+		if( !out )
+			out = std::make_unique< Fbo >();
+		if( !out->Ensure( c.width, c.height ) )
+			continue;
+		std::vector< Source >& list = canvasSources[ c.id ];
+		Fbo* canvas                 = Mix( list, WorkFor( c.width, c.height ), c.width, c.height, frame );
+		if( canvas )
+			Finish( *canvas, *out, composition );
+	}
+	// Canvases gone from the setup free their pictures, and sizes no longer mixed their targets.
+	for( auto it = canvasFinal.begin(); it != canvasFinal.end(); )
+		it = std::any_of( canvases.begin(), canvases.end(), [ & ]( const CanvasSize& c ) { return c.id == it->first; } ) ? std::next( it ) : canvasFinal.erase( it );
+	for( auto it = works.begin(); it != works.end(); )
+	{
+		bool used = it->first == std::make_pair( W, H )
+		            || std::any_of( canvases.begin(), canvases.end(), [ & ]( const CanvasSize& c ) { return it->first == std::make_pair( c.width, c.height ); } );
+		it = used ? std::next( it ) : works.erase( it );
+	}
 	glBindFramebuffer( GL_FRAMEBUFFER, 0 );
 }
 

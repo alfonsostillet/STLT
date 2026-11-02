@@ -56,3 +56,12 @@ Correzioni già fatte e verificate dai test automatici, da provare sul PC vero p
 - [ ] **+ Polygon → Triangle, Rectangle, Pentagon, Hexagon, Octagon, Circle**: forme pronte da modificare.
 - [ ] Su un poligono già fatto: **doppio clic sul bordo** aggiunge un punto, oppure tasto destro sul bordo → *Add Point Here*; Canc toglie il punto selezionato. Nelle proprietà, *Points* dice quanti sono (il (?) spiega come).
 - [ ] Le forme concave (una stella, una L) devono riempirsi giuste, senza triangoli che escono.
+
+## Tracce su schermi diversi (nuovo, punto 9 proposta B)
+
+- [ ] Nella timeline, accanto al nome di ogni traccia video c'è una pastiglia (*Composition* all'inizio). Cliccala → **New Canvas for Screen 2** (con almeno due screen nell'Advanced Output): la traccia ora va solo sullo Screen 2, e non più sugli altri; lo Screen 2 mostra quello che va sulla sua tela.
+- [ ] Manda due tracce sulla stessa tela: si mescolano tra loro (blend e opacità delle tracce come al solito).
+- [ ] Nell'Advanced Output, slice per slice, **Source** sceglie Composition o una tela; con la scheda *Input Selection* vedi l'immagine della tela e scegli la parte da prendere (per esempio metà di una tela LED larga per ogni processore).
+- [ ] Il pallino colorato accanto alle slice nella lista ha lo stesso colore della pastiglia delle tracce che vanno lì.
+- [ ] Salva l'Advanced Output e il progetto, chiudi e riapri: tele, sorgenti delle slice e uscite delle tracce restano.
+- [ ] *Remove Canvas* rimanda slice e tracce alla composizione.
