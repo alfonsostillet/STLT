@@ -3,9 +3,9 @@ cmake_minimum_required(VERSION 3.20)
 # STLT: a live video player built around HAP, dockable panels, FFGL and ISF effects, a timeline and slice mapping.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15" CACHE STRING "Oldest macOS the app runs on")
 
-project(STLT VERSION 0.4.0 LANGUAGES C CXX)
-# The version shown in the app and given to plugins (a release's tag without the v: 0.4.0-beta.1).
-set(STLT_VERSION "0.4.0-beta.1" CACHE STRING "The version the app reports")
+project(STLT VERSION 1.0.0 LANGUAGES C CXX)
+# The version shown in the app and given to plugins (a release's tag without the v: 1.0.0).
+set(STLT_VERSION "1.0.0" CACHE STRING "The version the app reports")
 # Objective-C for Syphon and the macOS bits of the dependencies: enabled here, before any of them, or a
 # dependency enabling it in its own folder first would leave this one without the compile rules.
 if(APPLE)

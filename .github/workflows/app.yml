@@ -69,28 +69,39 @@ jobs:
 
       # STLT-CHASER (the chaser submodule): its effects and its editor, opened from Output > Chaser.
       - name: Build the STLT-CHASER effects
-        if: runner.os != 'macOS'
         run: |
           cmake -S chaser/plugin -B chaser/plugin/build -DCMAKE_BUILD_TYPE=Release
           cmake --build chaser/plugin/build --config Release --parallel
           cmake --install chaser/plugin/build --prefix chaser/plugin/dist --config Release
 
+      # A host finds a plugin through plugMain alone: a bundle without it would not load.
+      - name: Check the STLT-CHASER bundles export plugMain
+        if: runner.os == 'macOS'
+        run: |
+          shopt -s nullglob
+          bundles=(chaser/plugin/dist/*.bundle)
+          if [ ${#bundles[@]} -ne 3 ]; then echo "::error::Expected 3 plugin bundles, found ${#bundles[@]}"; exit 1; fi
+          for bundle in "${bundles[@]}"; do
+            binary="$bundle/Contents/MacOS/$(basename "$bundle" .bundle)"
+            nm -gU -arch arm64 "$binary" | grep -q " _plugMain$" || { echo "::error::$bundle does not export plugMain"; exit 1; }
+          done
+
       - uses: actions/setup-node@v4
-        if: runner.os != 'macOS'
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: chaser/editor/package-lock.json
 
       - name: Build the STLT-CHASER editor
-        if: runner.os != 'macOS'
         working-directory: chaser/editor
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
         run: |
           npm ci
           npm test
-          if [ "$RUNNER_OS" = "Windows" ]; then npx electron-builder --win dir --publish never; else npx electron-builder --linux dir --publish never; fi
+          if [ "$RUNNER_OS" = "Windows" ]; then npx electron-builder --win dir --publish never
+          elif [ "$RUNNER_OS" = "macOS" ]; then npx electron-builder --mac dir --publish never
+          else npx electron-builder --linux dir --publish never; fi
 
       # The folder people unpack: the program, the effects in plugins/, the editor in chaser/.
       - name: Pack
@@ -105,7 +116,21 @@ jobs:
             test -f package/STLT/chaser/STLT-CHASER.exe
             (cd package && 7z a -tzip -bd ../STLT-windows.zip STLT > /dev/null)
           elif [ "$RUNNER_OS" = "macOS" ]; then
-            ditto -c -k --keepParent app/build/STLT.app STLT-macos.zip
+            # Everything inside STLT.app: the effects in Resources/plugins, the editor in Resources/chaser (where
+            # the program looks for them). Then the whole app signed ad hoc (no Apple identity), inner code first,
+            # so Apple Silicon runs it and its parts agree.
+            APP=app/build/STLT.app
+            mkdir -p "$APP/Contents/Resources/plugins" "$APP/Contents/Resources/chaser"
+            cp -R chaser/plugin/dist/*.bundle "$APP/Contents/Resources/plugins/"
+            EDITOR=$(find chaser/editor/release -maxdepth 2 -name STLT-CHASER.app -type d | head -1)
+            test -n "$EDITOR"
+            ditto "$EDITOR" "$APP/Contents/Resources/chaser/STLT-CHASER.app"
+            test -x "$APP/Contents/Resources/chaser/STLT-CHASER.app/Contents/MacOS/STLT-CHASER"
+            codesign --force --deep --sign - "$APP/Contents/Resources/chaser/STLT-CHASER.app"
+            for bundle in "$APP"/Contents/Resources/plugins/*.bundle; do codesign --force --sign - "$bundle"; done
+            codesign --force --sign - "$APP"
+            codesign --verify --deep --verbose=2 "$APP"
+            ditto -c -k --keepParent "$APP" STLT-macos.zip
           else
             mkdir -p package/STLT/plugins
             cp app/build/stlt package/STLT/
