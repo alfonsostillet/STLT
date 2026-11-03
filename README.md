@@ -116,3 +116,7 @@ This project was also made possible by using [Claude](https://claude.ai), Anthro
 STLT is an independent project. It is not affiliated with or endorsed by Resolume or by the makers of any other product.
 
 GPL-3.0: see [LICENSE](LICENSE) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## About this version
+
+This is version 1.0, and it will surely be full of bugs. I wasn't even able to try the Mac version; what I know for sure is that the Windows one works. If anyone would like to send me feedback, I'd be glad to hear it: [open an issue](https://github.com/alfonsostillet/STLT/issues).

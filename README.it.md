@@ -116,3 +116,7 @@ Questo progetto è stato creato anche grazie all'utilizzo di [Claude](https://cl
 STLT è un progetto indipendente. Non è affiliato a Resolume né ai produttori di altri prodotti, né approvato da loro.
 
 GPL-3.0: vedi [LICENSE](LICENSE) e [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+## Su questa versione
+
+Questa è la versione 1.0 e sarà sicuramente piena di bug. Non sono riuscito nemmeno a provare la versione per Mac; so per certo che quella per Windows funziona. Se qualcuno volesse mandarmi un feedback ne sarei contento: [apri una segnalazione](https://github.com/alfonsostillet/STLT/issues).
