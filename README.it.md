@@ -82,7 +82,7 @@ La Timeline ha la sua **configurazione dell'Advanced Output**, separata da quell
 - **Movimento regolare**: l'orologio dei fotogrammi si aggancia all'aggiornamento del display, e il pannello Performance mostra i tempi di ogni layer.
 - **Annulla e ripeti** per tutto, anche per l'intero Advanced Output.
 
-Tutto il resto, dalle scorciatoie agli indirizzi OSC fino alla conversione delle clip in HAP, è nella **[guida completa](app/README.md)** (in inglese, con un riassunto in italiano).
+Tutto il resto, dalle scorciatoie agli indirizzi OSC fino alla conversione delle clip in HAP, è nella **[guida completa](app/README.md)** (in inglese).
 
 ## Installazione
 
@@ -114,7 +114,5 @@ STLT è gratuito. Se il progetto ti è piaciuto e vuoi sostenermi per i progetti
 Questo progetto è stato creato anche grazie all'utilizzo di [Claude](https://claude.ai), l'AI di Anthropic.
 
 STLT è un progetto indipendente. Non è affiliato a Resolume né ai produttori di altri prodotti, né approvato da loro.
-
-*STLT is an independent project. It is not affiliated with or endorsed by Resolume or by the makers of any other product.*
 
 GPL-3.0: vedi [LICENSE](LICENSE) e [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

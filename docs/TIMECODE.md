@@ -1,37 +1,37 @@
-# Timeline agganciata al timecode: i protocolli dei live
+# The timeline locked to timecode: the protocols used live
 
-Studio per il punto 11 della roadmap: la timeline (vista *Arrangement*) che segue un timecode esterno, come in uno show dove luci, audio e video partono dalla stessa sorgente.
+A study for point 11 of the roadmap: the timeline (the *Arrangement* view) following an external timecode, as in a show where lights, sound and video all start from the same source.
 
-## Cosa si usa davvero nei live
+## What is really used live
 
-| Protocollo | Come arriva | Chi lo manda di solito | Precisione | Note |
+| Protocol | How it arrives | Who usually sends it | Accuracy | Notes |
 |---|---|---|---|---|
-| **LTC** (SMPTE audio) | un canale audio (jack, XLR, scheda audio) | registratori, Ableton/Reaper/Logic/QLab con un plugin, console luci, playback di tour | al fotogramma, latenza minima | **Lo standard dei tour.** L'unico che Resolume Arena legge di suo (due ingressi, nelle preferenze Audio). |
-| **MTC** (MIDI Time Code) | MIDI (USB o rete: rtpMIDI, loopMIDI) | DAW (Ableton Live, Logic, Cubase, Reaper), QLab, console luci | ±1 fotogramma (un quarto di fotogramma alla volta) | Il più comodo se il playback è un computer: niente cavi audio. Resolume non lo legge (serve un convertitore verso LTC). |
-| **Art-Net Timecode** (ArtTimeCode) | rete Ethernet, UDP 6454 | console luci (grandMA, Chamsys, Avolites, Onyx), TouchDesigner, media server | al fotogramma | Comodo se c'è già la rete delle luci. Anche questo Resolume non lo legge. |
-| **Pro DJ Link** (Pioneer/AlphaTheta) | rete Ethernet dei CDJ | CDJ-2000NXS2, CDJ-3000, XDJ | posizione nel brano e beat | Proprietario. Pioneer lo concede in licenza (ArKaos, Green Hippo, Resolume, TC Supply) e lo esce con l'app gratuita **PRO DJ LINK Bridge**, che manda anche **Ableton Link**. |
-| OSC | rete | TouchDesigner, QLab, Max | dipende | Nessuno standard per il timecode: ognuno usa i suoi indirizzi. |
+| **LTC** (SMPTE audio) | an audio channel (jack, XLR, sound card) | recorders, Ableton/Reaper/Logic/QLab with a plugin, lighting desks, touring playback | to the frame, minimal latency | **The touring standard.** The only one Resolume Arena reads by itself (two inputs, in the Audio preferences). |
+| **MTC** (MIDI Time Code) | MIDI (USB or network: rtpMIDI, loopMIDI) | DAWs (Ableton Live, Logic, Cubase, Reaper), QLab, lighting desks | ±1 frame (a quarter frame at a time) | The handiest if the playback is a computer: no audio cables. Resolume does not read it (it needs a converter to LTC). |
+| **Art-Net Timecode** (ArtTimeCode) | Ethernet network, UDP 6454 | lighting desks (grandMA, Chamsys, Avolites, Onyx), TouchDesigner, media servers | to the frame | Handy if the lighting network is already there. Resolume does not read this one either. |
+| **Pro DJ Link** (Pioneer/AlphaTheta) | the CDJs' Ethernet network | CDJ-2000NXS2, CDJ-3000, XDJ | position in the track and beat | Proprietary. Pioneer licenses it (ArKaos, Green Hippo, Resolume, TC Supply) and sends it out through the free **PRO DJ LINK Bridge** app, which also sends **Ableton Link**. |
+| OSC | network | TouchDesigner, QLab, Max | depends | No standard for timecode: everyone uses their own addresses. |
 
-Fonti: [l'articolo di Resolume sul SMPTE](https://resolume.com/article/46), le richieste nel forum di Resolume per [MTC e Art-Net](https://resolume.com/forum/viewtopic.php?p=99115) e per [l'Art-Net timecode](https://www.resolume.com/forum/viewtopic.php?p=92024), [Pioneer sulle licenze Pro DJ Link](https://www.pioneerdj.com/en/news/2019/pro-dj-link-network-information-licensed-to-vfx-companies/) e [PRO DJ LINK Bridge](https://www.pioneerdj.com/en-gb/product/software/pro-dj-link-bridge/software/overview/).
+Sources: [Resolume's article on SMPTE](https://resolume.com/article/46), the requests on Resolume's forum for [MTC and Art-Net](https://resolume.com/forum/viewtopic.php?p=99115) and for [Art-Net timecode](https://www.resolume.com/forum/viewtopic.php?p=92024), [Pioneer on Pro DJ Link licensing](https://www.pioneerdj.com/en/news/2019/pro-dj-link-network-information-licensed-to-vfx-companies/) and [PRO DJ LINK Bridge](https://www.pioneerdj.com/en-gb/product/software/pro-dj-link-bridge/software/overview/).
 
-## Cosa facciamo
+## What we do
 
-1. **LTC, MTC e Art-Net Timecode, tutti e tre**: STLT legge direttamente quello che Resolume legge solo con un convertitore (MTC, Art-Net). Così con un DAW basta un cavo MIDI virtuale, con le luci basta la rete.
-2. **Pro DJ Link: attraverso Ableton Link.** Il protocollo è proprietario e il modo pulito è PRO DJ LINK Bridge (gratuito, di Pioneer), che manda il tempo e la battuta dei CDJ come Ableton Link: STLT ora lo segue (pulsante LINK). La posizione nel brano dei CDJ (per agganciare la timeline a un brano preciso) richiederebbe di fare da "CDJ virtuale" sulla rete Pioneer, cosa che solo le aziende con licenza fanno ufficialmente: per ora no.
+1. **LTC, MTC and Art-Net Timecode, all three**: STLT reads directly what Resolume reads only through a converter (MTC, Art-Net). So with a DAW a virtual MIDI cable is enough, and with lights the network is enough.
+2. **Pro DJ Link: through Ableton Link.** The protocol is proprietary and the clean way is PRO DJ LINK Bridge (free, from Pioneer), which sends the CDJs' tempo and bar as Ableton Link: STLT now follows it (the LINK button). The CDJs' position in the track (to lock the timeline to a specific track) would mean acting as a "virtual CDJ" on the Pioneer network, which officially only licensed companies do: not for now.
 
-## Come funziona per chi lo usa
+## How it works for the user
 
-- **Preferences → Sync → Timecode**: la sorgente (Off, LTC, MTC, Art-Net), e per ciascuna da dove: per LTC l'ingresso audio e il canale (sinistro o destro), per MTC l'ingresso MIDI, per Art-Net la porta e l'universo di rete (stream).
-- Il **frame rate** si riconosce da solo (24, 25, 29.97 drop frame, 30) e si vede accanto al timecode.
-- Sulla timeline, accanto al tempo, il timecode che arriva e la spia **TC** (verde quando la timeline lo segue).
-- **Start**: quale timecode corrisponde all'inizio della timeline (per esempio 01:00:00:00, come spesso negli show). Pulsante per prendere quello che arriva in quel momento.
-- **La timeline segue**: quando il timecode scorre la timeline suona alla sua posizione; quando si ferma la timeline si ferma; quando salta (il fonico torna indietro) la timeline salta. Piccole differenze si recuperano senza scatti, quelle grandi con un salto.
-- **Freewheel**: se il segnale si interrompe per un attimo (un cavo, un pacchetto perso), la timeline va avanti da sola per un tempo che si sceglie (per esempio mezzo secondo) prima di fermarsi.
-- **Delay** (quello già in *Preferences → Sync*): compensa il ritardo del proiettore o del LED anche per il timecode.
+- **Preferences → Sync → Timecode**: the source (Off, LTC, MTC, Art-Net) and, for each, where it comes from: for LTC the audio input and the channel (left or right), for MTC the MIDI input, for Art-Net the network port and universe (stream).
+- The **frame rate** is recognised by itself (24, 25, 29.97 drop frame, 30) and shows next to the timecode.
+- On the timeline, next to the time, the incoming timecode and the **TC** light (green when the timeline is following it).
+- **Start**: which timecode matches the start of the timeline (for example 01:00:00:00, as often in shows). A button takes the one arriving at that moment.
+- **The timeline follows**: when the timecode runs the timeline plays at its position; when it stops the timeline stops; when it jumps (the sound engineer goes back) the timeline jumps. Small differences are caught up without jerks, large ones with a jump.
+- **Freewheel**: if the signal drops for a moment (a cable, a lost packet), the timeline goes on by itself for a time you choose (for example half a second) before stopping.
+- **Delay** (the one already in *Preferences → Sync*): compensates for the projector's or LED wall's delay for the timecode too.
 
-## Come è fatto dentro
+## How it is made inside
 
-- **LTC**: decodifica del segnale bifase (80 bit a fotogramma, parola di sincronismo 0x3FFD) dall'ingresso audio già usato per far seguire il suono ai parametri. Scritto da noi, con i test che generano LTC e lo rileggono anche con rumore e volume basso.
-- **MTC**: quarter frame (F1) e full frame (SysEx F0 7F 7F 01 01), dagli ingressi MIDI come già il MIDI clock. Il quarter frame completa il tempo ogni due fotogrammi: si aggiungono i due fotogrammi di ritardo.
-- **Art-Net**: pacchetti ArtTimeCode (OpCode 0x9700) in UDP sulla porta 6454.
-- Un unico **Timecode**: il tempo che arriva, quando è arrivato, il frame rate, se scorre; la timeline lo segue come oggi la composizione segue Link e il MIDI clock.
+- **LTC**: decoding of the biphase signal (80 bits per frame, sync word 0x3FFD) from the audio input already used for parameters that follow the sound. Written by us, with tests that generate LTC and read it back, also with noise and at low volume.
+- **MTC**: quarter frames (F1) and full frames (SysEx F0 7F 7F 01 01), from the MIDI inputs, like the MIDI clock. A quarter-frame sequence completes the time every two frames: the two frames of delay are added.
+- **Art-Net**: ArtTimeCode packets (OpCode 0x9700) over UDP on port 6454.
+- A single **Timecode**: the time arriving, when it arrived, the frame rate, whether it is running; the timeline follows it as the composition follows Link and the MIDI clock today.
