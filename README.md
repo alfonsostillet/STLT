@@ -23,7 +23,7 @@ Switch between them with the two icons at the top right (or the Tab key). Each o
 - **A/B crossfader**, and on every layer blend modes, separate master, audio and video faders, speed, bypass and solo.
 - **Your own workspace**: every panel can be moved, docked, tabbed, split or pulled out as a window onto another monitor. Layouts are saved by name.
 - **Control over everything**: effect chains on the composition, on a layer or on a single clip, each with its own mix.
-- **Lots of effects**: built-in effects and sources, about 200 ISF shaders, and FFGL 2 plugins, including the ones in Resolume's *Extra Effects* folder.
+- **Lots of effects**: built-in effects and sources, about 200 ISF shaders, and FFGL 2 plugins.
 - **Animate any parameter**: to the BPM, over a time in seconds, or following the sound coming in (level, bass, mid, treble).
 - **Multiview monitor**: see the composition, all the screens side by side, a single screen or a single layer. A separate Preview Monitor plays a clip before it goes out.
 - **Clips**: in and out points, 8 cue points, BPM Sync, Normal, Toggle and Piano triggers, transitions, launching on the next beat or bar, and sound in step with the picture.

@@ -23,7 +23,7 @@ Si passa dall'una all'altra con le due icone in alto a destra (o col tasto Tab).
 - **Crossfader A/B** e, su ogni layer, blend mode, fader separati per master, audio e video, velocità, bypass e solo.
 - **Il tuo spazio di lavoro**: ogni pannello si sposta, si aggancia, si mette a schede, si divide o diventa una finestra su un altro monitor. Le disposizioni si salvano con un nome.
 - **Controllo su tutto**: catene di effetti sulla composizione, su un layer o su una singola clip, ognuno con il suo mix.
-- **Una moltitudine di effetti**: effetti e sorgenti integrati, circa 200 shader ISF e plugin FFGL 2, compresi quelli della cartella *Extra Effects* di Resolume.
+- **Una moltitudine di effetti**: effetti e sorgenti integrati, circa 200 shader ISF e plugin FFGL 2.
 - **Qualsiasi parametro si anima**: a tempo di BPM, su una durata in secondi o seguendo il suono in ingresso (livello, bassi, medi, alti).
 - **Monitor multiview**: la composizione, tutti gli schermi affiancati, un solo schermo o un solo layer. Un Preview Monitor a parte fa vedere una clip prima di mandarla in uscita.
 - **Clip**: punti di in e out, 8 cue point, BPM Sync, trigger Normal, Toggle e Piano, transizioni, lancio al prossimo beat o alla prossima battuta, audio a tempo con l'immagine.
