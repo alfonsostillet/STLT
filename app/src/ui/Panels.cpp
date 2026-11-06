@@ -1581,14 +1581,23 @@ static void DrawDeck( App& app, bool layersPart )
 			// The layer's speed; the playing clip's loop mode, timing, direction and position.
 			{
 				float rowGap = Ui( 3 );
-				BoxButton( "##speedLabel", ImVec2( xTr, y ), ImVec2( rowH, rowH ), "S", false, theme::Accent, tip( "Layer speed" ) );
+				// The layer's speed, or (a preference) the playing clip's own, as in Resolume.
+				bool clipSpeed = app.prefs.layerSpeedIsClipSpeed;
+				BoxButton( "##speedLabel", ImVec2( xTr, y ), ImVec2( rowH, rowH ), "S", false, theme::Accent, tip( clipSpeed ? "Clip speed" : "Layer speed" ) );
 				ImGui::SetCursorScreenPos( ImVec2( xTr + rowH + Ui( 2 ), y ) );
 				ImGui::SetNextItemWidth( wTransport - rowH - Ui( 2 ) );
-				FilledSlider( "##speed", &layer.speed, 0.0f, 4.0f, "%.2fx" );
-				ResetValue( &layer.speed, 1.0f );
+				float noClip  = 1.0f;
+				float* speed  = clipSpeed ? ( playing ? &playing->speed : &noClip ) : &layer.speed;
+				bool synced   = clipSpeed && playing && playing->syncBeats > 0; // BPM Sync: the beats set its pace
+				ImGui::BeginDisabled( clipSpeed && ( !playing || synced ) );
+				FilledSlider( "##speed", speed, 0.0f, 4.0f, "%.2fx" );
+				ResetValue( speed, 1.0f );
+				ImGui::EndDisabled();
 				MapTarget( app, layerAddress + "/speed" );
-				if( ImGui::IsItemHovered() && !learning )
-					ImGui::SetTooltip( "Layer speed: times the clip's own (right-click: 1x)" );
+				if( ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenDisabled ) && !learning )
+					ImGui::SetTooltip( "%s", !clipSpeed ? "Layer speed: times the clip's own (right-click: 1x)"
+					                         : synced   ? "Clip speed: this clip follows BPM Sync, its beats set the pace"
+					                                    : "Clip speed: the clip playing on this layer (right-click: 1x)" );
 
 				ImGui::BeginDisabled( !playing || !playing->Loaded() );
 				float half = ( wTransport - Ui( 2 ) ) / 2, y2 = y + rowH + rowGap;

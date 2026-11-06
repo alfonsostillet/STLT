@@ -1698,7 +1698,12 @@ bool App::ApplyControl( const std::string& address, bool hasValue, float value, 
 		return layerOk;
 	case Kind::LayerSpeed:
 		if( layerOk )
-			composition.layers[ t.layer ].speed = unit * 4;
+		{
+			if( !prefs.layerSpeedIsClipSpeed )
+				composition.layers[ t.layer ].speed = unit * 4;
+			else if( Clip* clip = composition.ActiveClip( t.layer ) ) // the clip playing, as the header's fader
+				clip->speed = unit * 4;
+		}
 		return layerOk;
 	case Kind::LayerNextClip:
 	case Kind::LayerPrevClip:

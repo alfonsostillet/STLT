@@ -103,6 +103,22 @@ bool General( App& app )
 			}
 		ImGui::EndCombo();
 	}
+	Caption( "Speed fader (S) in a layer's header" );
+	ImGui::SetNextItemWidth( Ui( 340 ) );
+	const char* speeds[] = { "The layer's speed (times the clip's own)", "The speed of the clip playing on the layer" };
+	if( ImGui::BeginCombo( "##layerSpeed", speeds[ p.layerSpeedIsClipSpeed ? 1 : 0 ] ) )
+	{
+		for( int s = 0; s < 2; ++s )
+			if( ImGui::Selectable( speeds[ s ], p.layerSpeedIsClipSpeed == ( s == 1 ) ) )
+			{
+				p.layerSpeedIsClipSpeed = s == 1;
+				changed                 = true;
+			}
+		ImGui::EndCombo();
+	}
+	Help( "The layer's speed multiplies the speed of every clip played on it, and stays when the clip changes. The clip's "
+	      "speed belongs to the clip: each clip keeps its own, and the fader shows the one playing. The "
+	      "fader's MIDI and OSC follow the same choice; the Layer panel always has the layer's speed." );
 	Caption( "Settings folder" );
 	ImGui::TextDisabled( "%s", app.configDir.c_str() );
 	Help( "Preferences, shortcuts and their presets, workspaces, output presets and the last session are kept here." );

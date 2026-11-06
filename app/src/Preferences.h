@@ -11,6 +11,9 @@ struct Preferences
 	// General.
 	bool reopenLastSession = true; // the last composition comes back at start
 	int startView          = 0;    // 0: the view in use when the app closed, 1: Session, 2: Arrangement
+	// The S fader in a layer's header (and its MIDI/OSC): false sets the layer's speed, which multiplies the clip's own;
+	// true sets the speed of the clip playing on the layer, as in Resolume.
+	bool layerSpeedIsClipSpeed = false;
 
 	// Audio.
 	std::string audioDevice; // empty: the system's default
