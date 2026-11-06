@@ -2250,7 +2250,7 @@ void DrawCompositionPanel( App& app )
 		}
 		ParamLabel( "Custom" );
 		int size[ 2 ] = { comp.width, comp.height };
-		if( ImGui::InputInt2( "##custom", size, ImGuiInputTextFlags_EnterReturnsTrue ) )
+		if( CommittedInputInts( "##custom", size, 2 ) )
 		{
 			comp.width  = std::clamp( size[ 0 ], 16, 16384 );
 			comp.height = std::clamp( size[ 1 ], 16, 16384 );

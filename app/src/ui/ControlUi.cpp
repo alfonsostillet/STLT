@@ -6,6 +6,7 @@
 #include "Settings.h"
 #include "ui/FileDialogs.h"
 #include "ui/Theme.h"
+#include "ui/Widgets.h"
 #include "ui/Workspaces.h"
 
 namespace stltvj
@@ -137,7 +138,7 @@ bool DrawOscSettings( App& app )
 	ImGui::SameLine();
 	ImGui::SetNextItemWidth( Ui( 90 ) );
 	int port = c.oscPort;
-	if( ImGui::InputInt( "UDP port", &port, 0, 0, ImGuiInputTextFlags_EnterReturnsTrue ) )
+	if( CommittedInputInts( "UDP port", &port, 1 ) )
 	{
 		c.oscPort = std::clamp( port, 1, 65535 );
 		changed   = true;

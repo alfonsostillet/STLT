@@ -47,4 +47,25 @@ bool ResetValue( float* value, float reset )
 	*value = reset;
 	return true;
 }
+
+bool CommittedInputInts( const char* label, int* values, int count )
+{
+	// While the fields are in use they edit a copy, which keeps what is typed across frames; it is handed over when
+	// the fields let go after an edit. One copy is enough: only one field can be in use at a time.
+	static ImGuiID editing = 0;
+	static int typed[ 4 ];
+	count            = std::clamp( count, 1, 4 );
+	const ImGuiID id = ImGui::GetID( label );
+	if( editing != id )
+		std::copy( values, values + count, typed );
+	ImGui::InputScalarN( label, ImGuiDataType_S32, typed, count, nullptr, nullptr, "%d" );
+	if( ImGui::IsItemActive() )
+		editing = id;
+	else if( editing == id )
+		editing = 0;
+	if( !ImGui::IsItemDeactivatedAfterEdit() || std::equal( typed, typed + count, values ) )
+		return false;
+	std::copy( typed, typed + count, values );
+	return true;
+}
 }

@@ -1366,7 +1366,7 @@ void DrawScreenProps( App& app, Screen& screen )
 		ImGui::TextDisabled( "%s", app.EditedRenderer().DeviceStatus( (size_t)editor.screen ).c_str() );
 	Row( "Size" );
 	int size[ 2 ] = { screen.width, screen.height };
-	if( ImGui::InputInt2( "##size", size, ImGuiInputTextFlags_EnterReturnsTrue ) )
+	if( CommittedInputInts( "##size", size, 2 ) )
 	{
 		screen.width  = std::clamp( size[ 0 ], 16, 16384 );
 		screen.height = std::clamp( size[ 1 ], 16, 16384 );

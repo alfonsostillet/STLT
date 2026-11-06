@@ -10,4 +10,8 @@ bool FilledSlider( const char* label, float* value, float min, float max, const 
 // A right-click or double-click on the last item puts `value` back to its default, as in Resolume. Returns
 // whether it did.
 bool ResetValue( float* value, float reset );
+// One to four whole numbers typed in fields side by side, given to `values` only once the typing is done (Enter, Tab
+// out of the fields or a click elsewhere), not at every key: what EnterReturnsTrue did before ImGui stopped allowing
+// it on number fields. Returns whether `values` changed.
+bool CommittedInputInts( const char* label, int* values, int count );
 }
