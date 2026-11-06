@@ -19,7 +19,7 @@ jobs:
         include:
           - os: windows-2022
             artifact: windows
-          - os: macos-14
+          - os: macos-15 # Apple Silicon; macos-14 jobs have been cancelled before starting since 5 November 2026
             artifact: macos
           - os: ubuntu-24.04
             artifact: linux
@@ -148,8 +148,10 @@ jobs:
       # to a copy of the program (never in the package).
       - name: Smoke test (Windows, software OpenGL)
         if: runner.os == 'Windows'
+        # Mesa pinned to a release that works: 26.2.6 (3 November 2026) gives no OpenGL here, and "latest" would
+        # break the test again the day a new one comes out. Move the pin by hand after trying a newer one.
         run: |
-          curl -sSL https://api.github.com/repos/pal1000/mesa-dist-win/releases/latest -o mesa.json
+          curl -sSL https://api.github.com/repos/pal1000/mesa-dist-win/releases/tags/26.2.5 -o mesa.json
           URL=$(python -c "import json; d = json.load(open('mesa.json')); print(next(a['browser_download_url'] for a in d['assets'] if a['name'].endswith('release-msvc.7z')))")
           curl -sSL "$URL" -o mesa.7z
           7z x -y -omesa mesa.7z > /dev/null
