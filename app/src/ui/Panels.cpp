@@ -321,26 +321,36 @@ static void DrawClipMenu( App& app )
 	static std::string renameText;
 	ImGui::TextDisabled( "%s", clip ? clip->name.c_str() : "No clip selected" );
 	ImGui::BeginDisabled( !clip );
-	if( ImGui::BeginMenu( "Transport" ) && clip )
+	// A disabled menu still opens on hover: EndMenu each one that opened, and fill it only with a clip.
+	if( ImGui::BeginMenu( "Transport" ) )
 	{
-		if( ImGui::MenuItem( "Timeline", nullptr, clip->syncBeats <= 0 ) )
-			SetBpmSync( *clip, false, comp.bpm );
-		if( ImGui::MenuItem( "BPM Sync", nullptr, clip->syncBeats > 0 ) )
-			SetBpmSync( *clip, true, comp.bpm );
+		if( clip )
+		{
+			if( ImGui::MenuItem( "Timeline", nullptr, clip->syncBeats <= 0 ) )
+				SetBpmSync( *clip, false, comp.bpm );
+			if( ImGui::MenuItem( "BPM Sync", nullptr, clip->syncBeats > 0 ) )
+				SetBpmSync( *clip, true, comp.bpm );
+		}
 		ImGui::EndMenu();
 	}
-	if( ImGui::BeginMenu( "Play Mode" ) && clip )
+	if( ImGui::BeginMenu( "Play Mode" ) )
 	{
-		for( int m = 0; m < (int)PlayMode::Count; ++m )
-			if( ImGui::MenuItem( PlayModeName( (PlayMode)m ), nullptr, (int)clip->playMode == m ) )
-				clip->playMode = (PlayMode)m;
+		if( clip )
+		{
+			for( int m = 0; m < (int)PlayMode::Count; ++m )
+				if( ImGui::MenuItem( PlayModeName( (PlayMode)m ), nullptr, (int)clip->playMode == m ) )
+					clip->playMode = (PlayMode)m;
+		}
 		ImGui::EndMenu();
 	}
-	if( ImGui::BeginMenu( "Trigger Style" ) && clip )
+	if( ImGui::BeginMenu( "Trigger Style" ) )
 	{
-		for( int s = 0; s < (int)TriggerStyle::Count; ++s )
-			if( ImGui::MenuItem( TriggerStyleName( (TriggerStyle)s ), nullptr, (int)clip->trigger == s ) )
-				clip->trigger = (TriggerStyle)s;
+		if( clip )
+		{
+			for( int s = 0; s < (int)TriggerStyle::Count; ++s )
+				if( ImGui::MenuItem( TriggerStyleName( (TriggerStyle)s ), nullptr, (int)clip->trigger == s ) )
+					clip->trigger = (TriggerStyle)s;
+		}
 		ImGui::EndMenu();
 	}
 	if( clip )
@@ -348,11 +358,14 @@ static void DrawClipMenu( App& app )
 	else
 		ImGui::MenuItem( "Ignore Column Trigger" );
 	const std::pair< FitMode, const char* > sizes[] = { { FitMode::Fill, "Fill" }, { FitMode::Fit, "Fit" }, { FitMode::Stretch, "Stretch" }, { FitMode::Native, "Original" } };
-	if( ImGui::BeginMenu( "Resize" ) && clip )
+	if( ImGui::BeginMenu( "Resize" ) )
 	{
-		for( auto [ fit, name ] : sizes )
-			if( ImGui::MenuItem( name, nullptr, clip->fit == fit ) )
-				clip->fit = fit;
+		if( clip )
+		{
+			for( auto [ fit, name ] : sizes )
+				if( ImGui::MenuItem( name, nullptr, clip->fit == fit ) )
+					clip->fit = fit;
+		}
 		ImGui::EndMenu();
 	}
 	ImGui::Separator();
@@ -371,18 +384,21 @@ static void DrawClipMenu( App& app )
 	if( ImGui::MenuItem( "Paste Effects", nullptr, false, clip && app.HasClipboardEffects() ) )
 		app.PasteEffects();
 	ImGui::BeginDisabled( !clip );
-	if( ImGui::BeginMenu( "Rename" ) && clip )
+	if( ImGui::BeginMenu( "Rename" ) )
 	{
-		if( ImGui::IsWindowAppearing() )
+		if( clip )
 		{
-			renameText = clip->name;
-			ImGui::SetKeyboardFocusHere();
-		}
-		ImGui::SetNextItemWidth( Ui( 200 ) );
-		if( ImGui::InputText( "##rename", &renameText, ImGuiInputTextFlags_EnterReturnsTrue ) && !renameText.empty() )
-		{
-			clip->name = renameText;
-			ImGui::CloseCurrentPopup();
+			if( ImGui::IsWindowAppearing() )
+			{
+				renameText = clip->name;
+				ImGui::SetKeyboardFocusHere();
+			}
+			ImGui::SetNextItemWidth( Ui( 200 ) );
+			if( ImGui::InputText( "##rename", &renameText, ImGuiInputTextFlags_EnterReturnsTrue ) && !renameText.empty() )
+			{
+				clip->name = renameText;
+				ImGui::CloseCurrentPopup();
+			}
 		}
 		ImGui::EndMenu();
 	}
