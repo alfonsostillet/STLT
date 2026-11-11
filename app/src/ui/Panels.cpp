@@ -1535,16 +1535,29 @@ static void DrawDeck( App& app, bool layersPart )
 			draw->AddText( ImVec2( xX + Ui( 6 ), yName + ( nameH - ImGui::GetTextLineHeight() ) / 2 ), selectedLayer ? theme::OnAccent : theme::Text, layer.name.c_str() );
 			ImGui::PopFont();
 
-			// Faders: master (video and sound), audio, video; the crossfader group under them.
-			float fw = ( wFaders - 2 * Ui( 2 ) ) / 3;
-			VerticalFader( "##master", ImVec2( xF, y ), ImVec2( fw, upH ), &layer.master, "M", IM_COL32( 96, 102, 114, 255 ), "Master (video and sound)", learning );
-			MapTarget( app, layerAddress + "/master" );
-			VerticalFader( "##audio", ImVec2( xF + fw + Ui( 2 ), y ), ImVec2( fw, upH ), &layer.volume, "A", IM_COL32( 168, 74, 116, 255 ), "Audio", learning );
-			MapTarget( app, layerAddress + "/audio/volume" );
-			float shownOpacity = layer.ShownOpacity( comp.beat ); // moving with the beat: shown, not edited
-			VerticalFader( "##video", ImVec2( xF + 2 * ( fw + Ui( 2 ) ), y ), ImVec2( fw, upH ), layer.opacityAnimation.mode == AnimMode::Off ? &layer.opacity : &shownOpacity, "V",
-			               IM_COL32( 44, 138, 112, 255 ), "Video", learning );
-			MapTarget( app, layerAddress + "/video/opacity" );
+			// Faders: master (video and sound), audio, video, the first two hidden by a preference; the crossfader group under them.
+			{
+				bool showMaster = app.prefs.showLayerMasterFader, showAudio = app.prefs.showLayerAudioFader;
+				int faders      = 1 + ( showMaster ? 1 : 0 ) + ( showAudio ? 1 : 0 );
+				float fw        = ( wFaders - ( faders - 1 ) * Ui( 2 ) ) / faders;
+				float xFader    = xF;
+				if( showMaster )
+				{
+					VerticalFader( "##master", ImVec2( xFader, y ), ImVec2( fw, upH ), &layer.master, "M", IM_COL32( 96, 102, 114, 255 ), "Master (video and sound)", learning );
+					MapTarget( app, layerAddress + "/master" );
+					xFader += fw + Ui( 2 );
+				}
+				if( showAudio )
+				{
+					VerticalFader( "##audio", ImVec2( xFader, y ), ImVec2( fw, upH ), &layer.volume, "A", IM_COL32( 168, 74, 116, 255 ), "Audio", learning );
+					MapTarget( app, layerAddress + "/audio/volume" );
+					xFader += fw + Ui( 2 );
+				}
+				float shownOpacity = layer.ShownOpacity( comp.beat ); // moving with the beat: shown, not edited
+				VerticalFader( "##video", ImVec2( xFader, y ), ImVec2( fw, upH ), layer.opacityAnimation.mode == AnimMode::Off ? &layer.opacity : &shownOpacity, "V",
+				               IM_COL32( 44, 138, 112, 255 ), "Video", learning );
+				MapTarget( app, layerAddress + "/video/opacity" );
+			}
 			float groupW = ( wFaders - colGap ) / 2;
 			if( BoxButton( "##groupA", ImVec2( xF, yName ), ImVec2( groupW, nameH ), "A", layer.crossfader == 1, IM_COL32( 214, 120, 160, 255 ), tip( "Crossfader group A" ) ) )
 				layer.crossfader = layer.crossfader == 1 ? 0 : 1;
