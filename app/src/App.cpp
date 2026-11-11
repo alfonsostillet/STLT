@@ -201,7 +201,8 @@ bool App::Init( const LaunchOptions& launch )
 #ifdef __APPLE__
 	scaleX = 1; // macOS scales the framebuffer itself
 #endif
-	ApplyTheme( std::max( 1.0f, scaleX ) );
+	displayScale = std::max( 1.0f, scaleX );
+	ApplyUiScale();
 	ImGui_ImplGlfw_InitForOpenGL( window, true );
 	ImGui_ImplOpenGL3_Init( "#version 410" );
 
@@ -1517,7 +1518,7 @@ bool MappableKey( ImGuiKey key, bool ctrl, bool shift, bool alt )
 	    || ( key >= ImGuiKey_LeftCtrl && key <= ImGuiKey_RightSuper ) || ( key == ImGuiKey_Space && !ctrl && !shift && !alt ) )
 		return false;
 	if( ctrl )
-		for( ImGuiKey own : { ImGuiKey_Z, ImGuiKey_Y, ImGuiKey_S, ImGuiKey_O, ImGuiKey_I, ImGuiKey_M, ImGuiKey_K, ImGuiKey_C, ImGuiKey_X, ImGuiKey_V, ImGuiKey_D, ImGuiKey_E, ImGuiKey_Comma } )
+		for( ImGuiKey own : { ImGuiKey_Z, ImGuiKey_Y, ImGuiKey_S, ImGuiKey_O, ImGuiKey_I, ImGuiKey_M, ImGuiKey_K, ImGuiKey_C, ImGuiKey_X, ImGuiKey_V, ImGuiKey_D, ImGuiKey_E, ImGuiKey_Comma, ImGuiKey_Equal, ImGuiKey_Minus, ImGuiKey_0, ImGuiKey_KeypadAdd, ImGuiKey_KeypadSubtract, ImGuiKey_Keypad0 } )
 			if( key == own )
 				return false;
 	return !( ctrl && shift && key == ImGuiKey_A );
@@ -2599,6 +2600,38 @@ void App::UpdatePreview( double dt )
 	wanted->Update( selected->FrameFor( step, composition.bpm ), composition.paused ? 0 : selected->PlayDirection() );
 }
 
+void App::ZoomInterface( int step )
+{
+	SetInterfaceScale( step == 0 ? 1.0f : std::round( prefs.interfaceScale * 10 + step ) / 10 );
+}
+
+void App::SetInterfaceScale( float scale )
+{
+	scale = std::clamp( scale, kMinInterfaceScale, kMaxInterfaceScale );
+	zoomShownUntil = glfwGetTime() + 1.2;
+	if( scale == prefs.interfaceScale )
+		return;
+	prefs.interfaceScale = scale;
+	SavePreferences();
+}
+
+// Between frames (the font atlas is free): the fonts and the style at the interface's size. After a zoom the
+// panels' fixed sizes grow or shrink with it.
+void App::ApplyUiScale()
+{
+	float scale = displayScale * prefs.interfaceScale;
+	if( std::abs( scale - appliedUiScale ) < 1e-4f )
+		return;
+	bool first     = appliedUiScale == 0;
+	float ratio    = first ? 1.0f : scale / appliedUiScale;
+	appliedUiScale = scale;
+	ApplyTheme( scale );
+	if( first )
+		return;
+	ImGui_ImplOpenGL3_DestroyFontsTexture(); // made again, from the new fonts, by the next NewFrame
+	workspaces.Rescale( ratio );
+}
+
 void App::Frame()
 {
 	if( startViewPending > 0 && ImGui::GetFrameCount() > 2 )
@@ -2677,6 +2710,7 @@ void App::Frame()
 	if( !dialogError.empty() )
 		SetStatus( "File dialog: " + dialogError + " (Composition > Type a Path works without it)", true );
 
+	ApplyUiScale();
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
 	ImGui::NewFrame();
@@ -2786,6 +2820,8 @@ void App::DrawUi()
 	ImVec2 dockSize    = ImGui::GetContentRegionAvail();
 	dockSize.y -= statusHeight;
 	ImGuiID dockspace = ImGui::GetID( "MainDock" );
+	workspaces.ApplyRescale();
+	workspaces.deckLayers = (int)composition.layers.size();
 	workspaces.BuildDefaultIfNeeded( dockspace, dockSize );
 	// No close button at the right of each tab bar: a panel's own tab closes it (its X shows on the chosen tab).
 	ImGui::DockSpace( dockspace, dockSize, (ImGuiDockNodeFlags)ImGuiDockNodeFlags_NoCloseButton );

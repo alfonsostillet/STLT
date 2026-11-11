@@ -66,8 +66,15 @@ public:
 	void SetView( int v ) { view = v; }
 	// Call inside the frame with the main dock space: lays out the default workspace when needed.
 	void BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size );
+	// The interface was zoomed by `ratio`: floating panels grow or shrink with it, and the deck (Layers and Clips) fits its
+	// headers and layers again; the other docked panels keep their share of the window.
+	void Rescale( float ratio );
+	int deckLayers = 4; // the default layout makes the deck as high as these many layers need
+	// Call inside the frame, before the dock space: follows a zoom asked for with Rescale.
+	void ApplyRescale();
 
 private:
+	void FitDeck();
 	std::string PathFor( const std::string& name ) const;
 
 	std::string directory;
@@ -77,5 +84,6 @@ private:
 	bool pendingDefault = false;
 	int view            = 0;
 	bool buildDefault   = false;
+	float rescale       = 1; // a zoom to follow, at the next BuildDefaultIfNeeded
 };
 }

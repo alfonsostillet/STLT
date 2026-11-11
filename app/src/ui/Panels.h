@@ -29,6 +29,23 @@ enum class Icon
 	Close,
 	Previous, // |<
 	Next,     // >|
+	Eye,      // shown (black off)
+	EyeOff,   // black: not shown
+	Loop,
+	Bounce,
+	Hold,      // play once and hold the last frame
+	OnceClear, // play once and clear
+	Clock,     // timeline timing; waiting for the beat
+	Note,      // BPM sync
+	CaretDown,
+	Plus,
+	Grid,  // the Session view
+	Lines, // the Arrangement view
 };
 bool IconButton( const char* id, Icon icon, bool active = false, float size = 0 );
+
+// The deck's size, for the default layout: the Layers panel's width, and the height of both deck panels with this
+// many layers.
+float LayersPanelWidth();
+float DeckPanelsHeight( int layers );
 }

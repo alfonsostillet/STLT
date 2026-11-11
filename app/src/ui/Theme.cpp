@@ -36,7 +36,7 @@ ImFont* AddFont( const unsigned char* data, size_t size, float pixels )
 	config.OversampleH          = 2;
 	config.OversampleV          = 1;
 	config.PixelSnapH           = false;
-	static const ImWchar ranges[] = { 0x0020, 0x00FF, 0x0100, 0x017F, 0x2010, 0x203A, 0x2190, 0x2193, 0x2212, 0x2212, 0x20AC, 0x20AC, 0x25B2, 0x25C4, 0 };
+	static const ImWchar ranges[] = { 0x0020, 0x00FF, 0x0100, 0x017F, 0x2010, 0x203A, 0x2190, 0x2193, 0x2212, 0x2212, 0x221E, 0x221E, 0x20AC, 0x20AC, 0x25B2, 0x25C4, 0 };
 	return ImGui::GetIO().Fonts->AddFontFromMemoryTTF( (void*)data, (int)size, pixels, &config, ranges );
 }
 }
@@ -51,36 +51,36 @@ void ApplyTheme( float scale )
 	ImGuiStyle& style = ImGui::GetStyle();
 	style             = ImGuiStyle();
 
-	// Room to breathe, soft corners, hairline borders.
-	style.WindowPadding            = ImVec2( 10, 8 );
-	style.FramePadding             = ImVec2( 8, 5 );
-	style.ItemSpacing              = ImVec2( 8, 6 );
-	style.ItemInnerSpacing         = ImVec2( 6, 4 );
-	style.CellPadding              = ImVec2( 6, 4 );
-	style.IndentSpacing            = 14;
-	style.ScrollbarSize            = 10;
-	style.GrabMinSize              = 10;
-	style.WindowBorderSize         = 0; // panels are told apart by the gutters between them, not by lines
+	// Dense but readable, square corners, hairline borders on every control.
+	style.WindowPadding            = ImVec2( 8, 6 );
+	style.FramePadding             = ImVec2( 7, 4 );
+	style.ItemSpacing              = ImVec2( 6, 5 );
+	style.ItemInnerSpacing         = ImVec2( 5, 4 );
+	style.CellPadding              = ImVec2( 6, 3 );
+	style.IndentSpacing            = 12;
+	style.ScrollbarSize            = 9;
+	style.GrabMinSize              = 9;
+	style.WindowBorderSize         = 0; // panels are told apart by the gutters between them
 	style.ChildBorderSize          = 0;
 	style.PopupBorderSize          = 1;
-	style.FrameBorderSize          = 0;
+	style.FrameBorderSize          = 1;
 	style.TabBorderSize            = 0;
-	style.TabBarBorderSize         = 0; // no line under the tabs: the chosen tab joins its panel
+	style.TabBarBorderSize         = 1; // a hairline under the tabs; the chosen tab sits on it in the panel's colour
 	style.TabBarOverlineSize       = 2;
-	style.WindowRounding           = 8;
-	style.ChildRounding            = 6;
-	style.FrameRounding            = 5;
-	style.PopupRounding            = 8;
-	style.ScrollbarRounding        = 8;
-	style.GrabRounding             = 4;
-	style.TabRounding              = 6;
+	style.WindowRounding           = 0;
+	style.ChildRounding            = 0;
+	style.FrameRounding            = 0;
+	style.PopupRounding            = 0;
+	style.ScrollbarRounding        = 0;
+	style.GrabRounding             = 0;
+	style.TabRounding              = 0;
 	style.WindowTitleAlign         = ImVec2( 0.0f, 0.5f );
 	style.WindowMenuButtonPosition = ImGuiDir_None; // the docking menu triangle on every tab: clutter
 	style.SeparatorTextBorderSize  = 1;
-	style.SeparatorTextPadding     = ImVec2( 0, 6 );
+	style.SeparatorTextPadding     = ImVec2( 0, 5 );
 	style.SeparatorTextAlign       = ImVec2( 0, 0.5f );
-	// Docked panels as cards on the darker background: a gutter between them (it lights up to be dragged), no lines.
-	style.DockingSeparatorSize     = 5;
+	// A thin gutter between docked panels (it lights up to be dragged).
+	style.DockingSeparatorSize     = 3;
 	// A tab's close button only on the chosen tab, when the mouse is over it.
 	style.TabCloseButtonMinWidthSelected   = 0;
 	style.TabCloseButtonMinWidthUnselected = FLT_MAX;
@@ -91,24 +91,24 @@ void ApplyTheme( float scale )
 	c[ ImGuiCol_TextDisabled ]              = Color( theme::TextDim );
 	c[ ImGuiCol_WindowBg ]                  = Color( theme::Panel );
 	c[ ImGuiCol_ChildBg ]                   = Rgb( 0, 0, 0, 0 );
-	c[ ImGuiCol_PopupBg ]                   = Rgb( 26, 29, 34, 0.98f );
-	c[ ImGuiCol_Border ]                    = Color( theme::Line );
+	c[ ImGuiCol_PopupBg ]                   = Color( theme::Raised, 0.98f );
+	c[ ImGuiCol_Border ]                    = Color( theme::Edge );
 	c[ ImGuiCol_BorderShadow ]              = Rgb( 0, 0, 0, 0 );
-	c[ ImGuiCol_FrameBg ]                   = Color( theme::Raised );
-	c[ ImGuiCol_FrameBgHovered ]            = Color( theme::RaisedHover );
-	c[ ImGuiCol_FrameBgActive ]             = Rgb( 47, 52, 61 );
+	c[ ImGuiCol_FrameBg ]                   = Color( theme::Well );
+	c[ ImGuiCol_FrameBgHovered ]            = Rgb( 22, 20, 18 );
+	c[ ImGuiCol_FrameBgActive ]             = Rgb( 30, 27, 24 );
 	c[ ImGuiCol_TitleBg ]                   = Color( theme::Base );
-	c[ ImGuiCol_TitleBgActive ]             = Rgb( 17, 19, 23 );
+	c[ ImGuiCol_TitleBgActive ]             = Color( theme::Raised );
 	c[ ImGuiCol_TitleBgCollapsed ]          = Color( theme::Base );
-	c[ ImGuiCol_MenuBarBg ]                 = Color( theme::Base );
+	c[ ImGuiCol_MenuBarBg ]                 = Color( theme::Panel );
 	c[ ImGuiCol_ScrollbarBg ]               = Rgb( 0, 0, 0, 0 );
 	c[ ImGuiCol_ScrollbarGrab ]             = Rgb( 255, 255, 255, 0.10f );
 	c[ ImGuiCol_ScrollbarGrabHovered ]      = Rgb( 255, 255, 255, 0.18f );
 	c[ ImGuiCol_ScrollbarGrabActive ]       = Color( theme::Accent, 0.7f );
 	c[ ImGuiCol_CheckMark ]                 = Color( theme::Accent );
-	c[ ImGuiCol_SliderGrab ]                = Color( theme::Accent );
-	c[ ImGuiCol_SliderGrabActive ]          = Rgb( 196, 220, 242 );
-	c[ ImGuiCol_Button ]                    = Color( theme::Raised );
+	c[ ImGuiCol_SliderGrab ]                = Color( theme::Text );
+	c[ ImGuiCol_SliderGrabActive ]          = Color( theme::Accent );
+	c[ ImGuiCol_Button ]                    = Rgb( 0, 0, 0, 0 ); // buttons: an outline, filled when the mouse is on them
 	c[ ImGuiCol_ButtonHovered ]             = Color( theme::RaisedHover );
 	c[ ImGuiCol_ButtonActive ]              = Color( theme::AccentDim );
 	c[ ImGuiCol_Header ]                    = Rgb( 255, 255, 255, 0.05f );
@@ -126,7 +126,7 @@ void ApplyTheme( float scale )
 	c[ ImGuiCol_TabSelectedOverline ]       = Color( theme::Accent );
 	c[ ImGuiCol_TabDimmed ]                 = Rgb( 0, 0, 0, 0 );
 	c[ ImGuiCol_TabDimmedSelected ]         = Color( theme::Panel );
-	c[ ImGuiCol_TabDimmedSelectedOverline ] = Rgb( 0, 0, 0, 0 ); // the accent line only on the panel in use
+	c[ ImGuiCol_TabDimmedSelectedOverline ] = Color( theme::Edge ); // the accent line only on the panel in use
 	c[ ImGuiCol_DockingPreview ]            = Color( theme::Accent, 0.35f );
 	c[ ImGuiCol_DockingEmptyBg ]            = Color( theme::Base );
 	c[ ImGuiCol_PlotLines ]                 = Color( theme::Accent );
@@ -145,10 +145,13 @@ void ApplyTheme( float scale )
 	style.ScaleAllSizes( scale );
 	ImGuiIO& io = ImGui::GetIO();
 	io.Fonts->Clear();
-	fonts.body    = AddFont( kFont_Inter_Regular, kFont_Inter_Regular_size, 15.0f * scale );
-	fonts.bold    = AddFont( kFont_Inter_SemiBold, kFont_Inter_SemiBold_size, 15.0f * scale );
-	fonts.mono    = AddFont( kFont_JetBrainsMono_Medium, kFont_JetBrainsMono_Medium_size, 14.0f * scale );
-	fonts.display = AddFont( kFont_JetBrainsMono_Medium, kFont_JetBrainsMono_Medium_size, 20.0f * scale );
+	fonts.body    = AddFont( kFont_Inter_Regular, kFont_Inter_Regular_size, theme::BaseFont * scale );
+	fonts.bold    = AddFont( kFont_Inter_SemiBold, kFont_Inter_SemiBold_size, theme::BaseFont * scale );
+	fonts.mono    = AddFont( kFont_JetBrainsMono_Medium, kFont_JetBrainsMono_Medium_size, ( theme::BaseFont - 1 ) * scale );
+	fonts.display = AddFont( kFont_JetBrainsMono_Medium, kFont_JetBrainsMono_Medium_size, ( theme::BaseFont + 5 ) * scale );
+	// Small labels: the letters under the faders, badges, the values over them.
+	fonts.small   = AddFont( kFont_Inter_SemiBold, kFont_Inter_SemiBold_size, ( theme::BaseFont - 2.5f ) * scale );
+	fonts.smallMono = AddFont( kFont_JetBrainsMono_Medium, kFont_JetBrainsMono_Medium_size, ( theme::BaseFont - 2.5f ) * scale );
 	io.FontDefault = fonts.body;
 }
 }

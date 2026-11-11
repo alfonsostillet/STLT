@@ -21,7 +21,7 @@ namespace
 {
 float Ui( float pixels )
 {
-	return pixels * ImGui::GetFontSize() / 15.0f;
+	return pixels * ImGui::GetFontSize() / theme::BaseFont;
 }
 
 // Drag payloads of the other panels: a deck cell, a file of the Files panel.
@@ -762,7 +762,7 @@ void Lanes( App& app, float height )
 	const float headerW = Ui( state.headerWidth ), rulerH = Ui( 22 ), blockH = Ui( 26 ), topH = rulerH + blockH;
 	const float row = ImGui::GetFrameHeight() + Ui( 3 );
 	const float videoH = std::max( Ui( 66 ), row * 3 + Ui( 6 ) ), audioH = std::max( Ui( 46 ), row * 2 + Ui( 6 ) ), edge = Ui( 6 );
-	const float pps = state.zoom * ImGui::GetFontSize() / 15.0f; // pixels per second
+	const float pps = state.zoom * ImGui::GetFontSize() / theme::BaseFont; // pixels per second
 	double length   = t.Length();
 	double shown    = std::max( length + 60.0, 120.0 );
 	float contentW  = headerW + (float)( shown * pps );
@@ -797,7 +797,7 @@ void Lanes( App& app, float height )
 		{
 			double at   = timeAt( io.MousePos.x );
 			state.zoom  = std::clamp( state.zoom * ( io.MouseWheel > 0 ? 1.2f : 1 / 1.2f ), 2.0f, 400.0f );
-			float npps  = state.zoom * ImGui::GetFontSize() / 15.0f;
+			float npps  = state.zoom * ImGui::GetFontSize() / theme::BaseFont;
 			state.scrollX = std::max( 0.0f, (float)( at * npps ) - ( io.MousePos.x - laneLeft ) );
 		}
 		else if( io.KeyShift )

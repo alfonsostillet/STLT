@@ -22,6 +22,7 @@ Si passa dall'una all'altra con le due icone in alto a destra (o col tasto Tab).
 - **Layer, colonne e deck**: lanci una clip, una colonna intera oppure la clip precedente e successiva. I deck sono pagine di clip sugli stessi layer, e cambiare deck non ferma mai quello che sta suonando.
 - **Crossfader A/B** e, su ogni layer, blend mode, fader separati per master, audio e video, velocità, bypass e solo.
 - **Il tuo spazio di lavoro**: ogni pannello si sposta, si aggancia, si mette a schede, si divide o diventa una finestra su un altro monitor. Le disposizioni si salvano con un nome.
+- **Zoom di tutta l'interfaccia**: *View → Zoom In / Zoom Out* (Ctrl + e Ctrl −, Ctrl 0 per il 100 %) ingrandisce o rimpicciolisce tutto, così si legge bene sia su un portatile da 13" sia su un monitor da 27".
 - **Controllo su tutto**: catene di effetti sulla composizione, su un layer o su una singola clip, ognuno con il suo mix.
 - **Una moltitudine di effetti**: effetti e sorgenti integrati, circa 200 shader ISF e plugin FFGL 2.
 - **Qualsiasi parametro si anima**: a tempo di BPM, su una durata in secondi o seguendo il suono in ingresso (livello, bassi, medi, alti).

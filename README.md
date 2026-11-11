@@ -22,6 +22,7 @@ Switch between them with the two icons at the top right (or the Tab key). Each o
 - **Layers, columns and decks**: launch a single clip, a whole column or the next and previous clip. Decks are pages of clips over the same layers, and changing deck never stops what is playing.
 - **A/B crossfader**, and on every layer blend modes, separate master, audio and video faders, speed, bypass and solo.
 - **Your own workspace**: every panel can be moved, docked, tabbed, split or pulled out as a window onto another monitor. Layouts are saved by name.
+- **Zoom the whole interface**: *View → Zoom In / Zoom Out* (Ctrl + and Ctrl −, Ctrl 0 for 100 %) makes everything bigger or smaller, so it reads well on a 13" laptop and on a 27" monitor alike.
 - **Control over everything**: effect chains on the composition, on a layer or on a single clip, each with its own mix.
 - **Lots of effects**: built-in effects and sources, about 200 ISF shaders, and FFGL 2 plugins.
 - **Animate any parameter**: to the BPM, over a time in seconds, or following the sound coming in (level, bass, mid, treble).

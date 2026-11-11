@@ -25,6 +25,7 @@ std::string Preferences::Save() const
 	root[ "reopenLastSession" ] = reopenLastSession;
 	root[ "startView" ]         = startView;
 	root[ "layerSpeedIsClipSpeed" ] = layerSpeedIsClipSpeed;
+	root[ "interfaceScale" ]    = interfaceScale;
 	root[ "audioDevice" ]       = audioDevice;
 	root[ "audioBuffer" ]       = audioBuffer;
 	root[ "audioInput" ]        = audioInput;
@@ -59,6 +60,7 @@ bool Preferences::Load( const std::string& text )
 	p.reopenLastSession = root.value( "reopenLastSession", true );
 	p.startView         = std::clamp( root.value( "startView", 0 ), 0, 2 );
 	p.layerSpeedIsClipSpeed = root.value( "layerSpeedIsClipSpeed", false );
+	p.interfaceScale        = std::clamp( root.value( "interfaceScale", 1.0f ), kMinInterfaceScale, kMaxInterfaceScale );
 	p.audioDevice       = root.value( "audioDevice", "" );
 	p.audioBuffer       = std::clamp( root.value( "audioBuffer", 256 ), 64, 4096 );
 	p.audioInput        = root.value( "audioInput", "" );

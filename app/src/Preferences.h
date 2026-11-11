@@ -4,6 +4,8 @@
 
 namespace stltvj
 {
+constexpr float kMinInterfaceScale = 0.5f, kMaxInterfaceScale = 2.0f;
+
 // What the Preferences window sets, kept in preferences.json in the settings folder. MIDI and OSC live in the
 // control settings, the plugin folders in their own file.
 struct Preferences
@@ -14,6 +16,9 @@ struct Preferences
 	// The S fader in a layer's header (and its MIDI/OSC): false sets the layer's speed, which multiplies the clip's own;
 	// true sets the speed of the clip playing on the layer, as in Resolume.
 	bool layerSpeedIsClipSpeed = false;
+	// The size of the whole interface (View > Zoom In/Out, Ctrl + and Ctrl -), on top of the display's own scale:
+	// smaller on a small laptop, bigger on a large monitor. Kept per computer, not per workspace.
+	float interfaceScale = 1.0f;
 
 	// Audio.
 	std::string audioDevice; // empty: the system's default

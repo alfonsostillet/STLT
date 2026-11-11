@@ -13,7 +13,7 @@ bool FilledSlider( const char* label, float* value, float min, float max, const 
 	ImVec2 a                = ImGui::GetCursorScreenPos();
 	ImVec2 b( a.x + ImGui::CalcItemWidth(), a.y + ImGui::GetFrameHeight() );
 	bool hovered = ImGui::IsMouseHoveringRect( a, b ) && ImGui::IsWindowHovered();
-	draw->AddRectFilled( a, b, hovered ? theme::RaisedHover : theme::Raised, style.FrameRounding );
+	draw->AddRectFilled( a, b, hovered ? IM_COL32( 22, 20, 18, 255 ) : theme::Well, style.FrameRounding );
 	if( max > min )
 	{
 		auto at      = [ & ]( float v ) { return a.x + ( b.x - a.x ) * std::clamp( ( v - min ) / ( max - min ), 0.0f, 1.0f ); };
@@ -27,7 +27,7 @@ bool FilledSlider( const char* label, float* value, float min, float max, const 
 				corners |= ImDrawFlags_RoundCornersLeft;
 			if( right >= b.x - 0.5f )
 				corners |= ImDrawFlags_RoundCornersRight;
-			draw->AddRectFilled( ImVec2( left, a.y ), ImVec2( right, b.y ), theme::AccentFill, style.FrameRounding, corners );
+			draw->AddRectFilled( ImVec2( left, a.y ), ImVec2( right, b.y ), theme::Fill, style.FrameRounding, corners );
 		}
 	}
 	ImGui::PushStyleColor( ImGuiCol_FrameBg, IM_COL32( 0, 0, 0, 0 ) );

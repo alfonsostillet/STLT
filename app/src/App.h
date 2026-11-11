@@ -94,6 +94,14 @@ public:
 	void SavePreferences();
 	void ApplyPreferences( bool restartAudio );
 	int startViewPending = -1; // a view to switch to once the first frame is drawn (the start view)
+	// The interface's size: the display's own scale times the user's zoom (prefs.interfaceScale). ZoomInterface
+	// steps it by 10 % (+1 bigger, -1 smaller, 0 back to 100 %); the fonts and the style are rebuilt before the
+	// next frame, and the panels keep their place.
+	void ZoomInterface( int step );
+	void SetInterfaceScale( float scale );
+	float displayScale   = 1;
+	float appliedUiScale = 0;
+	double zoomShownUntil = 0; // the new size shows in the middle of the window for a moment
 	// STLT-CHASER (Output > Chaser): opens its editor on the Advanced Output's slices, which are kept written to
 	// chaserStage for it.
 	void OpenChaser();
@@ -299,6 +307,7 @@ public:
 
 private:
 	void Frame();
+	void ApplyUiScale();
 	void UpdatePlayback( double dt );
 	// How far the composition moves this frame, given what the system clock measured (render/FrameClock.h).
 	double FrameStep( double measured );

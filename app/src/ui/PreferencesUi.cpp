@@ -19,7 +19,7 @@ namespace
 {
 float Ui( float pixels )
 {
-	return pixels * ImGui::GetFontSize() / 15.0f;
+	return pixels * ImGui::GetFontSize() / theme::BaseFont;
 }
 
 enum class Section
@@ -119,6 +119,23 @@ bool General( App& app )
 	Help( "The layer's speed multiplies the speed of every clip played on it, and stays when the clip changes. The clip's "
 	      "speed belongs to the clip: each clip keeps its own, and the fader shows the one playing. The "
 	      "fader's MIDI and OSC follow the same choice; the Layer panel always has the layer's speed." );
+	Caption( "Interface scale" );
+	ImGui::SetNextItemWidth( Ui( 220 ) );
+	// While dragged, the slider keeps its own value: the interface changes size when it is let go.
+	static int dragged = -1;
+	int percent        = dragged >= 0 ? dragged : (int)std::lround( p.interfaceScale * 100 );
+	if( ImGui::SliderInt( "##interfaceScale", &percent, (int)( kMinInterfaceScale * 100 ), (int)( kMaxInterfaceScale * 100 ), "%d %%" ) )
+		dragged = ( percent + 5 ) / 10 * 10;
+	if( ImGui::IsItemDeactivatedAfterEdit() && dragged >= 0 )
+		app.SetInterfaceScale( dragged / 100.0f );
+	if( !ImGui::IsItemActive() )
+		dragged = -1;
+	ImGui::SameLine();
+	if( ImGui::Button( "100 %" ) )
+		app.SetInterfaceScale( 1.0f );
+	Help( "The size of the whole interface, on top of the display's own scaling: smaller to fit more on a small laptop, "
+	      "bigger to read it from further on a large monitor. Also View > Zoom In and Zoom Out (Ctrl + and Ctrl -), Ctrl 0 "
+	      "for 100 %. Kept on this computer, whatever the workspace." );
 	Caption( "Settings folder" );
 	ImGui::TextDisabled( "%s", app.configDir.c_str() );
 	Help( "Preferences, shortcuts and their presets, workspaces, output presets and the last session are kept here." );
@@ -531,7 +548,10 @@ void DrawPreferences( App& app )
 			section = (Section)s;
 		ImDrawList* d = ImGui::GetWindowDrawList();
 		if( on )
-			d->AddRectFilled( p, ImVec2( p.x + sideW, p.y + h ), theme::AccentDim );
+		{
+			d->AddRectFilled( p, ImVec2( p.x + sideW, p.y + h ), theme::Raised );
+			d->AddRectFilled( ImVec2( p.x + sideW - Ui( 3 ), p.y ), ImVec2( p.x + sideW, p.y + h ), theme::Accent );
+		}
 		else if( ImGui::IsItemHovered() )
 			d->AddRectFilled( p, ImVec2( p.x + sideW, p.y + h ), theme::RaisedHover );
 		ImVec2 t = ImGui::CalcTextSize( SectionName( (Section)s ) );
@@ -542,11 +562,12 @@ void DrawPreferences( App& app )
 	ImGui::PopStyleColor();
 	ImGui::SameLine( 0, 0 );
 
-	// The chosen section: its title on a coloured band, then its settings.
+	// The chosen section: its title on a band, then its settings.
 	ImGui::BeginChild( "##section", ImVec2( 0, 0 ) );
 	ImVec2 p = ImGui::GetCursorScreenPos();
 	float w  = ImGui::GetContentRegionAvail().x;
-	ImGui::GetWindowDrawList()->AddRectFilled( p, ImVec2( p.x + w, p.y + Ui( 90 ) ), theme::AccentDim );
+	ImGui::GetWindowDrawList()->AddRectFilled( p, ImVec2( p.x + w, p.y + Ui( 90 ) ), theme::Raised );
+	ImGui::GetWindowDrawList()->AddRectFilled( ImVec2( p.x, p.y + Ui( 90 ) - 1 ), ImVec2( p.x + w, p.y + Ui( 90 ) ), theme::Line );
 	char title[ 64 ];
 	std::snprintf( title, sizeof( title ), "%s Preferences", SectionName( section ) );
 	ImGui::GetWindowDrawList()->AddText( Fonts().bold, ImGui::GetFontSize() * 2.0f, ImVec2( p.x + Ui( 50 ), p.y + Ui( 28 ) ), theme::Text, title );

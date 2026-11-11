@@ -1,4 +1,4 @@
-# Where the work on STLT stands (4 November 2026)
+# Where the work on STLT stands (11 November 2026)
 
 This is a handover. It says where the project is, how work is done on it and what is left, so a new chat can start from here without the whole history.
 
@@ -38,7 +38,8 @@ This is a handover. It says where the project is, how work is done on it and wha
   Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
   Claude-Session: <session link>
   ```
-- **Discuss UI and UX changes before making them.** The owner tests on Windows with several screens and asked to agree on solutions first.
+- **Discuss UI and UX changes before making them, with mock-ups.** The owner tests on Windows with several screens and asked to agree on solutions first: send pictures (HTML mock-ups rendered to PNG) before touching the code.
+- **Keep the old interface working.** The interface before the redesign is the branch `classic-ui`; the redesign is built on the branch `new-ui` and goes to `main` only when the owner approves it.
 
 ## Building and testing
 
@@ -81,6 +82,13 @@ cmake --build build --parallel
 5. Check that the release has the three assets.
 
 ## How the recent parts work
+
+- **The interface ("Ember", branch `new-ui`).**
+  - Colours and sizes are in `ui/Theme.h`: warm near-black surfaces, hairline borders, square corners, amber for what is on air or on, cyan for clips waiting for their beat. Text is 13 px at 100 % (`theme::BaseFont`); `Ui( pixels )` sizes are pixels at that size.
+  - The deck (`DrawDeck` in `ui/Panels.cpp`) is drawn from `DeckGeometry`, shared by the Layers and Clips panels so headers and cells line up. A layer's header has four blocks: the layer (name, clear, black, solo, blend), its faders (V, A, M and the crossfader group), the clip on air (picture and a position bar to scratch) and its controls (speed, play mode, timing, previous/next, direction). The composition is one line; the column headers sit level with it.
+  - Cells: click the picture to put the clip on air, the name to see it in the Preview Monitor. On air: amber frame and progress; waiting for the beat: dashed cyan frame and a clock; previewed: an outline on the name; missing: red name.
+  - The toolbar ends with the output chip, the frame rate and the Grid/Timeline buttons.
+- **Interface zoom.** `Preferences::interfaceScale` (50–200 %, per computer) times the display's scale. `App::ZoomInterface` (View menu, Ctrl + / Ctrl - / Ctrl 0) and the Preferences slider set it; `App::ApplyUiScale` rebuilds the fonts and the style between frames. After a zoom `Workspaces::Rescale` resizes floating panels and fits the deck (Layers width, deck height) again; other docked panels keep their share of the window.
 
 - **Two output setups.**
   - `App::advancedOutput` is the Grid's (Session view) and `App::timelineOutput` is the Timeline's (Arrangement view).

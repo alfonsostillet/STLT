@@ -15,7 +15,7 @@ namespace
 {
 float Ui( float pixels )
 {
-	return pixels * ImGui::GetFontSize() / 15.0f;
+	return pixels * ImGui::GetFontSize() / theme::BaseFont;
 }
 }
 

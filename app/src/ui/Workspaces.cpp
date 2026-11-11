@@ -5,6 +5,7 @@
 #include <cstring>
 #include <filesystem>
 #include "Settings.h"
+#include "ui/Panels.h"
 
 namespace fs = std::filesystem;
 
@@ -13,12 +14,6 @@ namespace stltvj
 namespace
 {
 PanelVisibility* visibility = nullptr;
-
-// What the Layers panel needs: the layers' headers (as drawn by the deck) and the window's padding.
-float LayersWidth()
-{
-	return 478.0f * ImGui::GetFontSize() / 15.0f + ImGui::GetStyle().WindowPadding.x * 2 + 4;
-}
 
 struct Flag
 {
@@ -207,7 +202,7 @@ void Workspaces::BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size )
 		{
 			ImGuiID left, right;
 			float width = std::max( deck->Size.x, 1.0f );
-			ImGui::DockBuilderSplitNode( deck->ID, ImGuiDir_Left, std::clamp( LayersWidth() / width, 0.2f, 0.6f ), &left, &right );
+			ImGui::DockBuilderSplitNode( deck->ID, ImGuiDir_Left, std::clamp( LayersPanelWidth() / width, 0.2f, 0.6f ), &left, &right );
 			ImGui::DockBuilderDockWindow( panel::Layers, left );
 			ImGui::DockBuilderDockWindow( panel::Clips, right );
 			ImGui::DockBuilderFinish( dockspace );
@@ -236,20 +231,22 @@ void Workspaces::BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size )
 		ImGui::DockBuilderFinish( dockspace );
 		return;
 	}
-	// Deck on top; monitors, composition/layer, clip and browser side by side below, as in a classic VJ layout.
+	// The deck on top, as high as four layers need (no empty space under it); below, side by side: the
+	// Composition Monitor and the Preview Monitor, the composition/layer settings, the clip's, and the browser.
 	ImGuiID top, bottom;
-	ImGui::DockBuilderSplitNode( dockspace, ImGuiDir_Up, 0.42f, &top, &bottom );
-	ImGuiID monitors, rest;
-	ImGui::DockBuilderSplitNode( bottom, ImGuiDir_Left, 0.22f, &monitors, &rest );
-	ImGuiID compositionMonitor, previewMonitor;
-	ImGui::DockBuilderSplitNode( monitors, ImGuiDir_Up, 0.5f, &compositionMonitor, &previewMonitor );
+	float deckRatio = std::clamp( DeckPanelsHeight( std::clamp( deckLayers, 3, 6 ) ) / std::max( size.y, 1.0f ), 0.3f, 0.7f );
+	ImGui::DockBuilderSplitNode( dockspace, ImGuiDir_Up, deckRatio, &top, &bottom );
+	ImGuiID compositionMonitor, rest;
+	ImGui::DockBuilderSplitNode( bottom, ImGuiDir_Left, 0.17f, &compositionMonitor, &rest );
+	ImGuiID previewMonitor, rest1;
+	ImGui::DockBuilderSplitNode( rest, ImGuiDir_Left, 0.205f, &previewMonitor, &rest1 );
 	ImGuiID params, rest2;
-	ImGui::DockBuilderSplitNode( rest, ImGuiDir_Left, 0.34f, &params, &rest2 );
+	ImGui::DockBuilderSplitNode( rest1, ImGuiDir_Left, 0.34f, &params, &rest2 );
 	ImGuiID clipParams, browser;
-	ImGui::DockBuilderSplitNode( rest2, ImGuiDir_Left, 0.5f, &clipParams, &browser );
+	ImGui::DockBuilderSplitNode( rest2, ImGuiDir_Left, 0.6f, &clipParams, &browser );
 
 	ImGuiID layers, clips;
-	ImGui::DockBuilderSplitNode( top, ImGuiDir_Left, std::clamp( LayersWidth() / std::max( size.x, 1.0f ), 0.2f, 0.6f ), &layers, &clips );
+	ImGui::DockBuilderSplitNode( top, ImGuiDir_Left, std::clamp( LayersPanelWidth() / std::max( size.x, 1.0f ), 0.2f, 0.6f ), &layers, &clips );
 	ImGui::DockBuilderDockWindow( panel::Layers, layers );
 	ImGui::DockBuilderDockWindow( panel::Clips, clips );
 	ImGui::DockBuilderDockWindow( panel::CompositionMonitor, compositionMonitor );
@@ -263,5 +260,56 @@ void Workspaces::BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size )
 	ImGui::DockBuilderDockWindow( panel::Performance, browser );
 	ImGui::DockBuilderDockWindow( panel::Control, browser );
 	ImGui::DockBuilderFinish( dockspace );
+}
+
+void Workspaces::Rescale( float ratio )
+{
+	rescale *= ratio;
+}
+
+void Workspaces::ApplyRescale()
+{
+	if( std::abs( rescale - 1 ) < 1e-4f )
+		return;
+	float ratio = rescale;
+	rescale     = 1;
+	ImGuiContext& g = *GImGui;
+	// Docked panels keep their share of the window. Floating panels (and those in windows of their own): their size
+	// follows.
+	for( ImGuiWindow* window : g.Windows )
+		if( !window->DockIsActive && !( window->Flags & ( ImGuiWindowFlags_ChildWindow | ImGuiWindowFlags_Popup | ImGuiWindowFlags_Tooltip | ImGuiWindowFlags_NoDocking ) )
+		    && window->WasActive )
+			ImGui::SetWindowSize( window, ImVec2( window->SizeFull.x * ratio, window->SizeFull.y * ratio ) );
+	// The deck fits its headers and its layers again.
+	FitDeck();
+}
+
+void Workspaces::FitDeck()
+{
+	// The Layers panel, alone in its place at the left of a split (the Clips panel beside it): as wide as the
+	// headers. That split, at the top of another (the panels below): as high as the layers.
+	ImGuiWindow* layers   = ImGui::FindWindowByName( panel::Layers );
+	ImGuiDockNode* node   = layers ? layers->DockNode : nullptr;
+	ImGuiDockNode* parent = node ? node->ParentNode : nullptr;
+	if( !parent || parent->SplitAxis != ImGuiAxis_X || parent->ChildNodes[ 0 ] != node || node->Windows.Size != 1 || !parent->ChildNodes[ 1 ] )
+		return;
+	float gutter = ImGui::GetStyle().DockingSeparatorSize;
+	float total  = parent->Size.x - gutter;
+	if( total > 0 )
+	{
+		float width                       = std::min( LayersPanelWidth(), total * 0.7f );
+		node->SizeRef.x                   = width;
+		parent->ChildNodes[ 1 ]->SizeRef.x = std::max( 1.0f, total - width );
+	}
+	ImGuiDockNode* column = parent->ParentNode;
+	if( !column || column->SplitAxis != ImGuiAxis_Y || column->ChildNodes[ 0 ] != parent || !column->ChildNodes[ 1 ] )
+		return;
+	total = column->Size.y - gutter;
+	if( total > 0 )
+	{
+		float height                       = std::min( DeckPanelsHeight( std::clamp( deckLayers, 1, 8 ) ), total * 0.75f );
+		parent->SizeRef.y                  = height;
+		column->ChildNodes[ 1 ]->SizeRef.y = std::max( 1.0f, total - height );
+	}
 }
 }
