@@ -1,0 +1,3216 @@
+{
+ "format": "stlt-output-setups",
+ "version": 1,
+ "grid": {
+  "format": "stlt-vj-advanced-output",
+  "version": 1,
+  "screens": [
+   {
+    "name": "LED processor A",
+    "enabled": true,
+    "device": "Virtual",
+    "display": "",
+    "size": [
+     2048,
+     768
+    ],
+    "opacity": 1,
+    "brightness": 0,
+    "contrast": 0,
+    "rgb": [
+     0,
+     0,
+     0
+    ],
+    "share": false,
+    "ndi": false,
+    "slices": [
+     {
+      "name": "Main 1",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        160.0,
+        140.0
+       ],
+       [
+        426.6666666666667,
+        140.0
+       ],
+       [
+        426.6666666666667,
+        406.6666666666667
+       ],
+       [
+        160.0,
+        406.6666666666667
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        256,
+        0
+       ],
+       [
+        512,
+        0
+       ],
+       [
+        512,
+        256
+       ],
+       [
+        256,
+        256
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 2",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        426.6666666666667,
+        140.0
+       ],
+       [
+        693.3333333333334,
+        140.0
+       ],
+       [
+        693.3333333333334,
+        406.6666666666667
+       ],
+       [
+        426.6666666666667,
+        406.6666666666667
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        512,
+        0
+       ],
+       [
+        768,
+        0
+       ],
+       [
+        768,
+        256
+       ],
+       [
+        512,
+        256
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 3",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        693.3333333333334,
+        140.0
+       ],
+       [
+        960.0,
+        140.0
+       ],
+       [
+        960.0,
+        406.6666666666667
+       ],
+       [
+        693.3333333333334,
+        406.6666666666667
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        768,
+        0
+       ],
+       [
+        1024,
+        0
+       ],
+       [
+        1024,
+        256
+       ],
+       [
+        768,
+        256
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 4",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        960.0,
+        140.0
+       ],
+       [
+        1226.6666666666667,
+        140.0
+       ],
+       [
+        1226.6666666666667,
+        406.6666666666667
+       ],
+       [
+        960.0,
+        406.6666666666667
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1024,
+        0
+       ],
+       [
+        1280,
+        0
+       ],
+       [
+        1280,
+        256
+       ],
+       [
+        1024,
+        256
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 5",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1226.6666666666667,
+        140.0
+       ],
+       [
+        1493.3333333333335,
+        140.0
+       ],
+       [
+        1493.3333333333335,
+        406.6666666666667
+       ],
+       [
+        1226.6666666666667,
+        406.6666666666667
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1280,
+        0
+       ],
+       [
+        1536,
+        0
+       ],
+       [
+        1536,
+        256
+       ],
+       [
+        1280,
+        256
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 6",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1493.3333333333335,
+        140.0
+       ],
+       [
+        1760.0000000000002,
+        140.0
+       ],
+       [
+        1760.0000000000002,
+        406.6666666666667
+       ],
+       [
+        1493.3333333333335,
+        406.6666666666667
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1536,
+        0
+       ],
+       [
+        1792,
+        0
+       ],
+       [
+        1792,
+        256
+       ],
+       [
+        1536,
+        256
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 7",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        160.0,
+        406.6666666666667
+       ],
+       [
+        426.6666666666667,
+        406.6666666666667
+       ],
+       [
+        426.6666666666667,
+        673.3333333333334
+       ],
+       [
+        160.0,
+        673.3333333333334
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        256,
+        256
+       ],
+       [
+        512,
+        256
+       ],
+       [
+        512,
+        512
+       ],
+       [
+        256,
+        512
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 8",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        426.6666666666667,
+        406.6666666666667
+       ],
+       [
+        693.3333333333334,
+        406.6666666666667
+       ],
+       [
+        693.3333333333334,
+        673.3333333333334
+       ],
+       [
+        426.6666666666667,
+        673.3333333333334
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        512,
+        256
+       ],
+       [
+        768,
+        256
+       ],
+       [
+        768,
+        512
+       ],
+       [
+        512,
+        512
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 9",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        693.3333333333334,
+        406.6666666666667
+       ],
+       [
+        960.0,
+        406.6666666666667
+       ],
+       [
+        960.0,
+        673.3333333333334
+       ],
+       [
+        693.3333333333334,
+        673.3333333333334
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        768,
+        256
+       ],
+       [
+        1024,
+        256
+       ],
+       [
+        1024,
+        512
+       ],
+       [
+        768,
+        512
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 10",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        960.0,
+        406.6666666666667
+       ],
+       [
+        1226.6666666666667,
+        406.6666666666667
+       ],
+       [
+        1226.6666666666667,
+        673.3333333333334
+       ],
+       [
+        960.0,
+        673.3333333333334
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1024,
+        256
+       ],
+       [
+        1280,
+        256
+       ],
+       [
+        1280,
+        512
+       ],
+       [
+        1024,
+        512
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 11",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1226.6666666666667,
+        406.6666666666667
+       ],
+       [
+        1493.3333333333335,
+        406.6666666666667
+       ],
+       [
+        1493.3333333333335,
+        673.3333333333334
+       ],
+       [
+        1226.6666666666667,
+        673.3333333333334
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1280,
+        256
+       ],
+       [
+        1536,
+        256
+       ],
+       [
+        1536,
+        512
+       ],
+       [
+        1280,
+        512
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 12",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1493.3333333333335,
+        406.6666666666667
+       ],
+       [
+        1760.0000000000002,
+        406.6666666666667
+       ],
+       [
+        1760.0000000000002,
+        673.3333333333334
+       ],
+       [
+        1493.3333333333335,
+        673.3333333333334
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1536,
+        256
+       ],
+       [
+        1792,
+        256
+       ],
+       [
+        1792,
+        512
+       ],
+       [
+        1536,
+        512
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 13",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        160.0,
+        673.3333333333334
+       ],
+       [
+        426.6666666666667,
+        673.3333333333334
+       ],
+       [
+        426.6666666666667,
+        940.0
+       ],
+       [
+        160.0,
+        940.0
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        256,
+        512
+       ],
+       [
+        512,
+        512
+       ],
+       [
+        512,
+        768
+       ],
+       [
+        256,
+        768
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 14",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        426.6666666666667,
+        673.3333333333334
+       ],
+       [
+        693.3333333333334,
+        673.3333333333334
+       ],
+       [
+        693.3333333333334,
+        940.0
+       ],
+       [
+        426.6666666666667,
+        940.0
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        512,
+        512
+       ],
+       [
+        768,
+        512
+       ],
+       [
+        768,
+        768
+       ],
+       [
+        512,
+        768
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 15",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        693.3333333333334,
+        673.3333333333334
+       ],
+       [
+        960.0,
+        673.3333333333334
+       ],
+       [
+        960.0,
+        940.0
+       ],
+       [
+        693.3333333333334,
+        940.0
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        768,
+        512
+       ],
+       [
+        1024,
+        512
+       ],
+       [
+        1024,
+        768
+       ],
+       [
+        768,
+        768
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 16",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        960.0,
+        673.3333333333334
+       ],
+       [
+        1226.6666666666667,
+        673.3333333333334
+       ],
+       [
+        1226.6666666666667,
+        940.0
+       ],
+       [
+        960.0,
+        940.0
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1024,
+        512
+       ],
+       [
+        1280,
+        512
+       ],
+       [
+        1280,
+        768
+       ],
+       [
+        1024,
+        768
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 17",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1226.6666666666667,
+        673.3333333333334
+       ],
+       [
+        1493.3333333333335,
+        673.3333333333334
+       ],
+       [
+        1493.3333333333335,
+        940.0
+       ],
+       [
+        1226.6666666666667,
+        940.0
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1280,
+        512
+       ],
+       [
+        1536,
+        512
+       ],
+       [
+        1536,
+        768
+       ],
+       [
+        1280,
+        768
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 18",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1493.3333333333335,
+        673.3333333333334
+       ],
+       [
+        1760.0000000000002,
+        673.3333333333334
+       ],
+       [
+        1760.0000000000002,
+        940.0
+       ],
+       [
+        1493.3333333333335,
+        940.0
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1536,
+        512
+       ],
+       [
+        1792,
+        512
+       ],
+       [
+        1792,
+        768
+       ],
+       [
+        1536,
+        768
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Left wing 1",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        20,
+        140.0
+       ],
+       [
+        160,
+        140.0
+       ],
+       [
+        160,
+        406.6666666666667
+       ],
+       [
+        20,
+        406.6666666666667
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        0,
+        0
+       ],
+       [
+        256,
+        0
+       ],
+       [
+        256,
+        256
+       ],
+       [
+        0,
+        256
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Left wing 2",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        20,
+        406.6666666666667
+       ],
+       [
+        160,
+        406.6666666666667
+       ],
+       [
+        160,
+        673.3333333333334
+       ],
+       [
+        20,
+        673.3333333333334
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        0,
+        256
+       ],
+       [
+        256,
+        256
+       ],
+       [
+        256,
+        512
+       ],
+       [
+        0,
+        512
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Left wing 3",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        20,
+        673.3333333333334
+       ],
+       [
+        160,
+        673.3333333333334
+       ],
+       [
+        160,
+        940.0
+       ],
+       [
+        20,
+        940.0
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        0,
+        512
+       ],
+       [
+        256,
+        512
+       ],
+       [
+        256,
+        768
+       ],
+       [
+        0,
+        768
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Right wing 1",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1760,
+        140.0
+       ],
+       [
+        1900,
+        140.0
+       ],
+       [
+        1900,
+        406.6666666666667
+       ],
+       [
+        1760,
+        406.6666666666667
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1792,
+        0
+       ],
+       [
+        2048,
+        0
+       ],
+       [
+        2048,
+        256
+       ],
+       [
+        1792,
+        256
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Right wing 2",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1760,
+        406.6666666666667
+       ],
+       [
+        1900,
+        406.6666666666667
+       ],
+       [
+        1900,
+        673.3333333333334
+       ],
+       [
+        1760,
+        673.3333333333334
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1792,
+        250
+       ],
+       [
+        2048,
+        250
+       ],
+       [
+        2048,
+        506
+       ],
+       [
+        1792,
+        506
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Right wing 3",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1760,
+        673.3333333333334
+       ],
+       [
+        1900,
+        673.3333333333334
+       ],
+       [
+        1900,
+        940.0
+       ],
+       [
+        1760,
+        940.0
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1792,
+        512
+       ],
+       [
+        2048,
+        512
+       ],
+       [
+        2048,
+        768
+       ],
+       [
+        1792,
+        768
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     }
+    ]
+   },
+   {
+    "name": "Projector left",
+    "enabled": true,
+    "device": "Virtual",
+    "display": "",
+    "size": [
+     1920,
+     1080
+    ],
+    "opacity": 1,
+    "brightness": 0,
+    "contrast": 0,
+    "rgb": [
+     0,
+     0,
+     0
+    ],
+    "share": false,
+    "ndi": false,
+    "slices": [
+     {
+      "name": "Left half",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        0,
+        0
+       ],
+       [
+        1056,
+        0
+       ],
+       [
+        1056,
+        1080
+       ],
+       [
+        0,
+        1080
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        60,
+        40
+       ],
+       [
+        1900,
+        0
+       ],
+       [
+        1920,
+        1080
+       ],
+       [
+        20,
+        1050
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0.1,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     }
+    ]
+   },
+   {
+    "name": "Projector right",
+    "enabled": true,
+    "device": "Virtual",
+    "display": "",
+    "size": [
+     1920,
+     1080
+    ],
+    "opacity": 1,
+    "brightness": 0,
+    "contrast": 0,
+    "rgb": [
+     0,
+     0,
+     0
+    ],
+    "share": false,
+    "ndi": false,
+    "slices": [
+     {
+      "name": "Right half",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        864,
+        0
+       ],
+       [
+        1920,
+        0
+       ],
+       [
+        1920,
+        1080
+       ],
+       [
+        864,
+        1080
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        0,
+        0
+       ],
+       [
+        1860,
+        40
+       ],
+       [
+        1900,
+        1050
+       ],
+       [
+        0,
+        1080
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0.1,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     }
+    ]
+   },
+   {
+    "name": "Stream",
+    "enabled": true,
+    "device": "Virtual",
+    "display": "",
+    "size": [
+     1920,
+     1080
+    ],
+    "opacity": 1,
+    "brightness": 0,
+    "contrast": 0,
+    "rgb": [
+     0,
+     0,
+     0
+    ],
+    "share": false,
+    "ndi": true,
+    "slices": [
+     {
+      "name": "Everything",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        0,
+        0
+       ],
+       [
+        1920,
+        0
+       ],
+       [
+        1920,
+        1080
+       ],
+       [
+        0,
+        1080
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        0,
+        0
+       ],
+       [
+        1920,
+        0
+       ],
+       [
+        1920,
+        1080
+       ],
+       [
+        0,
+        1080
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     }
+    ]
+   }
+  ]
+ },
+ "timeline": {
+  "format": "stlt-vj-advanced-output",
+  "version": 1,
+  "screens": [
+   {
+    "name": "LED processor A",
+    "enabled": true,
+    "device": "Virtual",
+    "display": "",
+    "size": [
+     2048,
+     768
+    ],
+    "opacity": 1,
+    "brightness": 0,
+    "contrast": 0,
+    "rgb": [
+     0,
+     0,
+     0
+    ],
+    "share": false,
+    "ndi": false,
+    "slices": [
+     {
+      "name": "Main 1",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        160.0,
+        140.0
+       ],
+       [
+        426.6666666666667,
+        140.0
+       ],
+       [
+        426.6666666666667,
+        406.6666666666667
+       ],
+       [
+        160.0,
+        406.6666666666667
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        256,
+        0
+       ],
+       [
+        512,
+        0
+       ],
+       [
+        512,
+        256
+       ],
+       [
+        256,
+        256
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 2",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        426.6666666666667,
+        140.0
+       ],
+       [
+        693.3333333333334,
+        140.0
+       ],
+       [
+        693.3333333333334,
+        406.6666666666667
+       ],
+       [
+        426.6666666666667,
+        406.6666666666667
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        512,
+        0
+       ],
+       [
+        768,
+        0
+       ],
+       [
+        768,
+        256
+       ],
+       [
+        512,
+        256
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 3",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        693.3333333333334,
+        140.0
+       ],
+       [
+        960.0,
+        140.0
+       ],
+       [
+        960.0,
+        406.6666666666667
+       ],
+       [
+        693.3333333333334,
+        406.6666666666667
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        768,
+        0
+       ],
+       [
+        1024,
+        0
+       ],
+       [
+        1024,
+        256
+       ],
+       [
+        768,
+        256
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 4",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        960.0,
+        140.0
+       ],
+       [
+        1226.6666666666667,
+        140.0
+       ],
+       [
+        1226.6666666666667,
+        406.6666666666667
+       ],
+       [
+        960.0,
+        406.6666666666667
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1024,
+        0
+       ],
+       [
+        1280,
+        0
+       ],
+       [
+        1280,
+        256
+       ],
+       [
+        1024,
+        256
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 5",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1226.6666666666667,
+        140.0
+       ],
+       [
+        1493.3333333333335,
+        140.0
+       ],
+       [
+        1493.3333333333335,
+        406.6666666666667
+       ],
+       [
+        1226.6666666666667,
+        406.6666666666667
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1280,
+        0
+       ],
+       [
+        1536,
+        0
+       ],
+       [
+        1536,
+        256
+       ],
+       [
+        1280,
+        256
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 6",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1493.3333333333335,
+        140.0
+       ],
+       [
+        1760.0000000000002,
+        140.0
+       ],
+       [
+        1760.0000000000002,
+        406.6666666666667
+       ],
+       [
+        1493.3333333333335,
+        406.6666666666667
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1536,
+        0
+       ],
+       [
+        1792,
+        0
+       ],
+       [
+        1792,
+        256
+       ],
+       [
+        1536,
+        256
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 7",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        160.0,
+        406.6666666666667
+       ],
+       [
+        426.6666666666667,
+        406.6666666666667
+       ],
+       [
+        426.6666666666667,
+        673.3333333333334
+       ],
+       [
+        160.0,
+        673.3333333333334
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        256,
+        256
+       ],
+       [
+        512,
+        256
+       ],
+       [
+        512,
+        512
+       ],
+       [
+        256,
+        512
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 8",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        426.6666666666667,
+        406.6666666666667
+       ],
+       [
+        693.3333333333334,
+        406.6666666666667
+       ],
+       [
+        693.3333333333334,
+        673.3333333333334
+       ],
+       [
+        426.6666666666667,
+        673.3333333333334
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        512,
+        256
+       ],
+       [
+        768,
+        256
+       ],
+       [
+        768,
+        512
+       ],
+       [
+        512,
+        512
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 9",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        693.3333333333334,
+        406.6666666666667
+       ],
+       [
+        960.0,
+        406.6666666666667
+       ],
+       [
+        960.0,
+        673.3333333333334
+       ],
+       [
+        693.3333333333334,
+        673.3333333333334
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        768,
+        256
+       ],
+       [
+        1024,
+        256
+       ],
+       [
+        1024,
+        512
+       ],
+       [
+        768,
+        512
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 10",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        960.0,
+        406.6666666666667
+       ],
+       [
+        1226.6666666666667,
+        406.6666666666667
+       ],
+       [
+        1226.6666666666667,
+        673.3333333333334
+       ],
+       [
+        960.0,
+        673.3333333333334
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1024,
+        256
+       ],
+       [
+        1280,
+        256
+       ],
+       [
+        1280,
+        512
+       ],
+       [
+        1024,
+        512
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 11",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1226.6666666666667,
+        406.6666666666667
+       ],
+       [
+        1493.3333333333335,
+        406.6666666666667
+       ],
+       [
+        1493.3333333333335,
+        673.3333333333334
+       ],
+       [
+        1226.6666666666667,
+        673.3333333333334
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1280,
+        256
+       ],
+       [
+        1536,
+        256
+       ],
+       [
+        1536,
+        512
+       ],
+       [
+        1280,
+        512
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 12",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1493.3333333333335,
+        406.6666666666667
+       ],
+       [
+        1760.0000000000002,
+        406.6666666666667
+       ],
+       [
+        1760.0000000000002,
+        673.3333333333334
+       ],
+       [
+        1493.3333333333335,
+        673.3333333333334
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1536,
+        256
+       ],
+       [
+        1792,
+        256
+       ],
+       [
+        1792,
+        512
+       ],
+       [
+        1536,
+        512
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 13",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        160.0,
+        673.3333333333334
+       ],
+       [
+        426.6666666666667,
+        673.3333333333334
+       ],
+       [
+        426.6666666666667,
+        940.0
+       ],
+       [
+        160.0,
+        940.0
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        256,
+        512
+       ],
+       [
+        512,
+        512
+       ],
+       [
+        512,
+        768
+       ],
+       [
+        256,
+        768
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 14",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        426.6666666666667,
+        673.3333333333334
+       ],
+       [
+        693.3333333333334,
+        673.3333333333334
+       ],
+       [
+        693.3333333333334,
+        940.0
+       ],
+       [
+        426.6666666666667,
+        940.0
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        512,
+        512
+       ],
+       [
+        768,
+        512
+       ],
+       [
+        768,
+        768
+       ],
+       [
+        512,
+        768
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 15",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        693.3333333333334,
+        673.3333333333334
+       ],
+       [
+        960.0,
+        673.3333333333334
+       ],
+       [
+        960.0,
+        940.0
+       ],
+       [
+        693.3333333333334,
+        940.0
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        768,
+        512
+       ],
+       [
+        1024,
+        512
+       ],
+       [
+        1024,
+        768
+       ],
+       [
+        768,
+        768
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 16",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        960.0,
+        673.3333333333334
+       ],
+       [
+        1226.6666666666667,
+        673.3333333333334
+       ],
+       [
+        1226.6666666666667,
+        940.0
+       ],
+       [
+        960.0,
+        940.0
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1024,
+        512
+       ],
+       [
+        1280,
+        512
+       ],
+       [
+        1280,
+        768
+       ],
+       [
+        1024,
+        768
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 17",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1226.6666666666667,
+        673.3333333333334
+       ],
+       [
+        1493.3333333333335,
+        673.3333333333334
+       ],
+       [
+        1493.3333333333335,
+        940.0
+       ],
+       [
+        1226.6666666666667,
+        940.0
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1280,
+        512
+       ],
+       [
+        1536,
+        512
+       ],
+       [
+        1536,
+        768
+       ],
+       [
+        1280,
+        768
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Main 18",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1493.3333333333335,
+        673.3333333333334
+       ],
+       [
+        1760.0000000000002,
+        673.3333333333334
+       ],
+       [
+        1760.0000000000002,
+        940.0
+       ],
+       [
+        1493.3333333333335,
+        940.0
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1536,
+        512
+       ],
+       [
+        1792,
+        512
+       ],
+       [
+        1792,
+        768
+       ],
+       [
+        1536,
+        768
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Left wing 1",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        20,
+        140.0
+       ],
+       [
+        160,
+        140.0
+       ],
+       [
+        160,
+        406.6666666666667
+       ],
+       [
+        20,
+        406.6666666666667
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        0,
+        0
+       ],
+       [
+        256,
+        0
+       ],
+       [
+        256,
+        256
+       ],
+       [
+        0,
+        256
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Left wing 2",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        20,
+        406.6666666666667
+       ],
+       [
+        160,
+        406.6666666666667
+       ],
+       [
+        160,
+        673.3333333333334
+       ],
+       [
+        20,
+        673.3333333333334
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        0,
+        256
+       ],
+       [
+        256,
+        256
+       ],
+       [
+        256,
+        512
+       ],
+       [
+        0,
+        512
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Left wing 3",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        20,
+        673.3333333333334
+       ],
+       [
+        160,
+        673.3333333333334
+       ],
+       [
+        160,
+        940.0
+       ],
+       [
+        20,
+        940.0
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        0,
+        512
+       ],
+       [
+        256,
+        512
+       ],
+       [
+        256,
+        768
+       ],
+       [
+        0,
+        768
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Right wing 1",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1760,
+        140.0
+       ],
+       [
+        1900,
+        140.0
+       ],
+       [
+        1900,
+        406.6666666666667
+       ],
+       [
+        1760,
+        406.6666666666667
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1792,
+        0
+       ],
+       [
+        2048,
+        0
+       ],
+       [
+        2048,
+        256
+       ],
+       [
+        1792,
+        256
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Right wing 2",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1760,
+        406.6666666666667
+       ],
+       [
+        1900,
+        406.6666666666667
+       ],
+       [
+        1900,
+        673.3333333333334
+       ],
+       [
+        1760,
+        673.3333333333334
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1792,
+        250
+       ],
+       [
+        2048,
+        250
+       ],
+       [
+        2048,
+        506
+       ],
+       [
+        1792,
+        506
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     },
+     {
+      "name": "Right wing 3",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        1760,
+        673.3333333333334
+       ],
+       [
+        1900,
+        673.3333333333334
+       ],
+       [
+        1900,
+        940.0
+       ],
+       [
+        1760,
+        940.0
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        1792,
+        512
+       ],
+       [
+        2048,
+        512
+       ],
+       [
+        2048,
+        768
+       ],
+       [
+        1792,
+        768
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     }
+    ]
+   },
+   {
+    "name": "Projector left",
+    "enabled": true,
+    "device": "Virtual",
+    "display": "",
+    "size": [
+     1920,
+     1080
+    ],
+    "opacity": 1,
+    "brightness": 0,
+    "contrast": 0,
+    "rgb": [
+     0,
+     0,
+     0
+    ],
+    "share": false,
+    "ndi": false,
+    "slices": [
+     {
+      "name": "Left half",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        0,
+        0
+       ],
+       [
+        1056,
+        0
+       ],
+       [
+        1056,
+        1080
+       ],
+       [
+        0,
+        1080
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        60,
+        40
+       ],
+       [
+        1900,
+        0
+       ],
+       [
+        1920,
+        1080
+       ],
+       [
+        20,
+        1050
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0.1,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     }
+    ]
+   },
+   {
+    "name": "Projector right",
+    "enabled": true,
+    "device": "Virtual",
+    "display": "",
+    "size": [
+     1920,
+     1080
+    ],
+    "opacity": 1,
+    "brightness": 0,
+    "contrast": 0,
+    "rgb": [
+     0,
+     0,
+     0
+    ],
+    "share": false,
+    "ndi": false,
+    "slices": [
+     {
+      "name": "Right half",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        864,
+        0
+       ],
+       [
+        1920,
+        0
+       ],
+       [
+        1920,
+        1080
+       ],
+       [
+        864,
+        1080
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        0,
+        0
+       ],
+       [
+        1860,
+        40
+       ],
+       [
+        1900,
+        1050
+       ],
+       [
+        0,
+        1080
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0.1,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     }
+    ]
+   },
+   {
+    "name": "Stream",
+    "enabled": true,
+    "device": "Virtual",
+    "display": "",
+    "size": [
+     1920,
+     1080
+    ],
+    "opacity": 1,
+    "brightness": 0,
+    "contrast": 0,
+    "rgb": [
+     0,
+     0,
+     0
+    ],
+    "share": false,
+    "ndi": true,
+    "slices": [
+     {
+      "name": "Everything",
+      "enabled": true,
+      "type": "slice",
+      "input": [
+       [
+        0,
+        0
+       ],
+       [
+        1920,
+        0
+       ],
+       [
+        1920,
+        1080
+       ],
+       [
+        0,
+        1080
+       ]
+      ],
+      "warp": "Perspective",
+      "corners": [
+       [
+        0,
+        0
+       ],
+       [
+        1920,
+        0
+       ],
+       [
+        1920,
+        1080
+       ],
+       [
+        0,
+        1080
+       ]
+      ],
+      "flip": [
+       false,
+       false
+      ],
+      "opacity": 1,
+      "softEdge": {
+       "left": 0,
+       "right": 0,
+       "top": 0,
+       "bottom": 0,
+       "power": 2,
+       "luminance": 0.5,
+       "gamma": 2.2
+      }
+     }
+    ]
+   }
+  ]
+ }
+}
