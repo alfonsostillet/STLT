@@ -7,10 +7,11 @@ namespace stltvj
 {
 class App;
 
-// The Advanced Output editor: the screens as cards along the top; the chosen screen's slices on the left; in the
-// middle Input (what each slice takes from its picture, the composition or a canvas) and Output (where and how it
-// lands on the screen), side by side or one large; the slice's and screen's settings on the right; on show and
-// saving along the bottom.
+// The Advanced Output editor, as a path in three steps: 1 Screens (the screens STLT sends out, where each goes:
+// a display, a window, NDI or sharing; this computer's displays as the system arranges them), 2 Stage (the stage in
+// real size: next) and 3 Map (each slice's part of the picture and its place and shape on the screen, side by side,
+// with the problems found). Which setup is edited (the Grid's or the Timeline's) and whether it is on show are along
+// the top, saving along the bottom.
 void DrawAdvancedOutputPanel( App& app );
 // Asks whether to save the Advanced Output setup when its editor closes, or the app quits, with unsaved edits.
 void DrawAdvancedOutputSavePrompt( App& app );
