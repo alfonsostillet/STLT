@@ -33,6 +33,7 @@ enum class Drag
 	Scale,  // a transform box handle
 	Rotate, // the transform box's rotate knob
 	Move,
+	Pick,   // a box dragged on an empty part of the canvas: the slices it touches are picked
 };
 
 // What dragging on the output does: shape the slice point by point, or move, scale and rotate it whole.
@@ -83,7 +84,15 @@ struct Editor
 	bool menuCanInsert = false;
 	Vec2 menuAt;
 
+	// Several slices picked together (Ctrl or Shift + click, or a box dragged around them): they move together.
+	// `slice` is the one the inspector shows, always among them.
+	std::vector< int > picked;
+	bool pickAdditive = false;
+	Vec2 pickFrom;
+	std::vector< std::pair< int, std::vector< Vec2 > > > beforeMany; // the picked slices' points when a move started
+
 	Drag drag      = Drag::None;
+	int dragTab    = InputTab; // the canvas the drag started on: side by side, only it follows the mouse
 	int handle     = -1; // the point, the Bézier handle's point, or the box handle being dragged
 	bool handleOut = false;
 	Link link      = Link::None;
@@ -362,6 +371,22 @@ bool ScreenOnShow( const App& app, const Screen& s )
 	return app.EditingLive() && app.outputMode == OutputMode::Advanced && s.enabled && ( s.device != OutputDevice::Virtual || s.ndi || s.share );
 }
 
+bool IsPicked( int index )
+{
+	return std::find( editor.picked.begin(), editor.picked.end(), index ) != editor.picked.end();
+}
+
+// Keeps the picked slices valid and with the inspector's one among them (other code may change editor.slice).
+void SyncPicked( const Screen& screen )
+{
+	editor.picked.erase( std::remove_if( editor.picked.begin(), editor.picked.end(), [ & ]( int i ) { return i < 0 || i >= (int)screen.slices.size(); } ),
+	                     editor.picked.end() );
+	if( editor.slice < 0 )
+		editor.picked.clear();
+	else if( !IsPicked( editor.slice ) )
+		editor.picked = { editor.slice };
+}
+
 // ---- left: screens and slices
 
 void DrawList( App& app )
@@ -385,6 +410,7 @@ void DrawList( App& app )
 				{
 					editor.screen = si;
 					editor.slice  = setup.screens[ si ].slices.empty() ? -1 : 0;
+					editor.picked.clear();
 				}
 			ImGui::EndCombo();
 		}
@@ -397,6 +423,7 @@ void DrawList( App& app )
 	if( haveScreen )
 	{
 		Screen& screen = setup.screens[ editor.screen ];
+		SyncPicked( screen );
 		ImGui::TextDisabled( "%d item%s, the top one drawn over the others", (int)screen.slices.size(), screen.slices.size() == 1 ? "" : "s" );
 		// Top of the list is drawn on top: show the slices last to first.
 		for( int k = (int)screen.slices.size() - 1; k >= 0; --k )
@@ -415,16 +442,39 @@ void DrawList( App& app )
 			ImGui::SetCursorScreenPos( ImVec2( rowAt.x + bw + Ui( 6 ), rowAt.y ) );
 			ImGui::AlignTextToFramePadding();
 			std::string name = slice.name + ( slice.polygon ? "  (polygon)" : "" );
-			if( ImGui::Selectable( name.c_str(), editor.slice == k, 0, ImVec2( 0, h ) ) )
-				editor.slice = k;
+			if( ImGui::Selectable( name.c_str(), IsPicked( k ), 0, ImVec2( 0, h ) ) )
+			{
+				// Ctrl or Shift + click: in or out of the picked slices, to move them together.
+				const ImGuiIO& io = ImGui::GetIO();
+				if( ( io.KeyCtrl || io.KeyShift ) && editor.slice >= 0 )
+				{
+					if( IsPicked( k ) && editor.picked.size() > 1 )
+					{
+						editor.picked.erase( std::find( editor.picked.begin(), editor.picked.end(), k ) );
+						editor.slice = editor.picked.back();
+					}
+					else
+					{
+						if( !IsPicked( k ) )
+							editor.picked.push_back( k );
+						editor.slice = k;
+					}
+				}
+				else
+				{
+					editor.slice  = k;
+					editor.picked = { k };
+				}
+			}
 			if( ImGui::IsItemClicked( ImGuiMouseButton_Right ) )
 			{
 				editor.slice = k;
 				ImGui::OpenPopup( "##itemMenu" );
 			}
 			if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) )
-				ImGui::SetTooltip( slice.mask ? "A mask: blacks out what is below it in the list\nRight-click: up, down, duplicate, delete"
-				                              : "Takes from: %s\nRight-click: up, down, duplicate, delete", PictureName( app, slice.source ).c_str() );
+				ImGui::SetTooltip( slice.mask ? "A mask: blacks out what is below it in the list\nCtrl-click: pick several. Right-click: up, down, duplicate, delete"
+				                              : "Takes from: %s\nCtrl-click: pick several, to move them together. Right-click: up, down, duplicate, delete",
+				                   PictureName( app, slice.source ).c_str() );
 			if( ImGui::BeginPopup( "##itemMenu" ) )
 			{
 				std::vector< Slice >& slices = screen.slices;
@@ -497,10 +547,18 @@ void DrawList( App& app )
 	ImGui::SameLine();
 	if( ImGui::Button( "Delete", ImVec2( quarter, 0 ) ) && haveSlice )
 	{
+		// Every picked slice.
 		std::vector< Slice >& slices = setup.screens[ editor.screen ].slices;
-		slices.erase( slices.begin() + editor.slice );
-		editor.slice = std::min( editor.slice, (int)slices.size() - 1 );
+		std::vector< int > gone      = editor.picked;
+		std::sort( gone.rbegin(), gone.rend() );
+		for( int i : gone )
+			if( i >= 0 && i < (int)slices.size() )
+				slices.erase( slices.begin() + i );
+		editor.picked.clear();
+		editor.slice = std::min( gone.empty() ? editor.slice : gone.back(), (int)slices.size() - 1 );
 	}
+	if( ImGui::IsItemHovered() && editor.picked.size() > 1 )
+		ImGui::SetTooltip( "Deletes the %d picked slices", (int)editor.picked.size() );
 	ImGui::EndDisabled();
 
 	float third = ( ImGui::GetContentRegionAvail().x - 2 * ImGui::GetStyle().ItemSpacing.x ) / 3;
@@ -825,6 +883,7 @@ void DrawPolygonTool( App& app, Screen& screen, int tab, ImDrawList* draw, ImVec
 void DrawCanvas( App& app, Screen& screen, int tab )
 {
 	ImGuiIO& io = ImGui::GetIO();
+	SyncPicked( screen );
 	// The Input tab shows the picture the selected slice takes from (the composition or a canvas).
 	if( editor.slice >= 0 && editor.slice < (int)screen.slices.size() && !screen.slices[ editor.slice ].mask )
 		editor.inputSource = screen.slices[ editor.slice ].source;
@@ -917,8 +976,10 @@ void DrawCanvas( App& app, Screen& screen, int tab )
 		// Each slice in its own colour, the same in the list and on both canvases; the selected one bolder.
 		ImU32 colour = !s.enabled ? IM_COL32( 140, 140, 140, 90 )
 		               : s.mask   ? IM_COL32( 255, 110, 110, 170 ) // masks in red
-		                          : ( SliceColour( i ) & 0x00FFFFFF ) | ( i == selected ? 0xFF000000 : 0xB4000000 );
-		draw->AddPolyline( pts.data(), (int)pts.size(), colour, ImDrawFlags_Closed, i == selected ? Ui( 2.5f ) : Ui( 1.2f ) );
+		                          : ( SliceColour( i ) & 0x00FFFFFF ) | ( IsPicked( i ) ? 0xFF000000 : 0xB4000000 );
+		if( IsPicked( i ) && i != selected )
+			draw->AddPolyline( pts.data(), (int)pts.size(), IM_COL32( 255, 255, 255, 200 ), ImDrawFlags_Closed, Ui( 3.5f ) );
+		draw->AddPolyline( pts.data(), (int)pts.size(), colour, ImDrawFlags_Closed, IsPicked( i ) ? Ui( 2.5f ) : Ui( 1.2f ) );
 		if( !s.mask )
 		{
 			// Its number at its top left corner, as in the list.
@@ -1038,7 +1099,7 @@ void DrawCanvas( App& app, Screen& screen, int tab )
 			}
 		}
 	}
-	if( editor.drag != Drag::None && ( editor.snappedX || editor.snappedY ) )
+	if( editor.drag != Drag::None && editor.dragTab == tab && ( editor.snappedX || editor.snappedY ) )
 	{
 		ImVec2 p = toScreen( editor.snapAt );
 		if( editor.snappedX )
@@ -1105,8 +1166,9 @@ void DrawCanvas( App& app, Screen& screen, int tab )
 	}
 	if( clicked )
 	{
-		editor.drag   = Drag::None;
-		editor.handle = -1;
+		editor.drag    = Drag::None;
+		editor.dragTab = tab;
+		editor.handle  = -1;
 		if( selected >= 0 )
 		{
 			Slice& s   = screen.slices[ selected ];
@@ -1181,24 +1243,89 @@ void DrawCanvas( App& app, Screen& screen, int tab )
 			for( int i = (int)screen.slices.size() - 1; i >= 0 && hit < 0; --i )
 				if( onCanvas( screen.slices[ i ] ) && PointInPolygon( Outline( screen.slices[ i ], tab ), mouse ) )
 					hit = i;
-			editor.slice = hit;
+			bool adding  = io.KeyCtrl || io.KeyShift;
 			editor.point = -1;
-			selected     = hit;
-			if( hit >= 0 )
-				editor.drag = Drag::Move;
+			if( hit < 0 )
+			{
+				// On an empty part: a box to pick slices with (Ctrl or Shift: added to those picked).
+				editor.drag         = Drag::Pick;
+				editor.pickFrom     = mouse;
+				editor.pickAdditive = adding;
+				if( !adding )
+				{
+					editor.slice = -1;
+					editor.picked.clear();
+				}
+				selected = editor.slice;
+			}
+			else if( adding )
+			{
+				// Ctrl or Shift + click: in or out of the picked slices.
+				if( IsPicked( hit ) && editor.picked.size() > 1 )
+				{
+					editor.picked.erase( std::find( editor.picked.begin(), editor.picked.end(), hit ) );
+					editor.slice = editor.picked.back();
+				}
+				else
+				{
+					if( !IsPicked( hit ) )
+						editor.picked.push_back( hit );
+					editor.slice = hit;
+				}
+				selected = editor.slice;
+			}
+			else
+			{
+				// A click on one of several picked slices keeps them all, to drag them together.
+				if( !IsPicked( hit ) )
+					editor.picked = { hit };
+				editor.slice = hit;
+				selected     = hit;
+				editor.drag  = Drag::Move;
+			}
 		}
-		if( editor.drag != Drag::None && selected >= 0 )
+		if( editor.drag != Drag::None && editor.drag != Drag::Pick && selected >= 0 )
 		{
 			editor.dragFrom = mouse;
 			BeginEdit( screen.slices[ selected ], tab );
+			editor.beforeMany.clear();
+			if( editor.drag == Drag::Move )
+				for( int i : editor.picked )
+				{
+					std::vector< Vec2 > points;
+					for( Vec2* q : EditablePoints( screen.slices[ i ], tab ) )
+						points.push_back( *q );
+					editor.beforeMany.push_back( { i, points } );
+				}
 		}
+	}
+	if( editor.drag == Drag::Pick && editor.dragTab == tab )
+	{
+		// The box: every slice whose outline it touches is picked when the button comes up.
+		float x0 = std::min( editor.pickFrom.x, mouse.x ), y0 = std::min( editor.pickFrom.y, mouse.y );
+		float x1 = std::max( editor.pickFrom.x, mouse.x ), y1 = std::max( editor.pickFrom.y, mouse.y );
+		draw->AddRectFilled( toScreen( { x0, y0 } ), toScreen( { x1, y1 } ), ( theme::Accent & 0x00FFFFFF ) | 0x22000000 );
+		draw->AddRect( toScreen( { x0, y0 } ), toScreen( { x1, y1 } ), theme::Accent );
+		if( !ImGui::IsMouseDown( ImGuiMouseButton_Left ) && ( x1 - x0 ) * scale > 3 && ( y1 - y0 ) * scale > 3 )
+			for( int i = 0; i < (int)screen.slices.size(); ++i )
+			{
+				if( !onCanvas( screen.slices[ i ] ) || IsPicked( i ) )
+					continue;
+				float a0, b0, a1, b1;
+				Bounds( Outline( screen.slices[ i ], tab ), a0, b0, a1, b1 );
+				if( a0 < x1 && a1 > x0 && b0 < y1 && b1 > y0 )
+				{
+					editor.picked.push_back( i );
+					editor.slice = i;
+				}
+			}
 	}
 	if( !ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
 	{
 		editor.drag     = Drag::None;
 		editor.snappedX = editor.snappedY = false;
 	}
-	if( editor.drag != Drag::None && selected >= 0 && ImGui::IsMouseDragging( ImGuiMouseButton_Left, 1.0f ) )
+	if( editor.drag != Drag::None && editor.drag != Drag::Pick && editor.dragTab == tab && selected >= 0 && ImGui::IsMouseDragging( ImGuiMouseButton_Left, 1.0f ) )
 	{
 		Slice& s                    = screen.slices[ selected ];
 		std::vector< Vec2* > points = EditablePoints( s, tab );
@@ -1311,6 +1438,16 @@ void DrawCanvas( App& app, Screen& screen, int tab )
 				editor.snappedY = ay || editor.snappedY;
 				for( size_t k = 0; k < points.size(); ++k )
 					*points[ k ] = { editor.before[ k ].x + delta.x, editor.before[ k ].y + delta.y };
+				// The other picked slices move by as much.
+				for( const auto& [ index, was ] : editor.beforeMany )
+				{
+					if( index == selected || index >= (int)screen.slices.size() )
+						continue;
+					std::vector< Vec2* > others = EditablePoints( screen.slices[ index ], tab );
+					if( others.size() == was.size() )
+						for( size_t k = 0; k < others.size(); ++k )
+							*others[ k ] = { was[ k ].x + delta.x, was[ k ].y + delta.y };
+				}
 			}
 		}
 	}
@@ -1331,13 +1468,19 @@ void DrawCanvas( App& app, Screen& screen, int tab )
 		if( ImGui::IsKeyPressed( ImGuiKey_DownArrow ) )
 			nudge.y += step;
 		bool onePoint = editor.point >= 0 && editor.point < (int)points.size() && ( tab == OutputTab || s.polygon );
-		if( nudge.x != 0 || nudge.y != 0 )
-			for( size_t k = 0; k < points.size(); ++k )
-				if( !onePoint || (int)k == editor.point )
-				{
-					points[ k ]->x += nudge.x;
-					points[ k ]->y += nudge.y;
-				}
+		if( ( nudge.x != 0 || nudge.y != 0 ) && onePoint )
+		{
+			points[ editor.point ]->x += nudge.x;
+			points[ editor.point ]->y += nudge.y;
+		}
+		else if( nudge.x != 0 || nudge.y != 0 )
+			for( int i : editor.picked )
+				if( i < (int)screen.slices.size() && onCanvas( screen.slices[ i ] ) )
+					for( Vec2* q : EditablePoints( screen.slices[ i ], tab ) )
+					{
+						q->x += nudge.x;
+						q->y += nudge.y;
+					}
 		if( editor.point >= 0 && ( ImGui::IsKeyPressed( ImGuiKey_Delete ) || ImGui::IsKeyPressed( ImGuiKey_Backspace ) ) && RemovePoint( s, tab, editor.point ) )
 			editor.point = -1;
 		if( ImGui::IsKeyPressed( ImGuiKey_Escape ) )
@@ -1726,6 +1869,12 @@ void DrawSliceProps( App& app, Screen& screen, Slice& s )
 	setup.SourceSize( s.source, comp.width, comp.height, sourceW, sourceH );
 	float cw = (float)sourceW, ch = (float)sourceH; // the picture the slice takes from
 	ItemTitle( s, editor.slice );
+	if( editor.picked.size() > 1 )
+	{
+		ImGui::PushStyleColor( ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4( theme::Accent ) );
+		ImGui::TextWrapped( "%d slices picked: dragging or the arrows move them all. Below: this one's settings.", (int)editor.picked.size() );
+		ImGui::PopStyleColor();
+	}
 	if( BeginProps( "##slice" ) )
 	{
 		Row( "Name" );

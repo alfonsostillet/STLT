@@ -547,6 +547,10 @@ void DrawMainMenu( App& app )
 		{
 			if( ImGui::MenuItem( "New Layer" ) )
 				app.composition.AddLayer();
+			Composition& c = app.composition;
+			std::string remove = "Delete " + ( c.selectedLayer >= 0 && c.selectedLayer < (int)c.layers.size() ? c.layers[ c.selectedLayer ].name : std::string( "Layer" ) );
+			if( ImGui::MenuItem( remove.c_str(), nullptr, false, c.layers.size() > 1 && c.selectedLayer >= 0 && c.selectedLayer < (int)c.layers.size() ) )
+				app.DeleteLayer( c.selectedLayer );
 			if( ImGui::MenuItem( "Clear All Layers" ) )
 				for( int l = 0; l < (int)app.composition.layers.size(); ++l )
 					app.ClearLayer( l );
@@ -1807,6 +1811,7 @@ static void DrawDeck( App& app, bool layersPart )
 			ImGui::SetNextItemAllowOverlap();
 			if( ImGui::InvisibleButton( "##header", ImVec2( g.headerW, g.row ) ) )
 				selectLayer();
+			ImGui::OpenPopupOnItemClick( "##layerMenu", ImGuiPopupFlags_MouseButtonRight );
 			if( AcceptEffectDrop( app, layer.effects ) )
 				comp.selectedLayer = l;
 			if( selectedLayer )
@@ -1832,9 +1837,36 @@ static void DrawDeck( App& app, bool layersPart )
 				ImGui::SetCursorScreenPos( ImVec2( nx, ly ) );
 				if( ImGui::InvisibleButton( "##name", ImVec2( lx + lw - clearW - nx, Ui( 22 ) ) ) )
 					selectLayer();
+				ImGui::OpenPopupOnItemClick( "##layerMenu", ImGuiPopupFlags_MouseButtonRight );
 				if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) && !learning )
-					ImGui::SetTooltip( "%s: click to select it (its settings and effects in the Layer panel); drop effects here%s", layer.name.c_str(),
-					                   comp.target == ClipTarget::SelectedLayer ? "\nClips launched from any row play on the selected layer" : "" );
+					ImGui::SetTooltip( "%s: click to select it (its settings and effects in the Layer panel); drop effects here.\nRight-click: rename, "
+					                   "new layer, delete%s",
+					                   layer.name.c_str(), comp.target == ClipTarget::SelectedLayer ? "\nClips launched from any row play on the selected layer" : "" );
+				// Right-click on the layer: rename it, add one, clear or delete it.
+				bool deleted = false;
+				if( ImGui::BeginPopup( "##layerMenu" ) )
+				{
+					ImGui::TextDisabled( "%s", layer.name.c_str() );
+					ImGui::SetNextItemWidth( Ui( 180 ) );
+					ImGui::InputText( "##rename", &layer.name );
+					ImGui::Separator();
+					if( ImGui::MenuItem( "New Layer" ) )
+						comp.AddLayer();
+					if( ImGui::MenuItem( "Clear Layer" ) )
+						app.ClearLayer( l );
+					if( ImGui::MenuItem( "Delete Layer", nullptr, false, comp.layers.size() > 1 ) )
+						deleted = true;
+					ImGui::EndPopup();
+				}
+				if( deleted )
+				{
+					// The rest of this row would draw a layer that is gone: the deck is drawn again next frame.
+					app.DeleteLayer( l );
+					ImGui::PopID();
+					ImGui::EndChild();
+					ImGui::End();
+					return;
+				}
 				ImGui::PushFont( Fonts().bold );
 				draw->PushClipRect( ImVec2( nx, ly ), ImVec2( lx + lw - clearW, ly + Ui( 22 ) ), true );
 				draw->AddText( ImVec2( nx, ly + ( Ui( 22 ) - ImGui::GetTextLineHeight() ) / 2 ), off ? theme::TextDim : selectedLayer ? theme::Accent : theme::Text, layer.name.c_str() );
