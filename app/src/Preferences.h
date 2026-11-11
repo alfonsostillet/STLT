@@ -14,6 +14,10 @@ struct Preferences
 	// The S fader in a layer's header (and its MIDI/OSC): false sets the layer's speed, which multiplies the clip's own;
 	// true sets the speed of the clip playing on the layer, as in Resolume.
 	bool layerSpeedIsClipSpeed = false;
+	// The M and A faders in a layer's header; hidden, the others take their room. Their values, their MIDI/OSC and
+	// the Layer panel's sliders stay.
+	bool showLayerMasterFader = true;
+	bool showLayerAudioFader  = true;
 
 	// Audio.
 	std::string audioDevice; // empty: the system's default

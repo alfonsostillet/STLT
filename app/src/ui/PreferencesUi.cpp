@@ -119,6 +119,11 @@ bool General( App& app )
 	Help( "The layer's speed multiplies the speed of every clip played on it, and stays when the clip changes. The clip's "
 	      "speed belongs to the clip: each clip keeps its own, and the fader shows the one playing. The "
 	      "fader's MIDI and OSC follow the same choice; the Layer panel always has the layer's speed." );
+	Caption( "Faders in a layer's header" );
+	changed |= ImGui::Checkbox( "Master (M)", &p.showLayerMasterFader );
+	changed |= ImGui::Checkbox( "Audio (A)", &p.showLayerAudioFader );
+	Help( "A hidden fader keeps its value and its MIDI and OSC, and the Layer panel still has it. The Video fader (V) is "
+	      "always there." );
 	Caption( "Settings folder" );
 	ImGui::TextDisabled( "%s", app.configDir.c_str() );
 	Help( "Preferences, shortcuts and their presets, workspaces, output presets and the last session are kept here." );
