@@ -95,6 +95,9 @@ struct Lighting
 };
 // Each face the projector lights (its front facing the projector), largest first.
 std::vector< Lighting > LightingOf( const std::vector< StageFace >& faces, const StageProjector& projector );
+// A face's corners in the projector's picture (its pixels, y down): top-left, top-right, bottom-right, bottom-left
+// as the face is seen from its front. False when a corner is behind the lens.
+bool FaceInPicture( const StageProjector& projector, const StageFace& face, Vec2 corners[ 4 ] );
 // The part two lit polygons share on the same face (empty when they do not overlap).
 std::vector< Vec3 > Overlap( const StageFace& face, const std::vector< Vec3 >& a, const std::vector< Vec3 >& b );
 // The share of a face lit by at least one projector, and by two or more (sampled on a grid).

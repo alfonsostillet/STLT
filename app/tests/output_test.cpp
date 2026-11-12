@@ -717,6 +717,15 @@ static void TestStage()
 	lit = LightingOf( boxFaces, corner );
 	CHECK( lit.size() == 2 ); // the front and the right
 
+	// The façade seen straight on from 16.5 m with a 1.65 throw: 20 m wide, the picture 10 m wide.
+	Vec2 corners[ 4 ];
+	CHECK( FaceInPicture( p, faces[ 0 ], corners ) );
+	CHECK( std::abs( corners[ 0 ].x - ( 960 - 1920 ) ) < 1 && std::abs( corners[ 1 ].x - ( 960 + 1920 ) ) < 1 ); // top-left, top-right
+	CHECK( corners[ 0 ].y < corners[ 3 ].y && std::abs( corners[ 2 ].x - corners[ 1 ].x ) < 1 );                 // bottom below top
+	StageProjector away = p;
+	away.pan = 180; // looking away from the façade
+	CHECK( !FaceInPicture( away, faces[ 0 ], corners ) );
+
 	// Saved and loaded.
 	stage.projectors.push_back( left );
 	stage.projectors[ 0 ].screen = "abc";

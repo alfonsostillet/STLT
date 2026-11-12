@@ -137,8 +137,8 @@ Stage Stage::MakeDefault()
 	stage.surfaces.push_back( facade );
 	StageSurface ground;
 	ground.name     = "Ground";
-	ground.position = { 0, 0, 15 };
-	ground.size     = { 40, 30, 0 };
+	ground.position = { 0, 0, 12 };
+	ground.size     = { 32, 24, 0 };
 	ground.rotation = { 0, -90, 0 }; // facing up
 	stage.surfaces.push_back( ground );
 	return stage;
@@ -266,6 +266,16 @@ std::vector< Lighting > LightingOf( const std::vector< StageFace >& faces, const
 	}
 	std::sort( lit.begin(), lit.end(), []( const Lighting& a, const Lighting& b ) { return a.area > b.area; } );
 	return lit;
+}
+
+bool FaceInPicture( const StageProjector& projector, const StageFace& face, Vec2 corners[ 4 ] )
+{
+	// The face's corners 3, 2, 1, 0 are its top-left, top-right, bottom-right and bottom-left.
+	const int order[ 4 ] = { 3, 2, 1, 0 };
+	for( int i = 0; i < 4; ++i )
+		if( !ProjectToPicture( projector, face.Corner( order[ i ] ), corners[ i ] ) )
+			return false;
+	return true;
 }
 
 std::vector< Vec3 > Overlap( const StageFace& face, const std::vector< Vec3 >& a, const std::vector< Vec3 >& b )

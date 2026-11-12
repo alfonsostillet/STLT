@@ -13,6 +13,14 @@ Fixes already made and checked by the automatic tests, to try on a real PC befor
 
 - [ ] **Spout and NDI**: an Advanced Output screen sent through Spout and NDI must show up in another program.
 
+## Advanced Output: step 3 Stage (new)
+
+- [ ] *Start with a façade 20 x 12 m*, then *+ Projector*: the beam and the lit part of the façade must show, with pixels per metre and lux; move the projector by dragging it (Alt: up and down) and with the numbers on the right.
+- [ ] Throw ratio and lens shift: the lit part must grow, shrink and rise as on the real projector. Try one of your projectors' data sheets and compare with a real setup you know.
+- [ ] Two projectors side by side: the overlap must be outlined and listed in each one's settings.
+- [ ] *Make the slices from here*: in step 1 a screen for the projector appears, in step 2 its slices are in perspective; send that screen to a projector and check how close it is to the real surface.
+- [ ] *Detach the view*: the 3D view in its own window, on another display.
+
 ## The Output menu (new)
 
 - [ ] **Windowed** on each display: the output window must open in the middle of the chosen display. **Fullscreen** on the display STLT is on says so in its tooltip; Escape on the output closes it.

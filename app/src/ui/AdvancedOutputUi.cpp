@@ -9,6 +9,7 @@
 #include "Settings.h"
 #include "ui/FileDialogs.h"
 #include "ui/Panels.h"
+#include "ui/StageUi.h"
 #include "ui/Theme.h"
 #include "ui/Widgets.h"
 #include "ui/Workspaces.h"
@@ -2514,7 +2515,8 @@ void DrawHeader( App& app )
 		                      "or over the network (NDI). One screen per output cable, usually." );
 		line( "2", "Map", "On each screen, slices. A slice takes a part of the composition (Takes from, on the left) and puts it somewhere "
 		                  "on the screen (Goes to, on the right), warped to fit the surface. Same colour, same number: the same slice on both sides." );
-		line( "3", "Stage", "Coming: the stage in real size, with the picture on it." );
+		line( "3", "Stage", "The space in metres and the projectors where they will stand: what each one lights, how sharp and bright, "
+		                    "and where two overlap, before you get to the place." );
 		ImGui::Separator();
 		ImGui::TextWrapped( "The Grid view (deck) and the Timeline view each have a setup: the tabs at the top. The strip under the steps "
 		                    "follows the picture from the composition to where it goes out; a part in orange needs a look." );
@@ -2551,13 +2553,13 @@ void DrawSteps( App& app, AdvancedOutputSetup& setup )
 	};
 	const StepInfo steps[] = { { "Screens", "Where the picture goes out", Editor::Step::Screens },
 		                       { "Map", "Which part of the picture goes where", Editor::Step::Map },
-		                       { "Stage", "What it lights, in real size", Editor::Step::Stage } };
+		                       { "Stage", "The space, and what each projector lights", Editor::Step::Stage } };
 	float x = origin.x;
 	for( int i = 0; i < 3; ++i )
 	{
 		const StepInfo& st = steps[ i ];
 		bool on            = editor.step == st.step;
-		bool soon          = st.step == Editor::Step::Stage; // the stage in 3D comes next
+		bool soon          = false;
 		ImGui::PushFont( Fonts().bold );
 		float titleW = ImGui::CalcTextSize( st.title ).x;
 		ImGui::PopFont();
@@ -2570,8 +2572,6 @@ void DrawSteps( App& app, AdvancedOutputSetup& setup )
 		bool hovered = ImGui::IsItemHovered();
 		if( clicked && !soon )
 			editor.step = st.step;
-		if( hovered && soon )
-			ImGui::SetTooltip( "Coming next: the stage in 3D, in millimetres, with the live picture on it" );
 		ImVec2 b0( x + Ui( 6 ), origin.y + ( h - box ) / 2 );
 		char number[ 4 ];
 		std::snprintf( number, sizeof( number ), "%d", i + 1 );
@@ -2748,7 +2748,7 @@ void DrawPath( App& app, AdvancedOutputSetup& setup )
 		float w      = std::min( labelW + textW + Ui( 26 ), std::max( Ui( 60 ), ( avail - 3 * gap ) / 4 * ( i == 0 || i == 3 ? 1.3f : 0.7f ) ) );
 		ImGui::SetCursorScreenPos( ImVec2( x, origin.y ) );
 		ImGui::PushID( 700 + i );
-		if( ImGui::InvisibleButton( "##part", ImVec2( w, h ) ) && editor.step != Editor::Step::Stage )
+		if( ImGui::InvisibleButton( "##part", ImVec2( w, h ) ) )
 			editor.step = p.step;
 		ImGui::PopID();
 		bool hot = ImGui::IsItemHovered();
@@ -3323,8 +3323,6 @@ void DrawAdvancedOutputPanel( App& app )
 	editor.screen = std::clamp( editor.screen, 0, (int)setup.screens.size() - 1 );
 	if( editor.slice >= (int)setup.screens[ editor.screen ].slices.size() )
 		editor.slice = -1;
-	if( editor.step == Editor::Step::Stage )
-		editor.step = Editor::Step::Map;
 
 	if( app.outputSavePrompt != 0 )
 		DrawSaveQuestion( app );
@@ -3339,10 +3337,13 @@ void DrawAdvancedOutputPanel( App& app )
 	float bodyHeight = std::max( Ui( 100 ), ImGui::GetContentRegionAvail().y - footHeight );
 	if( editor.step == Editor::Step::Screens )
 		DrawScreensStep( app, setup, bodyHeight );
+	else if( editor.step == Editor::Step::Stage )
+		DrawStageStep( app, setup, bodyHeight );
 	else
 		DrawMapStep( app, setup, bodyHeight );
 	DrawFoot( app );
 	DrawOwnDisplayQuestion( setup );
 	ImGui::End();
+	DrawStageWindow( app, setup ); // the stage's 3D view, when detached
 }
 }

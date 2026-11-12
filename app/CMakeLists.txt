@@ -385,6 +385,8 @@ add_executable(stlt-vj WIN32 MACOSX_BUNDLE
     src/App.h
     src/ui/AdvancedOutputUi.cpp
     src/ui/AdvancedOutputUi.h
+    src/ui/StageUi.cpp
+    src/ui/StageUi.h
     src/ui/ControlUi.cpp
     src/ui/ControlUi.h
     src/ui/EffectsUi.cpp
