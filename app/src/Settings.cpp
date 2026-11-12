@@ -6,6 +6,7 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <shlobj.h>
+#include <shellapi.h> // ShellExecuteW
 #elif defined( __APPLE__ )
 #include <mach-o/dyld.h>
 #include <spawn.h>
