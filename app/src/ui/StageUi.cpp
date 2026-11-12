@@ -270,6 +270,16 @@ void AimAt( StageProjector& p, Vec3 point )
 
 Vec3 SurfaceCentre( const StageSurface& s ) { return s.position; }
 
+// A projector's colour: its screen's (the same as in steps 1 and 2), or its own until it has one.
+ImU32 ProjectorColour( const AdvancedOutputSetup& setup, int index )
+{
+	const StageProjector& p = setup.stage.projectors[ index ];
+	for( size_t s = 0; s < setup.screens.size(); ++s )
+		if( !p.screen.empty() && setup.screens[ s ].id == p.screen )
+			return ScreenColour( (int)s );
+	return ScreenColour( index );
+}
+
 // ---- the 3D view
 
 void DrawView( App& app, AdvancedOutputSetup& setup, ImVec2 size )
@@ -331,7 +341,7 @@ void DrawView( App& app, AdvancedOutputSetup& setup, ImVec2 size )
 				if( !Flatten( cam, l.polygon, lit.points, lit.depth ) || lit.points.size() < 3 )
 					continue;
 				lit.depth = s.depth - 0.001f * ( p + 1 );
-				ImU32 colour = ScreenColour( p );
+				ImU32 colour = ProjectorColour( setup, p );
 				lit.fill = stage.colouring == Colouring::Brightness  ? Ramp( l.lux / 500, 110 )
 				           : stage.colouring == Colouring::Sharpness ? Ramp( l.pixelsPerMetre / 150, 110 )
 				                                                     : WithAlpha( colour, 64 );
@@ -374,7 +384,7 @@ void DrawView( App& app, AdvancedOutputSetup& setup, ImVec2 size )
 	{
 		const StageProjector& pr = st.projectors[ p ];
 		ProjectorFrame f         = FrameOf( pr );
-		ImU32 colour             = ScreenColour( p );
+		ImU32 colour             = ProjectorColour( setup, p );
 		bool through             = stage.view == ViewKind::Through && stage.through == p;
 		if( !through )
 			for( float u : { -1.0f, 1.0f } )
@@ -426,7 +436,7 @@ void DrawView( App& app, AdvancedOutputSetup& setup, ImVec2 size )
 			ImVec2 t = small->CalcTextSizeA( small->FontSize, FLT_MAX, 0, text );
 			at.y += Ui( 14 ) * p;
 			draw->AddRectFilled( ImVec2( at.x - t.x / 2 - Ui( 4 ), at.y - Ui( 1 ) ), ImVec2( at.x + t.x / 2 + Ui( 4 ), at.y + t.y + Ui( 1 ) ), IM_COL32( 13, 12, 11, 190 ) );
-			draw->AddText( small, small->FontSize, ImVec2( at.x - t.x / 2, at.y ), ScreenColour( p ), text );
+			draw->AddText( small, small->FontSize, ImVec2( at.x - t.x / 2, at.y ), ProjectorColour( setup, p ), text );
 		}
 
 	// Through a lens: the picture's frame.
@@ -435,10 +445,10 @@ void DrawView( App& app, AdvancedOutputSetup& setup, ImVec2 size )
 		const StageProjector& p = st.projectors[ stage.through ];
 		ProjectorFrame f        = FrameOf( p );
 		ImVec2 a = cam.Project( { f.centreX - f.halfWidth, f.centreY + f.halfHeight, 1 } ), b = cam.Project( { f.centreX + f.halfWidth, f.centreY - f.halfHeight, 1 } );
-		draw->AddRect( a, b, ScreenColour( stage.through ), 0, 0, Ui( 2 ) );
+		draw->AddRect( a, b, ProjectorColour( setup, stage.through ), 0, 0, Ui( 2 ) );
 		char text[ 96 ];
 		std::snprintf( text, sizeof( text ), "Through %d %s: %d x %d", stage.through + 1, p.name.c_str(), p.width, p.height );
-		draw->AddText( ImVec2( a.x + Ui( 8 ), b.y - ImGui::GetTextLineHeight() - Ui( 6 ) ), ScreenColour( stage.through ), text );
+		draw->AddText( ImVec2( a.x + Ui( 8 ), b.y - ImGui::GetTextLineHeight() - Ui( 6 ) ), ProjectorColour( setup, stage.through ), text );
 	}
 	draw->PopClipRect();
 
@@ -543,10 +553,14 @@ void DrawView( App& app, AdvancedOutputSetup& setup, ImVec2 size )
 		if( hovered && io.MouseWheel != 0 )
 			stage.orthoSpan = std::clamp( stage.orthoSpan * std::pow( 0.88f, io.MouseWheel ), 2.0f, 1000.0f );
 	}
-	if( hovered && !active )
-		ImGui::SetTooltip( stage.view == ViewKind::Through ? "What this projector lights, as it will send it out"
-		                                                   : "Drag a projector to move it (Alt: up and down); drag elsewhere to turn around, Shift or the middle "
-		                                                     "button to slide, the wheel to come closer. Click a surface or a projector for its settings." );
+	// How to move around, in a corner (not a tooltip over the picture).
+	{
+		const char* hint = stage.view == ViewKind::Through ? "What this projector lights, as it will send it out"
+		                   : stage.view == ViewKind::Orbit ? "Drag: turn around  \xC2\xB7  Shift or middle button: slide  \xC2\xB7  Wheel: closer  \xC2\xB7  Drag a projector: move it (Alt: up, down)"
+		                                                   : "Drag: slide  \xC2\xB7  Wheel: closer  \xC2\xB7  Drag a projector: move it";
+		ImFont* font = Fonts().small;
+		draw->AddText( font, font->FontSize, ImVec2( pos.x + Ui( 8 ), pos.y + size.y - font->FontSize - Ui( 6 ) ), theme::TextFaint, hint );
+	}
 	(void)app;
 }
 
@@ -621,7 +635,7 @@ void DrawLists( App& app, AdvancedOutputSetup& setup )
 		ImVec2 at = ImGui::GetCursorScreenPos();
 		float h   = ImGui::GetTextLineHeight();
 		std::string number = std::to_string( i + 1 );
-		float bw = TextBadge( ImGui::GetWindowDrawList(), ImVec2( at.x, at.y + Ui( 1 ) ), number.c_str(), ScreenColour( i ), IM_COL32( 17, 17, 17, 255 ), h );
+		float bw = TextBadge( ImGui::GetWindowDrawList(), ImVec2( at.x, at.y + Ui( 1 ) ), number.c_str(), ProjectorColour( setup, i ), IM_COL32( 17, 17, 17, 255 ), h );
 		ImGui::SetCursorScreenPos( ImVec2( at.x + bw + Ui( 6 ), at.y ) );
 		if( ImGui::Selectable( p.name.c_str(), stage.selected == Selected::Projector && stage.index == i ) )
 		{
@@ -816,8 +830,7 @@ void MakeSlicesFrom( App& app, AdvancedOutputSetup& setup, int index )
 			slice.corners[ i ] = { corners[ i ].x * sx, corners[ i ].y * sy };
 		slices.push_back( slice );
 	}
-	// The largest first in the list's order is drawn under the others: smaller surfaces (in front) on top.
-	std::reverse( slices.begin(), slices.end() );
+	// Largest first: the list's last slice is drawn over the others, so smaller surfaces (in front) end up on top.
 	screen.slices = slices;
 	setup.EnsureIds();
 	app.SetStatus( std::to_string( slices.size() ) + " slice" + ( slices.size() == 1 ? "" : "s" ) + " made for " + screen.name + " from " + p.name
@@ -831,7 +844,7 @@ void DrawProjectorProps( App& app, AdvancedOutputSetup& setup, int index )
 	{
 		ImVec2 at = ImGui::GetCursorScreenPos();
 		std::string number = std::to_string( index + 1 );
-		float bw = TextBadge( ImGui::GetWindowDrawList(), ImVec2( at.x, at.y + Ui( 1 ) ), number.c_str(), ScreenColour( index ), IM_COL32( 17, 17, 17, 255 ),
+		float bw = TextBadge( ImGui::GetWindowDrawList(), ImVec2( at.x, at.y + Ui( 1 ) ), number.c_str(), ProjectorColour( setup, index ), IM_COL32( 17, 17, 17, 255 ),
 		                      ImGui::GetTextLineHeight() );
 		ImGui::SetCursorScreenPos( ImVec2( at.x + bw + Ui( 6 ), at.y ) );
 		ImGui::PushFont( Fonts().bold );
