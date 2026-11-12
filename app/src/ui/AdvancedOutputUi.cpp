@@ -2392,6 +2392,15 @@ void CopyOtherSetup( App& app )
 	edited = other;
 	if( app.outputTab == 1 )
 		edited.SyncScreenPictures( app.composition.width, app.composition.height ); // tracks sent to a screen gone: to every screen
+	else
+	{
+		// The Grid has no tracks: slices that took from a screen's tracks take from the composition.
+		std::vector< std::string > pictures;
+		for( const Canvas& c : edited.canvases )
+			pictures.push_back( c.id );
+		for( const std::string& id : pictures )
+			edited.RemoveCanvas( id, app.composition.width, app.composition.height );
+	}
 	editor.screen = 0;
 	editor.slice  = -1;
 	editor.point  = -1;
@@ -2441,8 +2450,17 @@ void DrawHeader( App& app )
 	ImGui::AlignTextToFramePadding();
 	// The two setups in words: which view uses which, which is on show, whether they are the same.
 	{
-		AdvancedOutputSetup& other = app.outputTab == 1 ? app.advancedOutput : app.timelineOutput;
-		bool same                  = SaveOutputSetups( app.EditedOutput(), app.EditedOutput() ) == SaveOutputSetups( other, other );
+		// Compared twice a second, not every frame (each comparison writes both setups out).
+		static bool same    = false;
+		static int sameTab  = -1;
+		static double sameAt = -1;
+		if( sameTab != app.outputTab || ImGui::GetTime() - sameAt > 0.5 )
+		{
+			AdvancedOutputSetup& other = app.outputTab == 1 ? app.advancedOutput : app.timelineOutput;
+			same    = SaveOutputSetups( app.EditedOutput(), app.EditedOutput() ) == SaveOutputSetups( other, other );
+			sameTab = app.outputTab;
+			sameAt  = ImGui::GetTime();
+		}
 		ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( theme::TextFaint ), "%s",
 		                    same ? "Each view has its own setup: these two are the same now.  \xE2\x80\xA2  the view in use"
 		                         : "Each view has its own setup: the Grid view (deck) uses one, the Timeline view the other.  \xE2\x80\xA2  the view in use" );

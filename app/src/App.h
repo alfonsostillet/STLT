@@ -1,6 +1,7 @@
 #pragma once
 #include <deque>
 #include <map>
+#include <future>
 #include <string>
 #include <vector>
 #include <memory>
@@ -199,7 +200,11 @@ public:
 	void SetCompositionSharing( bool ndi, bool local );
 	bool testCard = false;          // every output draws its slices as numbered grids (Output > Show Test Card)
 	double identifyUntil = 0;       // until then, each display shows its number, name and size (Output > Identify Displays)
-	std::string TakeSnapshot();     // the composition as a PNG in Documents/STLT/Snapshots: its path, "" if it failed
+	// The composition as a PNG in Documents/STLT/Snapshots, written on a thread of its own (the show goes on): its
+	// path, "" if it cannot be taken. The status line says when it is saved.
+	std::string TakeSnapshot();
+	std::future< bool > snapshotJob;
+	std::string snapshotPath;
 	bool SaveOutputPreset( const std::string& name );
 	bool LoadOutputPreset( const std::string& name );
 	std::vector< std::string > OutputPresets() const;
@@ -376,7 +381,7 @@ private:
 	std::vector< std::pair< int, std::string > > keysHeld; // mapped keys down (ImGuiKey), to release them
 	double lastRemoteConfigure = -1e9;
 	std::map< int, float > lastMidiValues; // by note or controller: buttons act on the press
-	std::map< int, std::string > midiHeld;  // by note or controller held: the address it pressed (the selection may change)
+	std::map< std::pair< int, size_t >, std::string > midiHeld; // by note or controller and map held: the address it pressed
 	std::map< std::string, float > lastOscValues; // by address: a 0 after a press is a release (Piano clips)
 	// Takes a composition back to an earlier state, keeping the players, generators and effects that are still
 	// there (playback goes on) and opening the rest.

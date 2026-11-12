@@ -10,6 +10,8 @@
 #elif defined( __APPLE__ )
 #include <mach-o/dyld.h>
 #include <spawn.h>
+#include <sys/wait.h>
+#include <thread>
 extern char** environ;
 #endif
 
@@ -127,9 +129,12 @@ bool OpenSystemDisplaySettings()
 	return (INT_PTR)ShellExecuteW( nullptr, L"open", L"ms-settings:display", nullptr, nullptr, SW_SHOWNORMAL ) > 32;
 #elif defined( __APPLE__ )
 	pid_t pid;
-	char open[] = "/usr/bin/open", url[] = "x-apple.systempreferences:com.apple.preference.displays";
-	char* argv[] = { open, url, nullptr };
-	return posix_spawn( &pid, open, nullptr, nullptr, argv, environ ) == 0;
+	char program[] = "/usr/bin/open", url[] = "x-apple.systempreferences:com.apple.preference.displays";
+	char* argv[] = { program, url, nullptr };
+	if( posix_spawn( &pid, program, nullptr, nullptr, argv, environ ) != 0 )
+		return false;
+	std::thread( [ pid ]() { waitpid( pid, nullptr, 0 ); } ).detach(); // reaped when it ends, no zombie left
+	return true;
 #else
 	return false;
 #endif

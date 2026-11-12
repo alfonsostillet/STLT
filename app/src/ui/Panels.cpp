@@ -2415,7 +2415,7 @@ static void DrawDeck( App& app, bool layersPart )
 	else
 	{
 		float end      = deckTabs( ImVec2( stickyX + Ui( 6 ), by ), bh );
-		const char* help = "Picture: on air  \xC2\xB7  Name: to the Preview Monitor  \xC2\xB7  Drop files on a cell";
+		const char* help = "Picture: on air  \xC2\xB7  Name: to the Preview Monitor (drag it to move the clip)  \xC2\xB7  Drop files on a cell";
 		ImVec2 t         = ImGui::CalcTextSize( help );
 		float hx         = viewMax.x - t.x - Ui( 10 ) - ( ImGui::GetScrollMaxY() > 0 ? ImGui::GetStyle().ScrollbarSize : 0 );
 		if( hx > end + Ui( 20 ) )

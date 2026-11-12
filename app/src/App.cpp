@@ -1,4 +1,5 @@
 #include "App.h"
+#include <chrono>
 #include <ctime>
 #include "output/Sharing.h"
 #include "output/PngFile.h"
@@ -274,6 +275,9 @@ bool App::Init( const LaunchOptions& launch )
 		std::string name = mode.value( "mode", "off" );
 		outputMode       = name == "window" ? OutputMode::Window : name == "fullscreen" ? OutputMode::Fullscreen : name == "advanced" ? OutputMode::Advanced : OutputMode::Off;
 		outputDisplay    = mode.value( "display", "" );
+		// Before version 2 the display was Fullscreen's only: a window opened where the system put it.
+		if( outputMode == OutputMode::Window && mode.value( "version", 1 ) < 2 )
+			outputDisplay.clear();
 		std::string before = mode.value( "beforeAdvanced", "off" );
 		beforeAdvanced     = before == "window" ? OutputMode::Window : before == "fullscreen" ? OutputMode::Fullscreen : OutputMode::Off;
 		shareCompositionNdi   = mode.value( "shareNdi", false );
@@ -1384,21 +1388,23 @@ void App::PollRemote()
 		// Mappings that follow the selection: let go (a value of 0), the one pressed is let go, wherever the
 		// selection went in between.
 		bool release = e.value <= 0 && previous > 0;
-		for( const MidiMapping& m : control.midi )
-			if( m.key == e.key )
+		for( size_t i = 0; i < control.midi.size(); ++i )
+		{
+			const MidiMapping& m = control.midi[ i ];
+			if( !( m.key == e.key ) )
+				continue;
+			std::string address = m.address;
+			if( m.target != MappingTarget::Position )
 			{
-				std::string address = m.address;
-				if( m.target != MappingTarget::Position )
-				{
-					auto held = midiHeld.find( id );
-					address   = release && held != midiHeld.end() ? held->second : MappedAddress( m.address, m.target );
-				}
-				ApplyControl( address, true, e.value, e.key.type == MidiKey::Type::Note, previous );
-				if( m.target != MappingTarget::Position && !release )
-					midiHeld[ id ] = address;
+				auto held = midiHeld.find( { id, i } );
+				address   = release && held != midiHeld.end() ? held->second : MappedAddress( m.address, m.target );
+				if( release )
+					midiHeld.erase( { id, i } );
+				else
+					midiHeld[ { id, i } ] = address;
 			}
-		if( release )
-			midiHeld.erase( id );
+			ApplyControl( address, true, e.value, e.key.type == MidiKey::Type::Note, previous );
+		}
 	}
 }
 
@@ -2031,6 +2037,11 @@ void App::SetCompositionSharing( bool ndi, bool local )
 
 std::string App::TakeSnapshot()
 {
+	if( snapshotJob.valid() )
+	{
+		SetStatus( "A snapshot is still being saved", true );
+		return {};
+	}
 	int width = composition.width, height = composition.height;
 	std::vector< uint8_t > pixels( (size_t)width * height * 3 );
 	glBindFramebuffer( GL_FRAMEBUFFER, compositor.CompositionFramebuffer() );
@@ -2046,13 +2057,12 @@ std::string App::TakeSnapshot()
 	fs::path path = folder / ( std::string( name ) + ".png" );
 	for( int n = 2; fs::exists( path, error ); ++n )
 		path = folder / ( std::string( name ) + " " + std::to_string( n ) + ".png" );
-	if( !WritePng( path.u8string(), width, height, pixels, true ) )
-	{
-		SetStatus( "Could not save the snapshot in " + folder.u8string(), true );
-		return {};
-	}
-	SetStatus( "Snapshot saved: " + path.u8string() );
-	return path.u8string();
+	snapshotPath = path.u8string();
+	snapshotJob  = std::async( std::launch::async, [ pixels = std::move( pixels ), file = snapshotPath, width, height ]() {
+        return WritePng( file, width, height, pixels, true );
+    } );
+	SetStatus( "Saving the snapshot..." );
+	return snapshotPath;
 }
 
 std::string App::OutputModeLabel() const
@@ -2097,7 +2107,8 @@ void App::SaveOutputMode() const
 		                    { "display", outputDisplay },
 		                    { "beforeAdvanced", names[ (int)beforeAdvanced ] },
 		                    { "shareNdi", shareCompositionNdi },
-		                    { "shareLocal", shareCompositionLocal } };
+		                    { "shareLocal", shareCompositionLocal },
+		                    { "version", 2 } };
 	WriteTextFile( ( fs::u8path( configDir ) / "output-mode.json" ).u8string(), mode.dump( 1 ) );
 }
 
@@ -2726,6 +2737,13 @@ void App::Frame()
 	double now = glfwGetTime();
 	if( prefsSaveAt > 0 && now >= prefsSaveAt )
 		SavePreferences();
+	if( snapshotJob.valid() && snapshotJob.wait_for( std::chrono::seconds( 0 ) ) == std::future_status::ready )
+	{
+		if( snapshotJob.get() )
+			SetStatus( "Snapshot saved: " + snapshotPath );
+		else
+			SetStatus( "Could not save the snapshot " + snapshotPath, true );
+	}
 	double measured = std::min( now - lastTime, 0.1 );
 	double dt       = FrameStep( measured );
 	lastTime        = now;
