@@ -5,6 +5,7 @@
 #include <string>
 #include "output/AdvancedOutput.h"
 #include "output/PngFile.h"
+#include "output/Stage.h"
 #include "render/OutputWindow.h"
 #include <json.hpp>
 
@@ -622,9 +623,120 @@ static void TestPng()
 	CHECK( EncodePng( 300, 200, big, true ).size() > big.size() );
 }
 
+// The stage: what a projector lights, how sharp and bright, and where two overlap.
+static void TestStage()
+{
+	Stage stage = Stage::MakeDefault();
+	std::vector< StageFace > faces = Faces( stage );
+	CHECK( faces.size() == 2 );
+	// The façade faces the audience, the ground faces up.
+	CHECK( std::abs( faces[ 0 ].Normal().z - 1 ) < 1e-4f );
+	CHECK( std::abs( faces[ 1 ].Normal().y - 1 ) < 1e-4f );
+	CHECK( std::abs( faces[ 0 ].Corner( 2 ).x - 10 ) < 1e-4f && std::abs( faces[ 0 ].Corner( 2 ).y - 12 ) < 1e-4f );
+
+	// Straight on, 16.5 m away with a 1.65 throw ratio: a picture 10 m wide (6.25 m high at 16:10), all on the façade.
+	StageProjector p;
+	p.position   = { 0, 6, 16.5f };
+	p.throwRatio = 1.65f;
+	p.width      = 1920;
+	p.height     = 1200;
+	p.lumens     = 20000;
+	std::vector< Lighting > lit = LightingOf( faces, p );
+	CHECK( lit.size() == 1 && lit[ 0 ].face == 0 );
+	if( !lit.empty() )
+	{
+		CHECK( std::abs( lit[ 0 ].area - 62.5f ) < 0.1f );
+		CHECK( std::abs( lit[ 0 ].pixelsPerMetre - 192 ) < 0.5f );
+		CHECK( std::abs( lit[ 0 ].share - 1 ) < 1e-3f );
+		CHECK( std::abs( lit[ 0 ].lux - 320 ) < 1 );
+	}
+	Vec2 px;
+	CHECK( ProjectToPicture( p, { 0, 6, 0 }, px ) && std::abs( px.x - 960 ) < 0.5f && std::abs( px.y - 600 ) < 0.5f );
+	CHECK( ProjectToPicture( p, { 5, 6, 0 }, px ) && std::abs( px.x - 1920 ) < 0.5f );
+	CHECK( !ProjectToPicture( p, { 0, 6, 30 }, px ) ); // behind the lens
+
+	// Lens shift up: the picture rises by 15 % of its height (0.94 m).
+	p.shiftY = 0.15f;
+	lit      = LightingOf( faces, p );
+	float top = -1e9f;
+	for( const Vec3& v : lit[ 0 ].polygon )
+		top = std::max( top, v.y );
+	CHECK( std::abs( top - ( 6 + 3.125f + 0.9375f ) ) < 0.01f );
+	p.shiftY = 0;
+
+	// Further back, tilted down: part of the beam lands on the ground in front.
+	StageProjector low = p;
+	low.position = { 0, 3, 30 };
+	low.tilt     = -8;
+	low.throwRatio = 1.0f;
+	lit = LightingOf( faces, low );
+	bool ground = std::any_of( lit.begin(), lit.end(), []( const Lighting& l ) { return l.face == 1; } );
+	CHECK( ground );
+	float shares = 0;
+	for( const Lighting& l : lit )
+		shares += l.share;
+	CHECK( shares <= 1.001f );
+
+	// Two projectors side by side overlapping by 2 m in the middle.
+	StageProjector left = p, right = p;
+	left.position.x  = -4;
+	right.position.x = 4;
+	std::vector< Lighting > a = LightingOf( faces, left ), b = LightingOf( faces, right );
+	std::vector< Vec3 > shared = Overlap( faces[ 0 ], a[ 0 ].polygon, b[ 0 ].polygon );
+	CHECK( std::abs( PolygonArea( shared ) - 2 * 6.25f ) < 0.05f );
+	float covered = 0, overlapped = 0;
+	Coverage( faces[ 0 ], { a[ 0 ].polygon, b[ 0 ].polygon }, covered, overlapped );
+	CHECK( std::abs( covered - ( 18 * 6.25f ) / ( 20 * 12 ) ) < 0.03f );
+	CHECK( std::abs( overlapped - ( 2 * 6.25f ) / ( 20 * 12 ) ) < 0.02f );
+	// Facing away: nothing.
+	StageProjector behind = p;
+	behind.position = { 0, 6, -10 };
+	behind.pan      = 180;
+	CHECK( LightingOf( { faces[ 0 ] }, behind ).empty() );
+
+	// A box: only the faces turned to the projector are lit.
+	Stage boxes;
+	StageSurface box;
+	box.kind     = StageSurface::Kind::Box;
+	box.position = { 0, 2, 0 };
+	box.size     = { 4, 4, 4 };
+	boxes.surfaces.push_back( box );
+	std::vector< StageFace > boxFaces = Faces( boxes );
+	CHECK( boxFaces.size() == 6 );
+	for( const StageFace& f : boxFaces )
+	{
+		Vec3 n = f.Normal(), c = f.Corner( 0 );
+		Vec3 centre{ c.x + ( f.ex.x * f.width + f.ey.x * f.height ) / 2, c.y + ( f.ex.y * f.width + f.ey.y * f.height ) / 2, c.z + ( f.ex.z * f.width + f.ey.z * f.height ) / 2 };
+		Vec3 out{ centre.x - box.position.x, centre.y - box.position.y, centre.z - box.position.z };
+		CHECK( n.x * out.x + n.y * out.y + n.z * out.z > 0 ); // every face's front is outside
+	}
+	StageProjector corner;
+	corner.position   = { 10, 2, 10 };
+	corner.pan        = -45;
+	corner.throwRatio = 0.6f;
+	lit = LightingOf( boxFaces, corner );
+	CHECK( lit.size() == 2 ); // the front and the right
+
+	// Saved and loaded.
+	stage.projectors.push_back( left );
+	stage.projectors[ 0 ].screen = "abc";
+	stage.surfaces.push_back( box );
+	Stage loaded;
+	CHECK( LoadStage( SaveStage( stage ), loaded ) );
+	CHECK( loaded.surfaces.size() == 3 && loaded.surfaces[ 2 ].kind == StageSurface::Kind::Box && loaded.surfaces[ 1 ].rotation.y == -90 );
+	CHECK( loaded.projectors.size() == 1 && loaded.projectors[ 0 ].screen == "abc" && loaded.projectors[ 0 ].position.x == -4 );
+	AdvancedOutputSetup setup = AdvancedOutputSetup::MakeDefault( 1920, 1080 );
+	setup.stage = stage;
+	AdvancedOutputSetup back;
+	std::string error;
+	CHECK( LoadAdvancedOutput( SaveAdvancedOutput( setup ), back, error ) && back.stage.projectors.size() == 1 && !back.stage.projectors[ 0 ].id.empty() );
+	CHECK( SaveAdvancedOutput( AdvancedOutputSetup::MakeDefault( 1920, 1080 ) ).find( "stage" ) == std::string::npos );
+}
+
 int main()
 {
 	TestPng();
+	TestStage();
 	TestCanvases();
 	TestScreenPictures();
 	TestPolygonShapes();
