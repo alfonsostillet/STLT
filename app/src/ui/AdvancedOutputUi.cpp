@@ -111,8 +111,8 @@ struct Editor
 
 	std::string presetName;
 
-	// The editor's three steps: 1 Screens (where the picture goes out), 2 Stage (the stage in real size: next),
-	// 3 Map (which part of the picture goes where).
+	// The editor's three steps: 1 Screens (where the picture goes out), 2 Map (which part of the picture goes where),
+	// 3 Stage (the stage in real size: next).
 	enum class Step
 	{
 		Screens,
@@ -1820,7 +1820,7 @@ void DrawScreenProps( App& app, Screen& screen )
 	if( ImGui::Button( "Map them  >" ) )
 		editor.step = Editor::Step::Map;
 	if( ImGui::IsItemHovered() )
-		ImGui::SetTooltip( "3 Map: which part of the picture goes where on this screen" );
+		ImGui::SetTooltip( "2 Map: which part of the picture goes where on this screen" );
 
 	ImGui::Spacing();
 	ImGui::Separator();
@@ -2384,6 +2384,22 @@ std::vector< Problem > FindProblems( const App& app, const AdvancedOutputSetup& 
 
 // ---- the header, the steps, the foot
 
+// The edited setup becomes a copy of the other view's.
+void CopyOtherSetup( App& app )
+{
+	AdvancedOutputSetup& edited = app.EditedOutput();
+	const AdvancedOutputSetup& other = app.outputTab == 1 ? app.advancedOutput : app.timelineOutput;
+	edited = other;
+	if( app.outputTab == 1 )
+		edited.SyncScreenPictures( app.composition.width, app.composition.height ); // tracks sent to a screen gone: to every screen
+	editor.screen = 0;
+	editor.slice  = -1;
+	editor.point  = -1;
+	editor.picked.clear();
+	editor.inputSource.clear();
+	app.SetStatus( app.outputTab == 1 ? "The Timeline's setup is now a copy of the Grid's" : "The Grid's setup is now a copy of the Timeline's" );
+}
+
 void DrawHeader( App& app )
 {
 	bool arrangement = app.view == App::View::Arrangement;
@@ -2392,7 +2408,7 @@ void DrawHeader( App& app )
 	ImGui::TextUnformatted( "Setup" );
 	ImGui::PopFont();
 	ImGui::SameLine( 0, Ui( 10 ) );
-	const char* names[] = { "Grid setup", "Timeline setup" };
+	const char* names[] = { "For the Grid", "For the Timeline" };
 	for( int t = 0; t < 2; ++t )
 	{
 		if( t > 0 )
@@ -2423,7 +2439,37 @@ void DrawHeader( App& app )
 	}
 	ImGui::SameLine( 0, Ui( 12 ) );
 	ImGui::AlignTextToFramePadding();
-	ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( theme::TextFaint ), "The Grid view uses the first, the Timeline view the second;  \xE2\x80\xA2  the one in use now" );
+	// The two setups in words: which view uses which, which is on show, whether they are the same.
+	{
+		AdvancedOutputSetup& other = app.outputTab == 1 ? app.advancedOutput : app.timelineOutput;
+		bool same                  = SaveOutputSetups( app.EditedOutput(), app.EditedOutput() ) == SaveOutputSetups( other, other );
+		ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( theme::TextFaint ), "%s",
+		                    same ? "Each view has its own setup: these two are the same now.  \xE2\x80\xA2  the view in use"
+		                         : "Each view has its own setup: the Grid view (deck) uses one, the Timeline view the other.  \xE2\x80\xA2  the view in use" );
+		ImGui::SameLine( 0, Ui( 10 ) );
+		const char* copyLabel = app.outputTab == 1 ? "Copy the Grid's here" : "Copy the Timeline's here";
+		ImGui::BeginDisabled( same );
+		if( ImGui::SmallButton( copyLabel ) )
+			ImGui::OpenPopup( "##copySetup" );
+		ImGui::EndDisabled();
+		if( ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenDisabled ) )
+			ImGui::SetTooltip( same ? "The two setups are already the same" : "Replace this setup with the other view's (Discard Changes brings the saved one back)" );
+		if( ImGui::BeginPopup( "##copySetup" ) )
+		{
+			ImGui::TextUnformatted( app.outputTab == 1 ? "Replace the Timeline's setup with the Grid's?" : "Replace the Grid's setup with the Timeline's?" );
+			if( app.outputTab == 1 )
+				ImGui::TextDisabled( "Tracks sent to one screen go to every screen until you send them again." );
+			if( ImGui::Button( "Replace" ) )
+			{
+				CopyOtherSetup( app );
+				ImGui::CloseCurrentPopup();
+			}
+			ImGui::SameLine();
+			if( ImGui::Button( "Cancel" ) )
+				ImGui::CloseCurrentPopup();
+			ImGui::EndPopup();
+		}
+	}
 	float presetsW = ImGui::CalcTextSize( "Presets and imports" ).x + ImGui::GetStyle().FramePadding.x * 2;
 	ImGui::SameLine( std::max( ImGui::GetCursorPosX() + Ui( 12 ), ImGui::GetWindowContentRegionMax().x - presetsW ) );
 	if( ImGui::Button( "Presets and imports" ) )
@@ -2455,8 +2501,8 @@ void DrawSteps( App& app, AdvancedOutputSetup& setup )
 		Editor::Step step;
 	};
 	const StepInfo steps[] = { { "Screens", "Where the picture goes out", Editor::Step::Screens },
-		                       { "Stage", "What it lights, in real size", Editor::Step::Stage },
-		                       { "Map", "Which part of the picture goes where", Editor::Step::Map } };
+		                       { "Map", "Which part of the picture goes where", Editor::Step::Map },
+		                       { "Stage", "What it lights, in real size", Editor::Step::Stage } };
 	float x = origin.x;
 	for( int i = 0; i < 3; ++i )
 	{
@@ -2580,6 +2626,103 @@ void DrawSteps( App& app, AdvancedOutputSetup& setup )
 			app.SetOutputMode( OutputMode::Off );
 	}
 	ImGui::SetCursorScreenPos( ImVec2( origin.x, origin.y + h + Ui( 6 ) ) );
+}
+
+// Under the steps, the whole setup in one line, left to right as the picture travels: the picture, the slices that
+// cut it up, the screens they make, where those go. A part with something wrong is in orange; a click opens its step.
+void DrawPath( App& app, AdvancedOutputSetup& setup )
+{
+	int slices = 0, masks = 0, screensOn = 0, displays = 0, windows = 0, network = 0, ndi = 0, local = 0, nowhere = 0;
+	for( const Screen& sc : setup.screens )
+	{
+		for( const Slice& sl : sc.slices )
+			( sl.mask ? masks : slices ) += sl.enabled ? 1 : 0;
+		if( !sc.enabled )
+			continue;
+		++screensOn;
+		if( sc.device == OutputDevice::Display )
+			++displays;
+		else if( sc.device == OutputDevice::Window )
+			++windows;
+		else if( !sc.ndi && !sc.share )
+			++nowhere;
+		if( sc.ndi || sc.share )
+			++network;
+		ndi += sc.ndi ? 1 : 0;
+		local += sc.share && LocalSharingName() ? 1 : 0;
+	}
+	auto count = []( int n, const char* one, const char* many ) { return std::to_string( n ) + " " + ( n == 1 ? one : many ); };
+	std::string picture = "The composition, " + std::to_string( app.composition.width ) + " x " + std::to_string( app.composition.height );
+	if( !setup.canvases.empty() )
+		picture += " + " + count( (int)setup.canvases.size(), "track picture", "track pictures" );
+	std::string cut = count( slices, "slice", "slices" ) + ( masks ? ", " + count( masks, "mask", "masks" ) : "" );
+	std::string made = count( (int)setup.screens.size(), "screen", "screens" );
+	if( screensOn < (int)setup.screens.size() )
+		made += ", " + std::to_string( (int)setup.screens.size() - screensOn ) + " off";
+	std::string to;
+	auto add = [ & ]( int n, const std::string& what ) {
+		if( n )
+			to += ( to.empty() ? "" : ", " ) + what;
+	};
+	add( displays, count( displays, "display", "displays" ) );
+	add( windows, count( windows, "window", "windows" ) );
+	add( ndi, std::to_string( ndi ) + " by NDI" );
+	add( local, std::to_string( local ) + " by " + ( LocalSharingName() ? LocalSharingName() : "" ) );
+	add( nowhere, std::to_string( nowhere ) + " nowhere" );
+	if( to.empty() )
+		to = "nowhere yet";
+
+	struct Part
+	{
+		const char* label;
+		std::string text;
+		bool wrong;
+		Editor::Step step;
+		const char* tip;
+	};
+	const Part parts[] = {
+		{ "Picture", picture, false, Editor::Step::Map, "What the slices take from: the composition (in the Timeline setup also each screen's own tracks)" },
+		{ "Cut into", cut, slices == 0, Editor::Step::Map, "2 Map: which part of the picture goes where on each screen" },
+		{ "Makes", made, screensOn == 0, Editor::Step::Screens, "1 Screens: each screen is one picture STLT sends out" },
+		{ "Goes to", to, nowhere > 0 || displays + windows + network == 0, Editor::Step::Screens, "1 Screens: a display, a window, or the network (NDI) for each screen" },
+	};
+	ImDrawList* draw = ImGui::GetWindowDrawList();
+	ImVec2 origin    = ImGui::GetCursorScreenPos();
+	float h = Ui( 30 ), x = origin.x, gap = Ui( 22 );
+	float avail = ImGui::GetContentRegionAvail().x;
+	ImFont* small = Fonts().small;
+	for( int i = 0; i < 4; ++i )
+	{
+		const Part& p = parts[ i ];
+		float labelW = small->CalcTextSizeA( small->FontSize, FLT_MAX, 0, p.label ).x;
+		float textW  = ImGui::CalcTextSize( p.text.c_str() ).x;
+		float w      = std::min( labelW + textW + Ui( 26 ), std::max( Ui( 60 ), ( avail - 3 * gap ) / 4 * ( i == 0 || i == 3 ? 1.3f : 0.7f ) ) );
+		ImGui::SetCursorScreenPos( ImVec2( x, origin.y ) );
+		ImGui::PushID( 700 + i );
+		if( ImGui::InvisibleButton( "##part", ImVec2( w, h ) ) && editor.step != Editor::Step::Stage )
+			editor.step = p.step;
+		ImGui::PopID();
+		bool hot = ImGui::IsItemHovered();
+		if( hot )
+			ImGui::SetTooltip( "%s\n%s", p.text.c_str(), p.tip );
+		ImVec2 a( x, origin.y ), b( x + w, origin.y + h );
+		draw->AddRectFilled( a, b, hot ? theme::WellHover : theme::Well );
+		draw->AddRect( a, b, p.wrong ? theme::Warning : theme::Line );
+		draw->PushClipRect( a, ImVec2( b.x - Ui( 6 ), b.y ), true );
+		draw->AddText( small, small->FontSize, ImVec2( x + Ui( 9 ), origin.y + ( h - small->FontSize ) / 2 ), theme::TextFaint, p.label );
+		draw->AddText( ImVec2( x + Ui( 15 ) + labelW, origin.y + ( h - ImGui::GetTextLineHeight() ) / 2 ), p.wrong ? theme::Warning : theme::Text, p.text.c_str() );
+		draw->PopClipRect();
+		x += w;
+		if( i < 3 )
+		{
+			// An arrow to the next part.
+			ImVec2 c( x + gap / 2, origin.y + h / 2 );
+			draw->AddLine( ImVec2( c.x - Ui( 6 ), c.y ), ImVec2( c.x + Ui( 5 ), c.y ), theme::TextDim, Ui( 1.5f ) );
+			draw->AddTriangleFilled( ImVec2( c.x + Ui( 6 ), c.y ), ImVec2( c.x + Ui( 1 ), c.y - Ui( 4 ) ), ImVec2( c.x + Ui( 1 ), c.y + Ui( 4 ) ), theme::TextDim );
+			x += gap;
+		}
+	}
+	ImGui::SetCursorScreenPos( ImVec2( origin.x, origin.y + h + Ui( 8 ) ) );
 }
 
 void DrawFoot( App& app )
@@ -3138,6 +3281,7 @@ void DrawAdvancedOutputPanel( App& app )
 		DrawSaveQuestion( app );
 	DrawHeader( app );
 	DrawSteps( app, setup );
+	DrawPath( app, setup );
 	editor.screen = std::clamp( editor.screen, 0, (int)setup.screens.size() - 1 );
 	if( editor.slice >= (int)setup.screens[ editor.screen ].slices.size() )
 		editor.slice = -1;
