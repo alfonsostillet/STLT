@@ -2470,8 +2470,39 @@ void DrawHeader( App& app )
 			ImGui::EndPopup();
 		}
 	}
+	float helpW    = ImGui::CalcTextSize( "How it works" ).x + ImGui::GetStyle().FramePadding.x * 2;
 	float presetsW = ImGui::CalcTextSize( "Presets and imports" ).x + ImGui::GetStyle().FramePadding.x * 2;
-	ImGui::SameLine( std::max( ImGui::GetCursorPosX() + Ui( 12 ), ImGui::GetWindowContentRegionMax().x - presetsW ) );
+	ImGui::SameLine( std::max( ImGui::GetCursorPosX() + Ui( 12 ), ImGui::GetWindowContentRegionMax().x - presetsW - helpW - ImGui::GetStyle().ItemSpacing.x ) );
+	if( ImGui::Button( "How it works" ) )
+		ImGui::OpenPopup( "##howItWorks" );
+	ImGui::SetNextWindowSize( ImVec2( Ui( 460 ), 0 ) );
+	if( ImGui::BeginPopup( "##howItWorks" ) )
+	{
+		auto line = []( const char* number, const char* title, const char* text ) {
+			ImGui::PushFont( Fonts().bold );
+			ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( theme::Accent ), "%s", number );
+			ImGui::SameLine();
+			ImGui::TextUnformatted( title );
+			ImGui::PopFont();
+			ImGui::Indent( Ui( 18 ) );
+			ImGui::TextWrapped( "%s", text );
+			ImGui::Unindent( Ui( 18 ) );
+			ImGui::Spacing();
+		};
+		ImGui::TextWrapped( "The composition is one big picture. The Advanced Output cuts it into pieces and sends each piece to the right "
+		                    "place: a projector, an LED wall, a stream." );
+		ImGui::Spacing();
+		line( "1", "Screens", "Each screen is one picture STLT sends out: fullscreen on a display (a projector, an LED processor), in a window, "
+		                      "or over the network (NDI). One screen per output cable, usually." );
+		line( "2", "Map", "On each screen, slices. A slice takes a part of the composition (Takes from, on the left) and puts it somewhere "
+		                  "on the screen (Goes to, on the right), warped to fit the surface. Same colour, same number: the same slice on both sides." );
+		line( "3", "Stage", "Coming: the stage in real size, with the picture on it." );
+		ImGui::Separator();
+		ImGui::TextWrapped( "The Grid view (deck) and the Timeline view each have a setup: the tabs at the top. The strip under the steps "
+		                    "follows the picture from the composition to where it goes out; a part in orange needs a look." );
+		ImGui::EndPopup();
+	}
+	ImGui::SameLine();
 	if( ImGui::Button( "Presets and imports" ) )
 		ImGui::OpenPopup( "##presets" );
 	if( ImGui::IsItemHovered() )
