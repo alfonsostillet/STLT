@@ -104,6 +104,25 @@ std::string OutputWindow::DisplayLabel( const std::string& id )
 	return ( SplitId( id, name, number, x, y ) ? name : id ) + " (not connected)";
 }
 
+void OutputWindow::CentreOn( GLFWmonitor* monitor )
+{
+	if( !window || !monitor )
+		return;
+	int x = 0, y = 0, w = 0, h = 0, ww = 0, wh = 0;
+	glfwGetMonitorWorkarea( monitor, &x, &y, &w, &h );
+	glfwGetWindowSize( window, &ww, &wh );
+	if( w <= 0 || h <= 0 )
+		return;
+	float fit = std::min( 1.0f, std::min( 0.9f * w / std::max( ww, 1 ), 0.9f * h / std::max( wh, 1 ) ) );
+	if( fit < 1 )
+	{
+		ww = (int)( ww * fit );
+		wh = (int)( wh * fit );
+		glfwSetWindowSize( window, ww, wh );
+	}
+	glfwSetWindowPos( window, x + ( w - ww ) / 2, y + ( h - wh ) / 2 );
+}
+
 OutputWindow::~OutputWindow()
 {
 	Close();

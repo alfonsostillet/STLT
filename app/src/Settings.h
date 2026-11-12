@@ -14,4 +14,6 @@ std::string ExecutableDirectory();
 
 bool ReadTextFile( const std::string& path, std::string& text );
 bool WriteTextFile( const std::string& path, const std::string& text );
+// The system's display settings (Windows' Settings > Display, macOS' Displays). False where there is none to open.
+bool OpenSystemDisplaySettings();
 }

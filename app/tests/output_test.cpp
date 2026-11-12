@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <string>
 #include "output/AdvancedOutput.h"
+#include "output/PngFile.h"
 #include "render/OutputWindow.h"
 #include <json.hpp>
 
@@ -602,8 +603,28 @@ static void TestScreenPictures()
 	CHECK( timeline.canvases.empty() && timeline.screens[ 0 ].slices[ 0 ].source.empty() && Near( timeline.screens[ 0 ].slices[ 0 ].input[ 2 ], { 960, 1080 } ) );
 }
 
+// Snapshots: a PNG any program opens (its chunks' checksums right, the rows in order).
+static void TestPng()
+{
+	std::vector< uint8_t > rgb = { 255, 0, 0, 0, 255, 0, 0, 0, 255, 10, 20, 30, 40, 50, 60, 70, 80, 90 }; // 3 x 2
+	std::vector< uint8_t > png = EncodePng( 3, 2, rgb, false );
+	CHECK( png.size() > 60 && png[ 0 ] == 0x89 && png[ 1 ] == 'P' && png[ 3 ] == 'G' );
+	// IEND's checksum is always AE 42 60 82.
+	CHECK( png.size() >= 4 && png[ png.size() - 4 ] == 0xAE && png[ png.size() - 3 ] == 0x42 && png[ png.size() - 2 ] == 0x60 && png[ png.size() - 1 ] == 0x82 );
+	// Stored rows: the first row starts after the filter byte, bottom-up flips them.
+	auto find = [ & ]( const std::vector< uint8_t >& data, std::vector< uint8_t > what ) { return std::search( data.begin(), data.end(), what.begin(), what.end() ) - data.begin(); };
+	CHECK( find( png, { 0, 255, 0, 0, 0, 255, 0 } ) < find( png, { 0, 10, 20, 30 } ) );
+	std::vector< uint8_t > flipped = EncodePng( 3, 2, rgb, true );
+	CHECK( find( flipped, { 0, 10, 20, 30 } ) < find( flipped, { 0, 255, 0, 0, 0, 255, 0 } ) );
+	CHECK( EncodePng( 0, 2, rgb, false ).empty() && EncodePng( 4, 2, rgb, false ).empty() );
+	// A big picture spans several stored blocks.
+	std::vector< uint8_t > big( 300 * 200 * 3, 7 );
+	CHECK( EncodePng( 300, 200, big, true ).size() > big.size() );
+}
+
 int main()
 {
+	TestPng();
 	TestCanvases();
 	TestScreenPictures();
 	TestPolygonShapes();

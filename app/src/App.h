@@ -191,7 +191,15 @@ public:
 	void ShowScreenOn( size_t screen, OutputDevice device, const std::string& display = {} );
 	void StopOutputs() { SetOutputMode( OutputMode::Off ); }
 	OutputMode outputMode = OutputMode::Off;
-	std::string outputDisplay;
+	std::string outputDisplay; // the display of Fullscreen, or the one a Window opens on ("": the system's choice)
+	// The composition to other programs whatever the mode (Output > Composition output sharing): over the network
+	// (NDI), and on this computer (Spout on Windows, Syphon on macOS). Kept with the output mode.
+	bool shareCompositionNdi   = false;
+	bool shareCompositionLocal = false;
+	void SetCompositionSharing( bool ndi, bool local );
+	bool testCard = false;          // every output draws its slices as numbered grids (Output > Show Test Card)
+	double identifyUntil = 0;       // until then, each display shows its number, name and size (Output > Identify Displays)
+	std::string TakeSnapshot();     // the composition as a PNG in Documents/STLT/Snapshots: its path, "" if it failed
 	bool SaveOutputPreset( const std::string& name );
 	bool LoadOutputPreset( const std::string& name );
 	std::vector< std::string > OutputPresets() const;

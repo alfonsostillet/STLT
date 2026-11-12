@@ -8,6 +8,8 @@
 #include <shlobj.h>
 #elif defined( __APPLE__ )
 #include <mach-o/dyld.h>
+#include <spawn.h>
+extern char** environ;
 #endif
 
 namespace fs = std::filesystem;
@@ -116,5 +118,19 @@ bool WriteTextFile( const std::string& path, const std::string& text )
 	std::error_code error;
 	fs::rename( temp, target, error );
 	return !error;
+}
+
+bool OpenSystemDisplaySettings()
+{
+#ifdef _WIN32
+	return (INT_PTR)ShellExecuteW( nullptr, L"open", L"ms-settings:display", nullptr, nullptr, SW_SHOWNORMAL ) > 32;
+#elif defined( __APPLE__ )
+	pid_t pid;
+	char open[] = "/usr/bin/open", url[] = "x-apple.systempreferences:com.apple.preference.displays";
+	char* argv[] = { open, url, nullptr };
+	return posix_spawn( &pid, open, nullptr, nullptr, argv, environ ) == 0;
+#else
+	return false;
+#endif
 }
 }

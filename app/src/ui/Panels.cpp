@@ -1,7 +1,8 @@
 #include "ui/Panels.h"
 #include <GLFW/glfw3.h>
 #include <imgui.h>
-#include <imgui_internal.h> // GetItemFlags: whether the last item is disabled
+#include <imgui_internal.h>
+#include "output/Sharing.h" // GetItemFlags: whether the last item is disabled
 #include <imgui_stdlib.h>
 #include <algorithm>
 #include <cctype>
@@ -341,23 +342,53 @@ bool IconButton( const char* id, Icon icon, bool active, float size )
 	return clicked;
 }
 
-// The output modes, as in Resolume's Output menu: one of them is on.
+// The Output menu (also the top bar's output chip): one mode on (off, fullscreen or a window on a display, the
+// Advanced Output), the composition shared with other programs, and the tools for lining up displays.
 static void DrawOutputModeItems( App& app )
 {
+	auto header = []( const char* text ) {
+		ImGui::Spacing();
+		ImGui::PushFont( Fonts().bold );
+		ImGui::TextDisabled( "%s", text );
+		ImGui::PopFont();
+	};
+	std::vector< OutputWindow::Display > displays = OutputWindow::Displays();
+	auto label = []( const OutputWindow::Display& d ) { return d.name + "  (" + std::to_string( d.width ) + "x" + std::to_string( d.height ) + ")"; };
+	auto on    = [ & ]( OutputMode mode, const OutputWindow::Display& d ) {
+		return app.outputMode == mode && !app.outputDisplay.empty() && OutputWindow::FindDisplay( app.outputDisplay ) == d.monitor;
+	};
 	if( ImGui::MenuItem( "Off", nullptr, app.outputMode == OutputMode::Off ) )
 		app.SetOutputMode( OutputMode::Off );
-	if( ImGui::MenuItem( "Window", nullptr, app.outputMode == OutputMode::Window ) )
-		app.SetOutputMode( OutputMode::Window );
-	if( ImGui::BeginMenu( "Fullscreen", true ) )
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "Nothing on the displays (sharing below goes on)" );
+
+	ImGui::Separator();
+	header( "Fullscreen" );
+	for( const OutputWindow::Display& d : displays )
 	{
-		for( const OutputWindow::Display& d : OutputWindow::Displays() )
+		ImGui::PushID( d.id.c_str() );
+		if( ImGui::MenuItem( label( d ).c_str(), nullptr, on( OutputMode::Fullscreen, d ) ) )
+			app.SetOutputMode( OutputMode::Fullscreen, d.id );
+		if( ImGui::IsItemHovered() && app.window )
 		{
-			std::string label = d.name + "  (" + std::to_string( d.width ) + "x" + std::to_string( d.height ) + ")";
-			if( ImGui::MenuItem( label.c_str(), nullptr, app.outputMode == OutputMode::Fullscreen && OutputWindow::FindDisplay( app.outputDisplay ) == d.monitor ) )
-				app.SetOutputMode( OutputMode::Fullscreen, d.id );
+			int wx = 0, wy = 0, ww = 0, wh = 0;
+			glfwGetWindowPos( app.window, &wx, &wy );
+			glfwGetWindowSize( app.window, &ww, &wh );
+			if( wx + ww / 2 >= d.x && wx + ww / 2 < d.x + d.width && wy + wh / 2 >= d.y && wy + wh / 2 < d.y + d.height )
+				ImGui::SetTooltip( "STLT is on this display: the output would cover it (Escape on the output closes it)" );
 		}
-		ImGui::EndMenu();
+		ImGui::PopID();
 	}
+	header( "Windowed" );
+	for( const OutputWindow::Display& d : displays )
+	{
+		ImGui::PushID( ( "w" + d.id ).c_str() );
+		if( ImGui::MenuItem( label( d ).c_str(), nullptr, on( OutputMode::Window, d ) || ( app.outputMode == OutputMode::Window && app.outputDisplay.empty() && d.primary ) ) )
+			app.SetOutputMode( OutputMode::Window, d.id );
+		ImGui::PopID();
+	}
+
+	ImGui::Separator();
 	// Advanced is a mode like the others: chosen, the Advanced Output's screens are on show (chosen again, back to the
 	// mode before). Its settings open apart, without touching what is on show. Under them STLT-CHASER's editor, for
 	// sequences on the Advanced Output's slices.
@@ -366,7 +397,6 @@ static void DrawOutputModeItems( App& app )
 	if( ImGui::IsItemHovered() )
 		ImGui::SetTooltip( app.outputMode == OutputMode::Advanced ? "Advanced is on: choose it again to go back to the output before it"
 		                                                          : "Show the Advanced Output's screens (slices, warps, masks)" );
-	ImGui::Separator();
 	if( ImGui::MenuItem( "Advanced Output Settings...", "Ctrl+Shift+A", app.panels.advancedOutput ) )
 		app.panels.advancedOutput = true;
 	if( ImGui::IsItemHovered() )
@@ -376,6 +406,78 @@ static void DrawOutputModeItems( App& app )
 	if( ImGui::IsItemHovered() )
 		ImGui::SetTooltip( "Opens STLT-CHASER on the Advanced Output's slices: draw step sequences there, then play them with the\n"
 		                   "STLT-CHASER, STLT-WIPER and STLT-OUTLINER effects (Effects panel) on the composition, a layer or a clip" );
+
+	ImGui::Separator();
+	header( "Composition output sharing" );
+	if( const char* local = LocalSharingName() )
+	{
+		std::string text = std::string( "Texture sharing (" ) + local + ")";
+		if( ImGui::MenuItem( text.c_str(), nullptr, app.shareCompositionLocal ) )
+			app.SetCompositionSharing( app.shareCompositionNdi, !app.shareCompositionLocal );
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "The composition to other programs on this computer, whatever the output mode" );
+	}
+	if( ImGui::MenuItem( "Network streaming (NDI)", nullptr, app.shareCompositionNdi ) )
+		app.SetCompositionSharing( !app.shareCompositionNdi, app.shareCompositionLocal );
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "The composition over the network, as the NDI source \"STLT Composition\", whatever the output mode" );
+
+	ImGui::Separator();
+	if( ImGui::MenuItem( "Identify Displays" ) )
+		app.identifyUntil = glfwGetTime() + 4;
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "Shows each display's number, name and size on it for a few seconds" );
+#if defined( _WIN32 ) || defined( __APPLE__ )
+	if( ImGui::MenuItem( "System Display Settings..." ) && !OpenSystemDisplaySettings() )
+		app.SetStatus( "Could not open the system's display settings", true );
+#endif
+	ImGui::Separator();
+	if( ImGui::MenuItem( "Show Test Card", nullptr, app.testCard ) )
+		app.testCard = !app.testCard;
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "Every output draws its slices as numbered grids, to line up projectors and LED walls" );
+	if( ImGui::MenuItem( "Snapshot" ) )
+		app.TakeSnapshot();
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "Saves the composition as a picture (PNG) in Documents/STLT/Snapshots" );
+}
+
+// Output > Identify Displays: each display's number, name, size and rate on it, for a few seconds.
+void DrawDisplayIdentities( App& app )
+{
+	double left = app.identifyUntil - glfwGetTime();
+	if( left <= 0 )
+		return;
+	std::vector< OutputWindow::Display > displays = OutputWindow::Displays();
+	for( size_t i = 0; i < displays.size(); ++i )
+	{
+		const OutputWindow::Display& d = displays[ i ];
+		ImGui::SetNextWindowPos( ImVec2( d.x + d.width * 0.5f, d.y + d.height * 0.5f ), ImGuiCond_Always, ImVec2( 0.5f, 0.5f ) );
+		ImGui::SetNextWindowBgAlpha( 0.92f * (float)std::min( 1.0, left ) );
+		ImGui::PushStyleVar( ImGuiStyleVar_WindowPadding, ImVec2( Ui( 36 ), Ui( 24 ) ) );
+		ImGui::PushStyleColor( ImGuiCol_Border, ImGui::ColorConvertU32ToFloat4( theme::Accent ) );
+		std::string id = "##identify" + std::to_string( i );
+		ImGui::Begin( id.c_str(), nullptr,
+		              ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoInputs | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoFocusOnAppearing
+		                  | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_AlwaysAutoResize );
+		ImFont* big       = Fonts().display;
+		float size        = Ui( 120 );
+		std::string number = std::to_string( i + 1 );
+		ImVec2 at          = ImGui::GetCursorScreenPos();
+		ImVec2 t           = big->CalcTextSizeA( size, FLT_MAX, 0, number.c_str() );
+		ImGui::GetWindowDrawList()->AddText( big, size, at, theme::Accent, number.c_str() );
+		ImGui::Dummy( ImVec2( t.x, t.y ) );
+		ImGui::PushFont( Fonts().bold );
+		ImGui::TextUnformatted( d.monitorName.c_str() );
+		ImGui::PopFont();
+		char rate[ 24 ] = "";
+		if( d.refresh > 0 )
+			std::snprintf( rate, sizeof( rate ), "  %d Hz", d.refresh );
+		ImGui::Text( "%d x %d%s%s", d.width, d.height, rate, d.primary ? "  (main)" : "" );
+		ImGui::End();
+		ImGui::PopStyleColor();
+		ImGui::PopStyleVar();
+	}
 }
 
 static void SetBpmSync( Clip& clip, bool on, double bpm );

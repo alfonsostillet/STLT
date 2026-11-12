@@ -61,6 +61,9 @@ public:
 	std::string DeviceStatus( size_t index ) const;
 	// Spout/Syphon and NDI state of a screen for the panels ("" when off).
 	std::string SharingStatus( size_t index ) const;
+	// Spout/Syphon and NDI off for every screen (a setup no longer drawn).
+	void StopSharing();
+	bool testCard = false; // every screen draws its slices as numbered grids (Output > Show Test Card)
 
 private:
 	struct ScreenState
@@ -76,6 +79,7 @@ private:
 		std::string localName, ndiName, ndiError;
 	};
 	void Share( const Screen& screen, ScreenState& state );
+	static void StopSharing( ScreenState& state );
 	void DrawSlice( const Slice& slice, int index, const Screen& screen, int sourceWidth, int sourceHeight );
 	void ApplyMask( const Slice& mask, const Screen& screen, Fbo& target, GLuint composition );
 

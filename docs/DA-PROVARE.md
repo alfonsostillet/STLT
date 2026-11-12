@@ -13,6 +13,15 @@ Fixes already made and checked by the automatic tests, to try on a real PC befor
 
 - [ ] **Spout and NDI**: an Advanced Output screen sent through Spout and NDI must show up in another program.
 
+## The Output menu (new)
+
+- [ ] **Windowed** on each display: the output window must open in the middle of the chosen display. **Fullscreen** on the display STLT is on says so in its tooltip; Escape on the output closes it.
+- [ ] **Composition output sharing**: tick *Network streaming (NDI)* with the output Off: another program (OBS with NDI, Resolume, NDI Studio Monitor) must see "STLT Composition". Untick it: the source must go away. The same with *Texture sharing (Spout)*.
+- [ ] **Identify Displays**: a big number with the display's name and size on each display, for four seconds.
+- [ ] **Show Test Card** on Fullscreen and on Advanced: numbered grids on every output; untick it to go back.
+- [ ] **Snapshot**: a PNG of the composition in Documents\STLT\Snapshots, opening in any viewer the right way up.
+- [ ] *System Display Settings...* opens Windows' display settings.
+
 ## Maps that follow the selected layer (new)
 
 - [ ] In the Shortcuts panel set *New maps act on* to **Selected layer**, Map MIDI (Ctrl+M), click a layer's Bypass or its opacity, move a pad or knob: selecting another layer (with the mouse or the arrows), the same pad must act on **that** layer.

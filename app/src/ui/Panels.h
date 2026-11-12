@@ -6,6 +6,8 @@ class App;
 
 // Each panel is an ImGui window drawn by one of these; the dock space decides where it sits.
 void DrawMainMenu( App& app );
+// Output > Identify Displays: each display's number on it for a few seconds.
+void DrawDisplayIdentities( App& app );
 void DrawToolbar( App& app );
 void DrawClipGrid( App& app );
 void DrawLayersPanel( App& app );

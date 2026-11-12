@@ -1,4 +1,7 @@
 #include "App.h"
+#include <ctime>
+#include "output/Sharing.h"
+#include "output/PngFile.h"
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 #include <imgui_internal.h> // ImGuiDockNodeFlags_NoCloseButton
@@ -273,6 +276,8 @@ bool App::Init( const LaunchOptions& launch )
 		outputDisplay    = mode.value( "display", "" );
 		std::string before = mode.value( "beforeAdvanced", "off" );
 		beforeAdvanced     = before == "window" ? OutputMode::Window : before == "fullscreen" ? OutputMode::Fullscreen : OutputMode::Off;
+		shareCompositionNdi   = mode.value( "shareNdi", false );
+		shareCompositionLocal = mode.value( "shareLocal", false ) && LocalSharingName();
 	}
 	else if( !options.fresh )
 		outputMode = std::any_of( advancedOutput.screens.begin(), advancedOutput.screens.end(), []( const Screen& s ) { return s.device != OutputDevice::Virtual; } )
@@ -2007,11 +2012,47 @@ void App::SetOutputMode( OutputMode mode, const std::string& display )
 	if( mode == OutputMode::Advanced && outputMode != OutputMode::Advanced )
 		beforeAdvanced = outputMode;
 	outputMode = mode;
-	if( mode == OutputMode::Fullscreen )
+	if( mode == OutputMode::Fullscreen || mode == OutputMode::Window )
 		outputDisplay = display;
 	UpdateQuickOutput();
 	SaveOutputMode();
 	SetStatus( "Output: " + OutputModeLabel() );
+}
+
+void App::SetCompositionSharing( bool ndi, bool local )
+{
+	shareCompositionNdi   = ndi;
+	shareCompositionLocal = local && LocalSharingName();
+	UpdateQuickOutput();
+	SaveOutputMode();
+	std::string what = std::string( ndi ? "NDI" : "" ) + ( ndi && shareCompositionLocal ? " and " : "" ) + ( shareCompositionLocal ? LocalSharingName() : "" );
+	SetStatus( what.empty() ? "The composition is no longer shared" : "The composition is shared through " + what );
+}
+
+std::string App::TakeSnapshot()
+{
+	int width = composition.width, height = composition.height;
+	std::vector< uint8_t > pixels( (size_t)width * height * 3 );
+	glBindFramebuffer( GL_FRAMEBUFFER, compositor.CompositionFramebuffer() );
+	glPixelStorei( GL_PACK_ALIGNMENT, 1 );
+	glReadPixels( 0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.data() );
+	glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+	fs::path folder = fs::u8path( DocumentsDirectory() ) / "STLT" / "Snapshots";
+	std::error_code error;
+	fs::create_directories( folder, error );
+	std::time_t now = std::time( nullptr );
+	char name[ 64 ];
+	std::strftime( name, sizeof( name ), "Snapshot %Y-%m-%d %H-%M-%S", std::localtime( &now ) );
+	fs::path path = folder / ( std::string( name ) + ".png" );
+	for( int n = 2; fs::exists( path, error ); ++n )
+		path = folder / ( std::string( name ) + " " + std::to_string( n ) + ".png" );
+	if( !WritePng( path.u8string(), width, height, pixels, true ) )
+	{
+		SetStatus( "Could not save the snapshot in " + folder.u8string(), true );
+		return {};
+	}
+	SetStatus( "Snapshot saved: " + path.u8string() );
+	return path.u8string();
 }
 
 std::string App::OutputModeLabel() const
@@ -2019,7 +2060,7 @@ std::string App::OutputModeLabel() const
 	switch( outputMode )
 	{
 	case OutputMode::Off: return "Off";
-	case OutputMode::Window: return "Window";
+	case OutputMode::Window: return outputDisplay.empty() ? "Window" : "Window on " + OutputWindow::DisplayLabel( outputDisplay );
 	case OutputMode::Fullscreen:
 		return "Fullscreen on " + OutputWindow::DisplayLabel( outputDisplay );
 	case OutputMode::Advanced: return "Advanced";
@@ -2029,21 +2070,34 @@ std::string App::OutputModeLabel() const
 
 void App::UpdateQuickOutput()
 {
-	// The composition alone on one screen, made again when the mode, the display or the composition's size change.
+	// The composition alone on one screen, made again when the mode, the display, the sharing or the composition's
+	// size change. Shared with no window or display (Off, Advanced): a screen that goes nowhere but to NDI or Spout.
 	bool quick      = outputMode == OutputMode::Window || outputMode == OutputMode::Fullscreen;
-	std::string key = std::to_string( (int)outputMode ) + "|" + outputDisplay + "|" + std::to_string( composition.width ) + "x" + std::to_string( composition.height );
-	if( !quick || key == quickOutputKey )
+	bool shared     = shareCompositionNdi || shareCompositionLocal;
+	std::string key = std::to_string( (int)outputMode ) + "|" + outputDisplay + "|" + std::to_string( composition.width ) + "x" + std::to_string( composition.height )
+	                  + "|" + std::to_string( shareCompositionNdi ) + std::to_string( shareCompositionLocal );
+	if( ( !quick && !shared ) || key == quickOutputKey )
 		return;
 	quickOutputKey = key;
 	quickOutput    = AdvancedOutputSetup::MakeDefault( composition.width, composition.height );
-	quickOutput.screens[ 0 ].name = "Output";
-	PlaceScreen( quickOutput.screens[ 0 ], outputMode == OutputMode::Window ? OutputDevice::Window : OutputDevice::Display, outputDisplay );
+	Screen& screen = quickOutput.screens[ 0 ];
+	screen.name    = "Composition";
+	if( quick )
+		PlaceScreen( screen, outputMode == OutputMode::Window ? OutputDevice::Window : OutputDevice::Display, outputDisplay );
+	else
+		screen.device = OutputDevice::Virtual;
+	screen.ndi   = shareCompositionNdi;
+	screen.share = shareCompositionLocal;
 }
 
 void App::SaveOutputMode() const
 {
 	const char* names[] = { "off", "window", "fullscreen", "advanced" };
-	nlohmann::json mode = { { "mode", names[ (int)outputMode ] }, { "display", outputDisplay }, { "beforeAdvanced", names[ (int)beforeAdvanced ] } };
+	nlohmann::json mode = { { "mode", names[ (int)outputMode ] },
+		                    { "display", outputDisplay },
+		                    { "beforeAdvanced", names[ (int)beforeAdvanced ] },
+		                    { "shareNdi", shareCompositionNdi },
+		                    { "shareLocal", shareCompositionLocal } };
 	WriteTextFile( ( fs::u8path( configDir ) / "output-mode.json" ).u8string(), mode.dump( 1 ) );
 }
 
@@ -2701,7 +2755,8 @@ void App::Frame()
 	// works on it. The timeline's screen pictures (its canvases) are mixed when its setup is drawn.
 	AdvancedOutputSetup& live = LiveOutput();
 	bool advancedLive = outputMode == OutputMode::Advanced;
-	bool quickLive    = outputMode == OutputMode::Window || outputMode == OutputMode::Fullscreen;
+	bool quickLive    = outputMode == OutputMode::Window || outputMode == OutputMode::Fullscreen || shareCompositionNdi || shareCompositionLocal;
+	outputs.testCard = editOutputs.testCard = quickOutputs.testCard = testCard;
 	bool monitorScreens = monitorShown && ( monitorSource == MonitorSource::Multiview || monitorSource == MonitorSource::Screen );
 	bool liveDrawn    = advancedLive || ( panels.advancedOutput && EditingLive() ) || options.captureScreen > 0 || monitorScreens;
 	bool otherDrawn   = panels.advancedOutput && !EditingLive();
@@ -2731,6 +2786,8 @@ void App::Frame()
 		editOutputs.Render( EditedOutput(), compositor.CompositionTexture(), composition.width, composition.height, false, pictures( EditedOutput() ) );
 	if( quickLive )
 		quickOutputs.Render( quickOutput, compositor.CompositionTexture(), composition.width, composition.height );
+	else
+		quickOutputs.StopSharing(); // the composition no longer shared
 	UpdatePreview( dt );
 	if( Clip* selected = composition.SelectedClip() )
 		if( selected->generator || ( selected->Loaded() && selected->player->Active() ) )
@@ -2902,6 +2959,7 @@ void App::DrawUi()
 	DrawAdvancedOutputSavePrompt( *this );
 	if( panels.advancedOutput )
 		DrawAdvancedOutputPanel( *this );
+	DrawDisplayIdentities( *this );
 	droppedPaths.clear();
 }
 }

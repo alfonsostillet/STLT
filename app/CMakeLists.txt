@@ -232,6 +232,8 @@ add_library(stltvj-core STATIC
     src/output/OutputRenderer.cpp
     src/output/OutputRenderer.h
     src/output/NdiSender.cpp
+    src/output/PngFile.cpp
+    src/output/PngFile.h
     src/output/Sharing.h
     src/control/Control.cpp
     src/control/Feedback.cpp
