@@ -31,11 +31,6 @@ struct SlotRef
 	int index;
 };
 
-float Ui( float pixels )
-{
-	return pixels * ImGui::GetFontSize() / theme::BaseFont;
-}
-
 std::string Lower( std::string s )
 {
 	std::transform( s.begin(), s.end(), s.begin(), []( unsigned char c ) { return (char)std::tolower( c ); } );

@@ -95,7 +95,7 @@ void ApplyTheme( float scale )
 	c[ ImGuiCol_Border ]                    = Color( theme::Edge );
 	c[ ImGuiCol_BorderShadow ]              = Rgb( 0, 0, 0, 0 );
 	c[ ImGuiCol_FrameBg ]                   = Color( theme::Well );
-	c[ ImGuiCol_FrameBgHovered ]            = Rgb( 22, 20, 18 );
+	c[ ImGuiCol_FrameBgHovered ]            = Color( theme::WellHover );
 	c[ ImGuiCol_FrameBgActive ]             = Rgb( 30, 27, 24 );
 	c[ ImGuiCol_TitleBg ]                   = Color( theme::Base );
 	c[ ImGuiCol_TitleBgActive ]             = Color( theme::Raised );

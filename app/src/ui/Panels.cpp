@@ -36,11 +36,6 @@ struct CellRef
 	int layer, column;
 };
 
-float Ui( float pixels )
-{
-	return pixels * ImGui::GetFontSize() / theme::BaseFont;
-}
-
 ImTextureID TextureId( GLuint texture )
 {
 	return (ImTextureID)(intptr_t)texture;
@@ -695,14 +690,24 @@ void DrawMainMenu( App& app )
 	ImGuiIO& io = ImGui::GetIO();
 	if( io.KeyCtrl && ImGui::IsKeyPressed( ImGuiKey_O, false ) )
 		openComposition = true;
-	// The interface's size: Ctrl + and Ctrl - (on the main keys or the keypad), Ctrl 0 back to 100 %.
+	// The interface's size: Ctrl + and Ctrl - (on the main keys or the keypad), Ctrl 0 back to 100 %. On Italian,
+	// German or Spanish keyboards "+" is the key US keyboards have "]" on. A shortcut mapped to the same keys before
+	// zooming existed keeps them.
 	if( io.KeyCtrl && !io.KeyAlt && !io.WantTextInput && !app.learning )
 	{
-		if( ImGui::IsKeyPressed( ImGuiKey_Equal, true ) || ImGui::IsKeyPressed( ImGuiKey_KeypadAdd, true ) )
+		auto free = [ & ]( ImGuiKey key, bool repeat ) {
+			if( !ImGui::IsKeyPressed( key, repeat ) )
+				return false;
+			KeyChord chord{ ImGui::GetKeyName( key ), true, io.KeyShift, false };
+			return std::none_of( app.control.keys.begin(), app.control.keys.end(), [ & ]( const KeyMapping& m ) { return m.chord == chord; } );
+		};
+		const char* bracket = glfwGetKeyName( GLFW_KEY_RIGHT_BRACKET, 0 );
+		bool plusOnBracket  = bracket && std::strcmp( bracket, "+" ) == 0;
+		if( free( ImGuiKey_Equal, true ) || free( ImGuiKey_KeypadAdd, true ) || ( plusOnBracket && free( ImGuiKey_RightBracket, true ) ) )
 			app.ZoomInterface( 1 );
-		if( ImGui::IsKeyPressed( ImGuiKey_Minus, true ) || ImGui::IsKeyPressed( ImGuiKey_KeypadSubtract, true ) )
+		if( free( ImGuiKey_Minus, true ) || free( ImGuiKey_KeypadSubtract, true ) )
 			app.ZoomInterface( -1 );
-		if( ImGui::IsKeyPressed( ImGuiKey_0, false ) || ImGui::IsKeyPressed( ImGuiKey_Keypad0, false ) )
+		if( free( ImGuiKey_0, false ) || free( ImGuiKey_Keypad0, false ) )
 			app.ZoomInterface( 0 );
 	}
 	// Text fields keep their own undo.
@@ -1277,7 +1282,7 @@ static bool VerticalFader( const char* id, ImVec2 pos, ImVec2 size, float* value
 	ImVec2 t         = smallMono->CalcTextSizeA( smallMono->FontSize, FLT_MAX, 0, shown );
 	draw->AddText( smallMono, smallMono->FontSize, ImVec2( pos.x + ( size.x - t.x ) / 2, pos.y ), hatched ? theme::TextDim : theme::Text, shown );
 	ImVec2 a( pos.x, trackT ), b( pos.x + size.x, trackB );
-	draw->AddRectFilled( a, b, hovered ? IM_COL32( 22, 20, 18, 255 ) : theme::Well );
+	draw->AddRectFilled( a, b, hovered ? theme::WellHover : theme::Well );
 	float top = trackB - trackH * std::clamp( *value, 0.0f, 1.0f );
 	if( top < trackB - 0.5f )
 	{
@@ -1299,6 +1304,15 @@ static bool VerticalFader( const char* id, ImVec2 pos, ImVec2 size, float* value
 	if( hovered && !learning )
 		ImGui::SetTooltip( "%s %.0f %%\nRight-click: 100 %%", name, *value * 100 );
 	return changed;
+}
+
+// The Layer panel, when its tab is hidden behind another: brought to the front. Already showing, it is left alone:
+// focusing it would take the keyboard from the deck at every click on a layer.
+static void ShowLayerPanel()
+{
+	ImGuiWindow* window = ImGui::FindWindowByName( panel::Layer );
+	if( window && ( !window->WasActive || window->Collapsed || ( window->DockIsActive && !window->DockTabIsVisible ) ) )
+		ImGui::SetWindowFocus( panel::Layer );
 }
 
 // A horizontal fader with its letter before it and (optionally) its value after it: drag along it; right-click or
@@ -1326,7 +1340,7 @@ static bool HorizontalFader( const char* id, ImVec2 pos, ImVec2 size, float* val
 	ImDrawList* draw = ImGui::GetWindowDrawList();
 	if( letter )
 		draw->AddText( small, small->FontSize, ImVec2( pos.x, pos.y + ( size.y - small->FontSize ) / 2 ), theme::TextDim, letter );
-	draw->AddRectFilled( a, b, hovered ? IM_COL32( 22, 20, 18, 255 ) : theme::Well );
+	draw->AddRectFilled( a, b, hovered ? theme::WellHover : theme::Well );
 	float x = a.x + width * ( max > min ? std::clamp( ( *value - min ) / ( max - min ), 0.0f, 1.0f ) : 0 );
 	if( x > a.x + 0.5f )
 		draw->AddRectFilled( a, ImVec2( x, b.y ), disabled ? theme::Raised : theme::Fill );
@@ -1363,7 +1377,7 @@ static void PositionBar( const char* id, ImVec2 pos, ImVec2 size, Clip* clip, bo
 	ImGui::InvisibleButton( id, size );
 	ImDrawList* draw = ImGui::GetWindowDrawList();
 	ImVec2 max( pos.x + size.x, pos.y + size.y );
-	draw->AddRectFilled( pos, max, ImGui::IsItemHovered() ? IM_COL32( 22, 20, 18, 255 ) : theme::Well );
+	draw->AddRectFilled( pos, max, ImGui::IsItemHovered() ? theme::WellHover : theme::Well );
 	draw->AddRect( pos, max, theme::Line );
 	double duration = clip && clip->Loaded() ? clip->Duration() : 0;
 	if( duration <= 0 )
@@ -1400,7 +1414,7 @@ static void Crossfader( App& app, ImVec2 pos, ImVec2 size )
 		comp.crossfader = std::clamp( ( ImGui::GetIO().MousePos.x - bar.x ) / barW, 0.0f, 1.0f );
 	ResetValue( &comp.crossfader, 0.5f );
 	bool hovered = ImGui::IsItemHovered();
-	draw->AddRectFilled( bar, ImVec2( bar.x + barW, bar.y + barH ), hovered ? IM_COL32( 22, 20, 18, 255 ) : theme::Well );
+	draw->AddRectFilled( bar, ImVec2( bar.x + barW, bar.y + barH ), hovered ? theme::WellHover : theme::Well );
 	draw->AddRect( bar, ImVec2( bar.x + barW, bar.y + barH ), theme::Line );
 	draw->AddLine( ImVec2( bar.x + barW / 2, bar.y + Ui( 3 ) ), ImVec2( bar.x + barW / 2, bar.y + barH - Ui( 3 ) ), theme::Edge );
 	float x = bar.x + barW * comp.crossfader, handle = Ui( 5 );
@@ -1412,39 +1426,6 @@ static void Crossfader( App& app, ImVec2 pos, ImVec2 size )
 	if( ImGui::InvisibleButton( "##xfB", ImVec2( letter, size.y ) ) )
 		comp.crossfader = 1;
 	draw->AddText( small, small->FontSize, ImVec2( bar.x + barW + Ui( 4 ), pos.y + ( size.y - small->FontSize ) / 2 ), comp.crossfader >= 1 ? theme::Accent : theme::TextDim, "B" );
-}
-
-// A dashed rectangle (ImGui draws only solid ones): the frame of a clip waiting for its beat, an empty cell.
-static void DashedRect( ImDrawList* draw, ImVec2 a, ImVec2 b, ImU32 colour, float thickness, float dash )
-{
-	auto line = [ & ]( ImVec2 p, ImVec2 q ) {
-		float length = std::hypot( q.x - p.x, q.y - p.y );
-		if( length <= 0 )
-			return;
-		ImVec2 d( ( q.x - p.x ) / length, ( q.y - p.y ) / length );
-		for( float s = 0; s < length; s += dash * 2 )
-		{
-			float e = std::min( s + dash, length );
-			draw->AddLine( ImVec2( p.x + d.x * s, p.y + d.y * s ), ImVec2( p.x + d.x * e, p.y + d.y * e ), colour, thickness );
-		}
-	};
-	float h = thickness / 2;
-	line( ImVec2( a.x, a.y + h ), ImVec2( b.x, a.y + h ) );
-	line( ImVec2( b.x - h, a.y ), ImVec2( b.x - h, b.y ) );
-	line( ImVec2( b.x, b.y - h ), ImVec2( a.x, b.y - h ) );
-	line( ImVec2( a.x + h, b.y ), ImVec2( a.x + h, a.y ) );
-}
-
-// A small dark badge with a word in the corner of a picture (FX, T, P...).
-static float Badge( ImDrawList* draw, ImVec2 at, const char* text, ImU32 bg, ImU32 fg, bool fromRight )
-{
-	ImFont* small = Fonts().small;
-	ImVec2 t      = small->CalcTextSizeA( small->FontSize, FLT_MAX, 0, text );
-	float w = t.x + Ui( 6 ), h = t.y + Ui( 2 );
-	ImVec2 a( fromRight ? at.x - w : at.x, at.y );
-	draw->AddRectFilled( a, ImVec2( a.x + w, a.y + h ), bg );
-	draw->AddText( small, small->FontSize, ImVec2( a.x + Ui( 3 ), a.y + Ui( 1 ) ), fg, text );
-	return w;
 }
 
 // Short names for the blend modes, for the layer headers (the menu has the full ones).
@@ -1702,15 +1683,21 @@ static void DrawDeck( App& app, bool layersPart )
 		if( ImGui::IsItemHovered() && !learning )
 			ImGui::SetTooltip( "Master of the whole composition: %.0f %%\nRight-click: 100 %%", comp.master * 100 );
 		x += Ui( 94 );
-		char speedText[ 16 ];
-		std::snprintf( speedText, sizeof( speedText ), "%.2f\xC3\x97", comp.speed );
-		HorizontalFader( "##compSpeed", ImVec2( x, cy ), ImVec2( Ui( 124 ), h ), &comp.speed, 0, 4, 1, "S", speedText, Ui( 44 ) );
-		MapTarget( app, "/composition/speed" );
-		if( ImGui::IsItemHovered() && !learning )
-			ImGui::SetTooltip( "Speed of the whole composition\nRight-click: 1x" );
 		// Right-aligned: every clip backwards, pause, forwards; previous and next column.
 		float b = Ui( 26 ), right = xEnd - Ui( 6 );
 		float xr = right - 5 * b - 2 * Ui( 3 ) - Ui( 8 );
+		// The speed in what is left before them (a narrow panel: shorter, or only its value).
+		float speedW = std::min( Ui( 124 ), xr - Ui( 8 ) - x );
+		if( speedW >= Ui( 48 ) )
+		{
+			char speedText[ 16 ];
+			std::snprintf( speedText, sizeof( speedText ), "%.2f\xC3\x97", comp.speed );
+			bool roomy = speedW >= Ui( 100 );
+			HorizontalFader( "##compSpeed", ImVec2( x, cy ), ImVec2( speedW, h ), &comp.speed, 0, 4, 1, "S", roomy ? speedText : nullptr, roomy ? Ui( 44 ) : 0 );
+			MapTarget( app, "/composition/speed" );
+			if( ImGui::IsItemHovered() && !learning )
+				ImGui::SetTooltip( "Speed of the whole composition: %.2fx\nRight-click: 1x", comp.speed );
+		}
 		if( IconBox( "##compReverse", ImVec2( xr, cy ), ImVec2( b, h ), Icon::Reverse, false, tip( "Every playing clip backwards" ), BoxStyle::Quiet ) )
 			app.SetAllDirections( -1 );
 		if( IconBox( "##compPause", ImVec2( xr + b + Ui( 3 ), cy ), ImVec2( b, h ), Icon::Pause, comp.paused, tip( "Pause everything (Space)" ), BoxStyle::Quiet ) )
@@ -1737,7 +1724,8 @@ static void DrawDeck( App& app, bool layersPart )
 			ImVec2 pos( origin.x + c * ( cellW + g.hair ), y );
 			ImGui::SetCursorScreenPos( pos );
 			ImGui::PushID( c );
-			bool clicked = ImGui::InvisibleButton( "##column", ImVec2( cellW, g.top ) );
+			ImGui::InvisibleButton( "##column", ImVec2( cellW, g.top ) );
+			bool clicked = ImGui::IsItemActivated(); // launched on the press
 			bool hovered = ImGui::IsItemHovered();
 			bool active  = comp.activeColumn == c;
 			ImVec2 max( pos.x + cellW, pos.y + g.top );
@@ -1763,7 +1751,7 @@ static void DrawDeck( App& app, bool layersPart )
 			if( active )
 				draw->AddRectFilled( ImVec2( pos.x, max.y - Ui( 2 ) ), max, theme::Accent );
 			if( app.IsQueued( -1, c ) )
-				DashedRect( draw, ImVec2( pos.x + Ui( 1 ), pos.y + Ui( 1 ) ), ImVec2( max.x - Ui( 1 ), max.y - Ui( 1 ) ), theme::Queued, Ui( 2 ), Ui( 4 ) );
+				DrawDashedRect( draw, ImVec2( pos.x + Ui( 1 ), pos.y + Ui( 1 ) ), ImVec2( max.x - Ui( 1 ), max.y - Ui( 1 ) ), theme::Queued, Ui( 2 ), Ui( 4 ) );
 			vline( max.x, pos.y, max.y );
 			if( clicked )
 				app.LaunchColumn( c );
@@ -1790,6 +1778,7 @@ static void DrawDeck( App& app, bool layersPart )
 	}
 
 	// Layers, top layer first.
+	bool addLayer = false;
 	for( int row = 0; row < layerCount; ++row )
 	{
 		int l        = layerCount - 1 - row;
@@ -1801,7 +1790,7 @@ static void DrawDeck( App& app, bool layersPart )
 		Clip* playing            = comp.ActiveClip( l );
 		auto selectLayer         = [ & ]() {
 			comp.selectedLayer = l;
-			ImGui::SetWindowFocus( panel::Layer );
+			ShowLayerPanel();
 		};
 		if( layersPart )
 		{
@@ -1809,7 +1798,9 @@ static void DrawDeck( App& app, bool layersPart )
 			// The whole header, under its controls: a click on a free part of it selects the layer.
 			ImGui::SetCursorScreenPos( ImVec2( x0, y ) );
 			ImGui::SetNextItemAllowOverlap();
-			if( ImGui::InvisibleButton( "##header", ImVec2( g.headerW, g.row ) ) )
+			// On the press, as the arrow keys do: not when the button comes up.
+			ImGui::InvisibleButton( "##header", ImVec2( g.headerW, g.row ) );
+			if( ImGui::IsItemActivated() )
 				selectLayer();
 			ImGui::OpenPopupOnItemClick( "##layerMenu", ImGuiPopupFlags_MouseButtonRight );
 			if( AcceptEffectDrop( app, layer.effects ) )
@@ -1835,7 +1826,8 @@ static void DrawDeck( App& app, bool layersPart )
 				ImGui::PopFont();
 				float nx = lx + nt.x + Ui( 5 ), clearW = Ui( 18 );
 				ImGui::SetCursorScreenPos( ImVec2( nx, ly ) );
-				if( ImGui::InvisibleButton( "##name", ImVec2( lx + lw - clearW - nx, Ui( 22 ) ) ) )
+				ImGui::InvisibleButton( "##name", ImVec2( lx + lw - clearW - nx, Ui( 22 ) ) );
+				if( ImGui::IsItemActivated() )
 					selectLayer();
 				ImGui::OpenPopupOnItemClick( "##layerMenu", ImGuiPopupFlags_MouseButtonRight );
 				if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) && !learning )
@@ -1851,7 +1843,7 @@ static void DrawDeck( App& app, bool layersPart )
 					ImGui::InputText( "##rename", &layer.name );
 					ImGui::Separator();
 					if( ImGui::MenuItem( "New Layer" ) )
-						comp.AddLayer();
+						addLayer = true; // after the rows: adding one now would move the layers under this loop
 					if( ImGui::MenuItem( "Clear Layer" ) )
 						app.ClearLayer( l );
 					if( ImGui::MenuItem( "Delete Layer", nullptr, false, comp.layers.size() > 1 ) )
@@ -2047,6 +2039,7 @@ static void DrawDeck( App& app, bool layersPart )
 				ImGui::SetCursorScreenPos( min );
 				ImGui::PushID( c );
 				bool clicked = ImGui::InvisibleButton( "##cell", ImVec2( cellW, g.row ) );
+				bool pressed = ImGui::IsItemActivated(); // clips launch on the press, not when the button comes up
 				bool hovered = ImGui::IsItemHovered();
 				ImVec2 cellMin = ImGui::GetItemRectMin(), cellMax = ImGui::GetItemRectMax();
 				int showingOn  = comp.LayerShowing( l, c ); // the layer playing it: its own, or another one (layer based)
@@ -2061,7 +2054,7 @@ static void DrawDeck( App& app, bool layersPart )
 				if( clip.Empty() )
 				{
 					draw->AddRectFilled( pic0, pic1, hovered ? theme::Raised : theme::Well );
-					DashedRect( draw, pic0, pic1, hovered ? theme::Edge : theme::Line, Ui( 1 ), Ui( 3 ) );
+					DrawDashedRect( draw, pic0, pic1, hovered ? theme::Edge : theme::Line, Ui( 1 ), Ui( 3 ) );
 					if( hovered )
 					{
 						// An empty cell under the mouse: the place for a clip.
@@ -2085,18 +2078,18 @@ static void DrawDeck( App& app, bool layersPart )
 					// Badges: effects (top left), how it triggers (top right), launched onto another layer.
 					float bx = pic0.x + Ui( 3 );
 					if( !clip.effects.empty() )
-						bx += Badge( draw, ImVec2( bx, pic0.y + Ui( 3 ) ), "FX", IM_COL32( 0, 0, 0, 190 ), IM_COL32_WHITE, false ) + Ui( 3 );
+						bx += TextBadge( draw, ImVec2( bx, pic0.y + Ui( 3 ) ), "FX", IM_COL32( 0, 0, 0, 190 ), IM_COL32_WHITE, 0, false ) + Ui( 3 );
 					if( playing && showingOn != l )
 					{
 						char onLayer[ 16 ];
 						std::snprintf( onLayer, sizeof( onLayer ), "\xE2\x86\x92%d", showingOn + 1 );
-						Badge( draw, ImVec2( bx, pic0.y + Ui( 3 ) ), onLayer, theme::Accent, theme::OnAccent, false );
+						TextBadge( draw, ImVec2( bx, pic0.y + Ui( 3 ) ), onLayer, theme::Accent, theme::OnAccent, 0, false );
 					}
 					float rx = pic1.x - Ui( 3 );
 					if( clip.trigger != TriggerStyle::Normal )
-						rx -= Badge( draw, ImVec2( rx, pic0.y + Ui( 3 ) ), clip.trigger == TriggerStyle::Toggle ? "T" : "P", IM_COL32( 0, 0, 0, 190 ), IM_COL32_WHITE, true ) + Ui( 3 );
+						rx -= TextBadge( draw, ImVec2( rx, pic0.y + Ui( 3 ) ), clip.trigger == TriggerStyle::Toggle ? "T" : "P", IM_COL32( 0, 0, 0, 190 ), IM_COL32_WHITE, 0, true ) + Ui( 3 );
 					if( clip.ignoreColumn )
-						Badge( draw, ImVec2( rx, pic0.y + Ui( 3 ) ), "NO COL", IM_COL32( 0, 0, 0, 190 ), theme::TextSoft, true );
+						TextBadge( draw, ImVec2( rx, pic0.y + Ui( 3 ) ), "NO COL", IM_COL32( 0, 0, 0, 190 ), theme::TextSoft, 0, true );
 					// The name; queued: a clock and the queue's colour; missing file: red.
 					float nx = strip0.x + Ui( 5 );
 					ImU32 labelColour = !clip.Playable() ? theme::Error : queued ? theme::Queued : playing ? theme::Text : theme::TextSoft;
@@ -2131,7 +2124,7 @@ static void DrawDeck( App& app, bool layersPart )
 				if( queued )
 				{
 					// Waiting for its beat: a dashed frame in the queue's colour.
-					DashedRect( draw, ImVec2( pic0.x - Ui( 1 ), pic0.y - Ui( 1 ) ), ImVec2( pic1.x + Ui( 1 ), pic1.y + Ui( 1 ) ), theme::Queued, Ui( 2 ), Ui( 4 ) );
+					DrawDashedRect( draw, ImVec2( pic0.x - Ui( 1 ), pic0.y - Ui( 1 ) ), ImVec2( pic1.x + Ui( 1 ), pic1.y + Ui( 1 ) ), theme::Queued, Ui( 2 ), Ui( 4 ) );
 				}
 
 				if( app.moveMode )
@@ -2187,9 +2180,9 @@ static void DrawDeck( App& app, bool layersPart )
 					if( !clip.Empty() )
 						app.TogglePicked( l, c );
 				}
-				else if( clicked )
+				else if( pressed && !app.moveMode )
 				{
-					if( clip.Empty() || ImGui::GetIO().MouseClickedPos[ ImGuiMouseButton_Left ].y >= pic1.y )
+					if( clip.Empty() || io.MousePos.y >= pic1.y )
 						app.Select( l, c );
 					else if( !piano )
 						app.TriggerClip( l, c, true );
@@ -2270,6 +2263,9 @@ static void DrawDeck( App& app, bool layersPart )
 		}
 		ImGui::PopID();
 	}
+
+	if( addLayer )
+		comp.AddLayer();
 
 	if( !layersPart )
 	{

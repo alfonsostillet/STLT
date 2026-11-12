@@ -19,11 +19,6 @@ namespace stltvj
 {
 namespace
 {
-float Ui( float pixels )
-{
-	return pixels * ImGui::GetFontSize() / theme::BaseFont;
-}
-
 // Drag payloads of the other panels: a deck cell, a file of the Files panel.
 constexpr const char* kCellPayload = "STLT_CELL";
 constexpr const char* kFilePayload = "STLT_FILE";

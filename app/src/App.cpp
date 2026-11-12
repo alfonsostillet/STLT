@@ -9,6 +9,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <json.hpp>
 #include "Settings.h"
@@ -348,6 +349,8 @@ void App::Shutdown()
 	if( !window )
 		return;
 	UpdateLights( true ); // the controllers' lights off
+	if( prefsSaveAt > 0 )
+		SavePreferences();
 	if( !options.fresh )
 		WriteTextFile( ( fs::u8path( configDir ) / "last-session.stltvj" ).u8string(), SaveComposition( composition ) );
 	WriteTextFile( ( fs::u8path( configDir ) / "advanced-output.json" ).u8string(), savedOutput );
@@ -1521,6 +1524,13 @@ bool MappableKey( ImGuiKey key, bool ctrl, bool shift, bool alt )
 		for( ImGuiKey own : { ImGuiKey_Z, ImGuiKey_Y, ImGuiKey_S, ImGuiKey_O, ImGuiKey_I, ImGuiKey_M, ImGuiKey_K, ImGuiKey_C, ImGuiKey_X, ImGuiKey_V, ImGuiKey_D, ImGuiKey_E, ImGuiKey_Comma, ImGuiKey_Equal, ImGuiKey_Minus, ImGuiKey_0, ImGuiKey_KeypadAdd, ImGuiKey_KeypadSubtract, ImGuiKey_Keypad0 } )
 			if( key == own )
 				return false;
+	if( ctrl && key == ImGuiKey_RightBracket )
+	{
+		// Ctrl + on keyboards with "+" there (Italian, German, Spanish): the interface's zoom.
+		const char* name = glfwGetKeyName( GLFW_KEY_RIGHT_BRACKET, 0 );
+		if( name && std::strcmp( name, "+" ) == 0 )
+			return false;
+	}
 	return !( ctrl && shift && key == ImGuiKey_A );
 }
 }
@@ -2248,6 +2258,7 @@ int App::ResizeAllClips( FitMode fit )
 
 void App::SavePreferences()
 {
+	prefsSaveAt = 0;
 	WriteTextFile( ( fs::u8path( configDir ) / "preferences.json" ).u8string(), prefs.Save() );
 }
 
@@ -2612,7 +2623,7 @@ void App::SetInterfaceScale( float scale )
 	if( scale == prefs.interfaceScale )
 		return;
 	prefs.interfaceScale = scale;
-	SavePreferences();
+	prefsSaveAt          = glfwGetTime() + 1.0; // held keys zoom many steps: written once they stop
 }
 
 // Between frames (the font atlas is free): the fonts and the style at the interface's size. After a zoom the
@@ -2641,6 +2652,8 @@ void App::Frame()
 	}
 	workspaces.ApplyPending();
 	double now = glfwGetTime();
+	if( prefsSaveAt > 0 && now >= prefsSaveAt )
+		SavePreferences();
 	double measured = std::min( now - lastTime, 0.1 );
 	double dt       = FrameStep( measured );
 	lastTime        = now;

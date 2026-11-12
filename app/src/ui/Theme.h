@@ -16,6 +16,7 @@ constexpr float BaseFont = 13.0f;
 constexpr ImU32 Base        = IM_COL32( 15, 14, 13, 255 );   // behind the panels
 constexpr ImU32 Panel       = IM_COL32( 23, 21, 19, 255 );   // panel background
 constexpr ImU32 Well        = IM_COL32( 10, 9, 8, 255 );     // sunken: fader tracks, fields, the clip pictures' ground
+constexpr ImU32 WellHover   = IM_COL32( 22, 20, 18, 255 );   // a sunken control under the mouse
 constexpr ImU32 Raised      = IM_COL32( 29, 27, 24, 255 );   // quiet buttons, a selected row
 constexpr ImU32 RaisedHover = IM_COL32( 42, 39, 36, 255 );
 constexpr ImU32 Line        = IM_COL32( 42, 39, 36, 255 );   // hairlines between blocks and cells
@@ -39,6 +40,12 @@ constexpr ImU32 TextFaint   = IM_COL32( 101, 95, 87, 255 );   // layer numbers, 
 constexpr ImU32 Warning     = IM_COL32( 245, 184, 74, 255 );
 constexpr ImU32 Error       = IM_COL32( 240, 98, 90, 255 );
 constexpr ImU32 Solo        = IM_COL32( 255, 166, 43, 255 );
+}
+
+// A size in the interface: `pixels` at 100 % (text at theme::BaseFont), growing with the zoom and the display's scale.
+inline float Ui( float pixels )
+{
+	return pixels * ImGui::GetFontSize() / theme::BaseFont;
 }
 
 // The interface fonts, compiled into the program: Inter for text, its semibold for headings, JetBrains Mono for

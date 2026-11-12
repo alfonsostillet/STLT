@@ -102,6 +102,7 @@ public:
 	float displayScale   = 1;
 	float appliedUiScale = 0;
 	double zoomShownUntil = 0; // the new size shows in the middle of the window for a moment
+	double prefsSaveAt    = 0; // after a zoom: preferences.json is written once it has settled (and on quit)
 	// STLT-CHASER (Output > Chaser): opens its editor on the Advanced Output's slices, which are kept written to
 	// chaserStage for it.
 	void OpenChaser();

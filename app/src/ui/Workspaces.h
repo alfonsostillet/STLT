@@ -75,6 +75,7 @@ public:
 
 private:
 	void FitDeck();
+	float DeckHeight() const;
 	std::string PathFor( const std::string& name ) const;
 
 	std::string directory;

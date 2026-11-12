@@ -17,11 +17,6 @@ namespace stltvj
 {
 namespace
 {
-float Ui( float pixels )
-{
-	return pixels * ImGui::GetFontSize() / theme::BaseFont;
-}
-
 enum class Section
 {
 	General,

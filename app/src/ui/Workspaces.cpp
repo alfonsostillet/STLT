@@ -234,7 +234,7 @@ void Workspaces::BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size )
 	// The deck on top, as high as four layers need (no empty space under it); below, side by side: the
 	// Composition Monitor and the Preview Monitor, the composition/layer settings, the clip's, and the browser.
 	ImGuiID top, bottom;
-	float deckRatio = std::clamp( DeckPanelsHeight( std::clamp( deckLayers, 3, 6 ) ) / std::max( size.y, 1.0f ), 0.3f, 0.7f );
+	float deckRatio = std::clamp( DeckHeight() / std::max( size.y, 1.0f ), 0.3f, 0.7f );
 	ImGui::DockBuilderSplitNode( dockspace, ImGuiDir_Up, deckRatio, &top, &bottom );
 	ImGuiID compositionMonitor, rest;
 	ImGui::DockBuilderSplitNode( bottom, ImGuiDir_Left, 0.17f, &compositionMonitor, &rest );
@@ -262,6 +262,12 @@ void Workspaces::BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size )
 	ImGui::DockBuilderFinish( dockspace );
 }
 
+// The deck's height for the composition's layers: the default layout and a zoom make it the same.
+float Workspaces::DeckHeight() const
+{
+	return DeckPanelsHeight( std::clamp( deckLayers, 3, 6 ) );
+}
+
 void Workspaces::Rescale( float ratio )
 {
 	rescale *= ratio;
@@ -277,9 +283,20 @@ void Workspaces::ApplyRescale()
 	// Docked panels keep their share of the window. Floating panels (and those in windows of their own): their size
 	// follows.
 	for( ImGuiWindow* window : g.Windows )
-		if( !window->DockIsActive && !( window->Flags & ( ImGuiWindowFlags_ChildWindow | ImGuiWindowFlags_Popup | ImGuiWindowFlags_Tooltip | ImGuiWindowFlags_NoDocking ) )
+		if( !window->DockIsActive
+		    && !( window->Flags & ( ImGuiWindowFlags_ChildWindow | ImGuiWindowFlags_Popup | ImGuiWindowFlags_Tooltip | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_DockNodeHost ) )
 		    && window->WasActive )
 			ImGui::SetWindowSize( window, ImVec2( window->SizeFull.x * ratio, window->SizeFull.y * ratio ) );
+	// Floating panels sit in dock nodes of their own (alone with a tab bar, or several tabbed or split together): the
+	// node sets its window's size, so the node is resized.
+	for( int n = 0; n < g.DockContext.Nodes.Data.Size; ++n )
+		if( ImGuiDockNode* node = (ImGuiDockNode*)g.DockContext.Nodes.Data[ n ].val_p; node && node->IsFloatingNode() )
+		{
+			node->Size    = ImVec2( node->Size.x * ratio, node->Size.y * ratio );
+			node->SizeRef = ImVec2( node->SizeRef.x * ratio, node->SizeRef.y * ratio );
+			if( node->HostWindow )
+				ImGui::SetWindowSize( node->HostWindow, node->Size );
+		}
 	// The deck fits its headers and its layers again.
 	FitDeck();
 }
@@ -307,7 +324,7 @@ void Workspaces::FitDeck()
 	total = column->Size.y - gutter;
 	if( total > 0 )
 	{
-		float height                       = std::min( DeckPanelsHeight( std::clamp( deckLayers, 1, 8 ) ), total * 0.75f );
+		float height                       = std::min( DeckHeight(), total * 0.75f );
 		parent->SizeRef.y                  = height;
 		column->ChildNodes[ 1 ]->SizeRef.y = std::max( 1.0f, total - height );
 	}

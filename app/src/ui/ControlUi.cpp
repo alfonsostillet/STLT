@@ -11,13 +11,6 @@
 
 namespace stltvj
 {
-namespace
-{
-float Ui( float pixels )
-{
-	return pixels * ImGui::GetFontSize() / theme::BaseFont;
-}
-}
 
 void BeginMappable( App& app )
 {
