@@ -556,8 +556,49 @@ static void TestTimecode()
 	CHECK( !ParseArtTimecode( packet, 12, art ) );
 }
 
+// Maps that follow the selected layer or clip.
+static void TestMappingTargets()
+{
+	CHECK( CanTargetLayer( "/composition/layers/2/video/opacity" ) );
+	CHECK( CanTargetClip( "/composition/layers/2/clips/3/connect" ) );
+	CHECK( !CanTargetClip( "/composition/layers/2/clear" ) );
+	CHECK( !CanTargetLayer( "/composition/master" ) );
+	CHECK( !CanTargetLayer( "/composition/layers/x/clear" ) );
+	CHECK( !CanTargetLayer( "/composition/layers/2" ) );
+	CHECK( TargetFor( MappingTarget::SelectedClip, "/composition/layers/2/clear" ) == MappingTarget::Position );
+	CHECK( TargetFor( MappingTarget::SelectedLayer, "/composition/layers/2/clear" ) == MappingTarget::SelectedLayer );
+
+	// By position: as learnt. Selected layer: layer 4 (0-based 3) instead of 2.
+	CHECK( Retarget( "/composition/layers/2/video/opacity", MappingTarget::Position, 3, 0, 0 ) == "/composition/layers/2/video/opacity" );
+	CHECK( Retarget( "/composition/layers/2/video/opacity", MappingTarget::SelectedLayer, 3, 0, 0 ) == "/composition/layers/4/video/opacity" );
+	CHECK( Retarget( "/composition/layers/12/clips/3/connect", MappingTarget::SelectedLayer, 0, 5, 5 ) == "/composition/layers/1/clips/3/connect" );
+	CHECK( Retarget( "/composition/layers/2/clips/3/connect", MappingTarget::SelectedClip, 0, 4, 6 ) == "/composition/layers/5/clips/7/connect" );
+	CHECK( Retarget( "/composition/layers/2/clips/3/video/effects/1/params/x", MappingTarget::SelectedClip, 0, 0, 1 )
+	       == "/composition/layers/1/clips/2/video/effects/1/params/x" );
+	CHECK( Retarget( "/composition/layers/2/video/opacity", MappingTarget::SelectedLayer, -1, 0, 0 ).empty() );
+	CHECK( Retarget( "/composition/master", MappingTarget::SelectedLayer, 3, 0, 0 ) == "/composition/master" );
+	ControlTarget t;
+	CHECK( ParseControlAddress( Retarget( "/composition/layers/1/clear", MappingTarget::SelectedLayer, 2, 0, 0 ), t ) && t.kind == Kind::LayerClear && t.layer == 2 );
+
+	// Saved and loaded with the maps; by position is the default and is not written.
+	ControlSettings settings;
+	settings.keys.push_back( { { "P", false, false, false }, "/composition/layers/1/clear", MappingTarget::SelectedLayer } );
+	settings.keys.push_back( { { "O", false, false, false }, "/composition/master", MappingTarget::Position } );
+	MidiMapping midi;
+	midi.key     = { MidiKey::Type::Note, 0, 60 };
+	midi.address = "/composition/layers/1/clips/1/connect";
+	midi.target  = MappingTarget::SelectedClip;
+	settings.midi.push_back( midi );
+	ControlSettings loaded;
+	CHECK( loaded.LoadShortcuts( settings.SaveShortcuts() ) );
+	CHECK( loaded.keys.size() == 2 && loaded.keys[ 0 ].target == MappingTarget::SelectedLayer && loaded.keys[ 1 ].target == MappingTarget::Position );
+	CHECK( loaded.midi.size() == 1 && loaded.midi[ 0 ].target == MappingTarget::SelectedClip );
+	CHECK( settings.Save().find( "\"position\"" ) == std::string::npos );
+}
+
 int main()
 {
+	TestMappingTargets();
 	TestTimecode();
 	TestLink();
 	TestMidiClock();

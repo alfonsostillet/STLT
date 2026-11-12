@@ -13,6 +13,11 @@ Fixes already made and checked by the automatic tests, to try on a real PC befor
 
 - [ ] **Spout and NDI**: an Advanced Output screen sent through Spout and NDI must show up in another program.
 
+## Maps that follow the selected layer (new)
+
+- [ ] In the Shortcuts panel set *New maps act on* to **Selected layer**, Map MIDI (Ctrl+M), click a layer's Bypass or its opacity, move a pad or knob: selecting another layer (with the mouse or the arrows), the same pad must act on **that** layer.
+- [ ] In the *Acts on* column of an existing map, switch between *By position*, *Selected layer* and *Selected clip*; hover it to see which address it acts on now. The choice must survive a restart and a preset saved and loaded.
+
 ## Controller lights (new)
 
 - [ ] **APC mini mk2**: pads mapped to clips light up **blue** if there is a clip, **green** when it plays, **pulsing green** if it starts on the next beat (Launch on Beat or Bar); the track and scene buttons light up or blink (for example on Bypass, Solo, columns); the pad mapped to TAP blinks with the tempo. They go off when STLT closes.

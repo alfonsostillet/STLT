@@ -1369,15 +1369,31 @@ void App::PollRemote()
 			// One control per key: learning again moves it.
 			control.midi.erase( std::remove_if( control.midi.begin(), control.midi.end(), [ & ]( const MidiMapping& m ) { return m.key == e.key; } ),
 			                    control.midi.end() );
-			control.midi.push_back( { e.key, learnTarget, e.device } );
+			MappingTarget target = TargetFor( learnMapTarget, learnTarget );
+			control.midi.push_back( { e.key, learnTarget, e.device, target } );
 			SetStatus( "Mapped " + MidiKeyName( e.key ) + " to " + learnTarget );
 			learnTarget.clear();
 			SaveControlSettings();
 			continue;
 		}
+		// Mappings that follow the selection: let go (a value of 0), the one pressed is let go, wherever the
+		// selection went in between.
+		bool release = e.value <= 0 && previous > 0;
 		for( const MidiMapping& m : control.midi )
 			if( m.key == e.key )
-				ApplyControl( m.address, true, e.value, e.key.type == MidiKey::Type::Note, previous );
+			{
+				std::string address = m.address;
+				if( m.target != MappingTarget::Position )
+				{
+					auto held = midiHeld.find( id );
+					address   = release && held != midiHeld.end() ? held->second : MappedAddress( m.address, m.target );
+				}
+				ApplyControl( address, true, e.value, e.key.type == MidiKey::Type::Note, previous );
+				if( m.target != MappingTarget::Position && !release )
+					midiHeld[ id ] = address;
+			}
+		if( release )
+			midiHeld.erase( id );
 	}
 }
 
@@ -1481,7 +1497,7 @@ void App::UpdateLights( bool off )
 	std::set< std::string > mapped;
 	for( const MidiMapping& m : control.midi )
 	{
-		Light light = off ? Light::Off : LightFor( m.address );
+		Light light = off ? Light::Off : LightFor( MappedAddress( m.address, m.target ) );
 		for( const std::string& device : inputs )
 		{
 			if( !m.device.empty() && m.device != device )
@@ -1572,7 +1588,8 @@ void App::PollKeyboard()
 			// One control per key: learning again moves it.
 			control.keys.erase( std::remove_if( control.keys.begin(), control.keys.end(), [ & ]( const KeyMapping& m ) { return m.chord == chord; } ),
 			                    control.keys.end() );
-			control.keys.push_back( { chord, learnTarget } );
+			MappingTarget target = TargetFor( learnMapTarget, learnTarget );
+			control.keys.push_back( { chord, learnTarget, target } );
 			SetStatus( "Mapped the key " + KeyChordName( chord ) + " to " + learnTarget );
 			learnTarget.clear();
 			SaveControlSettings();
@@ -1581,9 +1598,10 @@ void App::PollKeyboard()
 		for( const KeyMapping& m : control.keys )
 			if( m.chord == chord )
 			{
-				lastControl = "Key " + KeyChordName( chord );
-				ApplyControl( m.address, true, 1.0f, true, 0.0f );
-				keysHeld.push_back( { k, m.address } );
+				lastControl         = "Key " + KeyChordName( chord );
+				std::string address = MappedAddress( m.address, m.target ); // let go on the same, whatever is selected then
+				ApplyControl( address, true, 1.0f, true, 0.0f );
+				keysHeld.push_back( { k, address } );
 			}
 	}
 }

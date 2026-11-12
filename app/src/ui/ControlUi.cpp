@@ -35,16 +35,21 @@ void MapTarget( App& app, const std::string& address )
 	// Two separate maps: keys (blue) and MIDI (green). Only the one being mapped shows.
 	bool keys = app.learnKeys;
 	std::string names;
+	// A map that follows the selection says so: "(sel. layer)", "(sel. clip)".
+	auto name = [ & ]( const std::string& n, MappingTarget target ) {
+		names += ( names.empty() ? "" : "  " ) + n
+		         + ( target == MappingTarget::SelectedLayer ? " (sel. layer)" : target == MappingTarget::SelectedClip ? " (sel. clip)" : "" );
+	};
 	if( keys )
 	{
 		for( const KeyMapping& k : app.control.keys )
 			if( k.address == address )
-				names += ( names.empty() ? "" : "  " ) + KeyChordName( k.chord );
+				name( KeyChordName( k.chord ), k.target );
 	}
 	else
 		for( const MidiMapping& m : app.control.midi )
 			if( m.address == address )
-				names += ( names.empty() ? "" : "  " ) + MidiKeyName( m.key );
+				name( MidiKeyName( m.key ), m.target );
 	bool mapped      = !names.empty();
 	bool chosen      = app.learnTarget == address;
 	ImDrawList* draw = ImGui::GetWindowDrawList();
@@ -144,6 +149,57 @@ bool DrawOscSettings( App& app )
 	return changed;
 }
 
+namespace
+{
+// A map's control, short (without "/composition/"), all of it in its tooltip.
+void ControlName( const std::string& address )
+{
+	const std::string prefix = "/composition/";
+	bool shortened           = address.compare( 0, prefix.size(), prefix ) == 0 && address.size() > prefix.size();
+	ImGui::TextUnformatted( shortened ? address.c_str() + prefix.size() : address.c_str() );
+	if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayShort ) )
+		ImGui::SetTooltip( "%s", address.c_str() );
+}
+
+// A map's target, in its row: only the choices its control can take. True when changed.
+bool TargetCombo( const App& app, const std::string& address, MappingTarget& target )
+{
+	bool layer = CanTargetLayer( address ), clip = CanTargetClip( address );
+	bool changed = false;
+	ImGui::SetNextItemWidth( -FLT_MIN );
+	ImGui::BeginDisabled( !layer );
+	if( ImGui::BeginCombo( "##target", layer ? MappingTargetName( target ) : "Itself", ImGuiComboFlags_NoArrowButton ) )
+	{
+		for( MappingTarget t : { MappingTarget::Position, MappingTarget::SelectedLayer, MappingTarget::SelectedClip } )
+		{
+			if( t == MappingTarget::SelectedClip && !clip )
+				continue;
+			if( ImGui::Selectable( MappingTargetName( t ), target == t ) && target != t )
+			{
+				target  = t;
+				changed = true;
+			}
+		}
+		ImGui::EndCombo();
+	}
+	ImGui::EndDisabled();
+	if( ImGui::IsItemHovered( ImGuiHoveredFlags_AllowWhenDisabled | ImGuiHoveredFlags_DelayShort ) )
+	{
+		if( !layer )
+			ImGui::SetTooltip( "This control belongs to no layer: it always acts on itself" );
+		else if( target == MappingTarget::Position )
+			ImGui::SetTooltip( "Always %s", address.c_str() );
+		else
+		{
+			std::string now = app.MappedAddress( address, target );
+			ImGui::SetTooltip( "Follows the %s. Now: %s", target == MappingTarget::SelectedLayer ? "selected layer" : "selected clip",
+			                   now.empty() ? "nothing selected" : now.c_str() );
+		}
+	}
+	return changed;
+}
+}
+
 void DrawControlPanel( App& app )
 {
 	if( !ImGui::Begin( panel::Control, &app.panels.control ) )
@@ -167,6 +223,23 @@ void DrawControlPanel( App& app )
 	mapButton( true, "Map Keys (Ctrl+K)", "Mapping keys...", ImVec4( 0.27f, 0.47f, 1.0f, 1 ) );
 	ImGui::SameLine();
 	mapButton( false, "Map MIDI (Ctrl+M)", "Mapping MIDI...", ImVec4( 0.2f, 0.7f, 0.4f, 1 ) );
+	// What new mappings act on: the control clicked, or the same control of the selected layer or clip.
+	ImGui::AlignTextToFramePadding();
+	ImGui::TextUnformatted( "New maps act on" );
+	ImGui::SameLine();
+	ImGui::SetNextItemWidth( -FLT_MIN );
+	if( ImGui::BeginCombo( "##learnTarget", MappingTargetName( app.learnMapTarget ) ) )
+	{
+		for( MappingTarget t : { MappingTarget::Position, MappingTarget::SelectedLayer, MappingTarget::SelectedClip } )
+			if( ImGui::Selectable( MappingTargetName( t ), app.learnMapTarget == t ) )
+				app.learnMapTarget = t;
+		ImGui::EndCombo();
+	}
+	if( ImGui::IsItemHovered( ImGuiHoveredFlags_DelayNormal ) )
+		ImGui::SetTooltip( "By position: the very control you click (layer 2's opacity stays layer 2's).\n"
+		                   "Selected layer: the same control of whichever layer is selected when you use it.\n"
+		                   "Selected clip: the same control of the clip selected in the grid.\n"
+		                   "Controls that belong to no layer are always by position. Each map's own choice is in the lists below." );
 	ImGui::PushTextWrapPos( 0 );
 	if( app.learning )
 	{
@@ -287,11 +360,12 @@ void DrawControlPanel( App& app )
 
 	ImGui::SeparatorText( "Keyboard" );
 	if( !c.keys.empty()
-	    && ImGui::BeginTable( "##keys", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY,
+	    && ImGui::BeginTable( "##keys", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY,
 	                          ImVec2( 0, std::min( Ui( 220 ), ImGui::GetFrameHeight() * ( c.keys.size() + 1.5f ) ) ) ) )
 	{
 		ImGui::TableSetupColumn( "Key", ImGuiTableColumnFlags_WidthFixed, Ui( 90 ) );
 		ImGui::TableSetupColumn( "Control" );
+		ImGui::TableSetupColumn( "Acts on", ImGuiTableColumnFlags_WidthFixed, Ui( 112 ) );
 		ImGui::TableSetupColumn( "", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight() );
 		ImGui::TableHeadersRow();
 		int remove = -1;
@@ -302,8 +376,10 @@ void DrawControlPanel( App& app )
 			ImGui::TableSetColumnIndex( 0 );
 			ImGui::TextUnformatted( KeyChordName( c.keys[ i ].chord ).c_str() );
 			ImGui::TableSetColumnIndex( 1 );
-			ImGui::TextUnformatted( c.keys[ i ].address.c_str() );
+			ControlName( c.keys[ i ].address );
 			ImGui::TableSetColumnIndex( 2 );
+			changed |= TargetCombo( app, c.keys[ i ].address, c.keys[ i ].target );
+			ImGui::TableSetColumnIndex( 3 );
 			if( ImGui::SmallButton( "x" ) )
 				remove = i;
 			ImGui::PopID();
@@ -326,11 +402,12 @@ void DrawControlPanel( App& app )
 	ImGui::SeparatorText( "MIDI" );
 	changed |= DrawMidiInputs( app );
 
-	if( ImGui::BeginTable( "##mappings", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY,
+	if( ImGui::BeginTable( "##mappings", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_ScrollY,
 	                       ImVec2( 0, std::min( Ui( 220 ), ImGui::GetFrameHeight() * ( c.midi.size() + 1.5f ) ) ) ) )
 	{
 		ImGui::TableSetupColumn( "MIDI", ImGuiTableColumnFlags_WidthFixed, Ui( 90 ) );
 		ImGui::TableSetupColumn( "Control" );
+		ImGui::TableSetupColumn( "Acts on", ImGuiTableColumnFlags_WidthFixed, Ui( 112 ) );
 		ImGui::TableSetupColumn( "", ImGuiTableColumnFlags_WidthFixed, ImGui::GetFrameHeight() );
 		ImGui::TableHeadersRow();
 		int remove = -1;
@@ -341,8 +418,10 @@ void DrawControlPanel( App& app )
 			ImGui::TableSetColumnIndex( 0 );
 			ImGui::TextUnformatted( MidiKeyName( c.midi[ i ].key ).c_str() );
 			ImGui::TableSetColumnIndex( 1 );
-			ImGui::TextUnformatted( c.midi[ i ].address.c_str() );
+			ControlName( c.midi[ i ].address );
 			ImGui::TableSetColumnIndex( 2 );
+			changed |= TargetCombo( app, c.midi[ i ].address, c.midi[ i ].target );
+			ImGui::TableSetColumnIndex( 3 );
 			if( ImGui::SmallButton( "x" ) )
 				remove = i;
 			ImGui::PopID();

@@ -253,6 +253,12 @@ public:
 	// Turns keyboard or MIDI mapping on, or off when it is the one on.
 	void ToggleMapping( bool keys );
 	std::string learnTarget;
+	MappingTarget learnMapTarget = MappingTarget::Position; // what new mappings act on (when their control can follow it)
+	// The address a mapping acts on now (its target applied to the selection).
+	std::string MappedAddress( const std::string& address, MappingTarget target ) const
+	{
+		return Retarget( address, target, composition.selectedLayer, composition.selectedRow, composition.selectedColumn );
+	}
 	std::string lastControl; // the last message, for the panel
 
 	// Panel state.
@@ -362,6 +368,7 @@ private:
 	std::vector< std::pair< int, std::string > > keysHeld; // mapped keys down (ImGuiKey), to release them
 	double lastRemoteConfigure = -1e9;
 	std::map< int, float > lastMidiValues; // by note or controller: buttons act on the press
+	std::map< int, std::string > midiHeld;  // by note or controller held: the address it pressed (the selection may change)
 	std::map< std::string, float > lastOscValues; // by address: a 0 after a press is a release (Piano clips)
 	// Takes a composition back to an earlier state, keeping the players, generators and effects that are still
 	// there (playback goes on) and opening the rest.
