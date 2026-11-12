@@ -1,4 +1,4 @@
-# Where the work on STLT stands (11 November 2026)
+# Where the work on STLT stands (12 November 2026)
 
 This is a handover. It says where the project is, how work is done on it and what is left, so a new chat can start from here without the whole history.
 
@@ -88,7 +88,7 @@ cmake --build build --parallel
   - The deck (`DrawDeck` in `ui/Panels.cpp`) is drawn from `DeckGeometry`, shared by the Layers and Clips panels so headers and cells line up. A layer's header has four blocks: the layer (name, clear, black, solo, blend), its faders (V, A, M and the crossfader group), the clip on air (picture and a position bar to scratch) and its controls (speed, play mode, timing, previous/next, direction). The composition is one line; the column headers sit level with it.
   - Cells: click the picture to put the clip on air, the name to see it in the Preview Monitor. On air: amber frame and progress; waiting for the beat: dashed cyan frame and a clock; previewed: an outline on the name; missing: red name.
   - The toolbar ends with the output chip, the frame rate and the Grid/Timeline buttons.
-- **Advanced Output editor (phase 1 of its redesign).** `ui/AdvancedOutputUi.cpp`: a path in three steps along the top (`Editor::Step`): 1 Screens (`DrawScreensStep`: a row per screen with where it goes, this computer's displays as the system arranges them, a screen dragged onto a display goes there; `DrawScreenProps` on the right), 2 Stage (shown as "coming next": the stage in 3D, in millimetres, is phase 2), 3 Map (`DrawMapStep`: the slice list, Takes from → Goes to side by side, each slice in its own colour and number on both canvases, `FindProblems` under them, `DrawSliceProps` in sections). The header says which setup is edited and whether it is on show, with Turn on/off.
+- **Advanced Output editor (phase 1 of its redesign).** `ui/AdvancedOutputUi.cpp`: a path in three steps along the top (`Editor::Step`): 1 Screens (`DrawScreensStep`: a row per screen with its live picture, where it goes, this computer's displays as the system arranges them, a screen dragged onto a display goes there; one onto the display STLT is on asks first, `SendScreenTo`/`DrawOwnDisplayQuestion`; `DrawScreenProps` on the right), 2 Map (`DrawMapStep`: the slice list, Takes from → Goes to side by side, each slice in its own colour and number on both canvases, several picked with Ctrl/Shift or a box and moved together, `FindProblems` under them, `DrawSliceProps` in sections), 3 Stage (shown as "coming next": the stage in 3D, in millimetres, is phase 2). Under the steps `DrawPath` shows the whole path in one line (picture → slices → screens → where they go; orange when something is wrong). The header names the two setups (*For the Grid* / *For the Timeline*), says whether they are the same, copies one into the other (`CopyOtherSetup`), and has *How it works*.
 - **Interface zoom.** `Preferences::interfaceScale` (50–200 %, per computer) times the display's scale. `App::ZoomInterface` (View menu, Ctrl + / Ctrl - / Ctrl 0) and the Preferences slider set it; `App::ApplyUiScale` rebuilds the fonts and the style between frames. After a zoom `Workspaces::Rescale` resizes floating panels and fits the deck (Layers width, deck height) again; other docked panels keep their share of the window.
 
 - **Two output setups.**
@@ -107,10 +107,15 @@ cmake --build build --parallel
 - **Monitor.**
   - Buttons for Composition, Multiview, Screen and Layer/Track (`App::monitorSource`).
   - A single layer comes from `Compositor::soloLayer` and `SoloTexture()`.
-- **Output menu.**
-  - *Advanced* only toggles the output (`ToggleAdvancedOutput`).
-  - *Advanced Output Settings...* (Ctrl+Shift+A) only opens the editor.
+- **Output menu** (`DrawOutputModeItems` in `ui/Panels.cpp`, also the output chip).
+  - Off; Fullscreen and Windowed for each display (`outputDisplay` serves both; a window opens centred on its display, `OutputWindow::CentreOn`).
+  - *Advanced* only toggles the output (`ToggleAdvancedOutput`); *Advanced Output Settings...* (Ctrl+Shift+A) only opens the editor.
+  - Composition output sharing: NDI and Spout/Syphon of the whole composition whatever the mode (`shareCompositionNdi/Local`, made by `UpdateQuickOutput` as a screen that goes nowhere but to sharing).
+  - Identify Displays (`DrawDisplayIdentities`), System Display Settings (`OpenSystemDisplaySettings`), Show Test Card (`OutputRenderer::testCard`), Snapshot (`TakeSnapshot`: PNG in Documents/STLT/Snapshots, written on a thread by `output/PngFile`).
+- **Maps that follow the selection.** Each key and MIDI map has a `MappingTarget` (`control/Control.h`): by position, the selected layer or the selected clip. `Retarget` rewrites the address when the map is used (`App::MappedAddress`); a held key or note is let go on the address it pressed. Saved as `"target"` in the maps (by position is not written). Shortcuts panel: *New maps act on* and an *Acts on* column.
+- **Clicks act on the press.** Layers are selected, clips and columns launched when the mouse button goes down (as the arrow keys act at once); a clip dragged by its name moves without launching. Selecting a layer focuses the Layer panel only when its tab is hidden (`ShowLayerPanel`).
 - **STLT-CHASER.**
+  - The editor (branch `claude/ember-host` of stlt-chaser, the submodule's commit) has a screen picker: every screen side by side with its slices where they go (`editor/src/layout.mjs`, `stageLayout`), one screen at a time, or the composition. The smallest slice under the mouse is picked; a band takes the slices mostly inside it.
   - The plugin has up to 32 event parameters, "Sequence N", in the "Sequences" group. They are visible only for existing sequences and named after them. The playing one starts with "▶ ".
   - STLT draws event parameters as a row of buttons that can be mapped (`EffectsUi.cpp`).
 - **macOS packaging.**
