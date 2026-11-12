@@ -181,16 +181,16 @@ bool Flatten( const Camera& c, const std::vector< Vec3 >& world, std::vector< Im
 		cam.push_back( c.ToCamera( p ) );
 	if( !c.ortho )
 	{
-		const float near = 0.05f;
+		const float nearZ = 0.05f; // not "near": a macro in Windows' headers
 		std::vector< Vec3 > clipped;
 		for( size_t i = 0, n = cam.size(); i < n; ++i )
 		{
 			Vec3 a = cam[ i ], b = cam[ ( i + 1 ) % n ];
-			if( a.z >= near )
+			if( a.z >= nearZ )
 				clipped.push_back( a );
-			if( ( a.z >= near ) != ( b.z >= near ) )
+			if( ( a.z >= nearZ ) != ( b.z >= nearZ ) )
 			{
-				float t = ( near - a.z ) / ( b.z - a.z );
+				float t = ( nearZ - a.z ) / ( b.z - a.z );
 				clipped.push_back( Add( a, Mul( Sub( b, a ), t ) ) );
 			}
 		}
