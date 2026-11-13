@@ -1,19 +1,21 @@
-# Where the work on STLT stands (12 November 2026)
+# Where the work on STLT stands (13 November 2026)
 
 This is a handover. It says where the project is, how work is done on it and what is left, so a new chat can start from here without the whole history.
 
 ## In short
 
-- **STLT 1.0.0 is out**: https://github.com/alfonsostillet/STLT/releases/tag/v1.0.0. It is a full release, not a pre-release, with three complete packages, each with STLT-CHASER inside:
-  - Windows: `STLT-v1.0.0-windows.zip`, about 178 MB;
-  - macOS (Apple Silicon): `STLT-v1.0.0-macos.zip`, about 104 MB;
-  - Linux: `STLT-v1.0.0-linux.tar.gz`, about 110 MB.
-- **Release build**: `08209f4`. CI was green on Windows (and Windows ASan), Linux and macOS.
-- **Docs after the release**: the README and the docs were rewritten. The docs are in English and `README.it.md` is the Italian page. Resolume's name appears only where it states a fact (compatibility, formats, the Resolume plugin, the independence note).
-- **The `chaser/` submodule** is at `feb8f31`, the `main` of alfonsostillet/stlt-chaser, including PR #4 (sequence buttons).
+- **STLT 2.0.0 is out**: https://github.com/alfonsostillet/STLT/releases/tag/v2.0.0, built from `a265f4a` on `main`. Three packages, each with STLT-CHASER inside:
+  - Windows: `STLT-v2.0.0-windows.zip`, about 178 MB;
+  - macOS (Apple Silicon): `STLT-v2.0.0-macos.zip`, about 104 MB;
+  - Linux: `STLT-v2.0.0-linux.tar.gz`, about 110 MB.
+- **2.0 is the new interface** (Ember look, the Advanced Output in three steps with Stage, the fuller Output menu, maps that follow the selection). `new-ui` was merged into `main` by fast-forward; the 1.x interface stays on `classic-ui` (`89d6f0e`, the 1.0.1 code).
+- **The `chaser/` submodule** is at `8834bd5`, the `main` of alfonsostillet/stlt-chaser with PR #7 (the editor in STLT's look, the screen picker, better picking and band selection). No new release of the Resolume plugin has been made for it yet.
+- **CI**: the Windows smoke test now fetches Mesa with the workflow's token (unauthenticated GitHub API calls ran out on shared runners). `audio_test` crashed once on Windows (a segfault after 0.09 s, run 43498083480) on a commit that passed it twice; it could not be reproduced on Linux under ASan or TSan. The release went out after rerunning the failed jobs; the cause is still to be found.
 - **Not yet tried on real hardware** (the owner should check):
   - the macOS package: open `STLT.app` with right-click → *Open*, then *Output → Chaser...*, and check that the STLT-CHASER effects appear in the Effects panel;
-  - the items in [DA-PROVARE.md](DA-PROVARE.md), especially "Quick touches" and "Separate Grid and Timeline, tracks on screens, Multiview".
+  - the items in [DA-PROVARE.md](DA-PROVARE.md).
+- **The website page**: a page presenting STLT and STLT-CHASER for sud-studio.com is ready in alfonsostillet/site, branch `stlt-page`, folder `stlt/` (not pushed), waiting for the site's code to be merged in.
+- **Docs**: in English, with `README.it.md` as the Italian page. Resolume's name appears only where it states a fact (compatibility, formats, the Resolume plugin, the independence note).
 
 ## Repositories
 
