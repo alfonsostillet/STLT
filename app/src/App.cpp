@@ -2726,6 +2726,29 @@ void App::ApplyUiScale()
 	workspaces.Rescale( ratio );
 }
 
+// A mouse button ImGui still thinks is held while no window actually has it down: its release was lost (a window,
+// such as the Advanced Output or the detached Stage view, closed mid-press, so GLFW never delivered the button up).
+// Left so, ImGui keeps the active item and no new widget can take the mouse: menus need several clicks and faders
+// stop scrubbing. Each frame, if a button ImGui holds is down on none of the real windows, send its release.
+void App::ReleaseStuckMouse()
+{
+	ImGuiIO& io = ImGui::GetIO();
+	for( int button = 0; button < 3; ++button )
+	{
+		if( !io.MouseDown[ button ] )
+			continue;
+		int glfwButton = button == 0 ? GLFW_MOUSE_BUTTON_LEFT : button == 1 ? GLFW_MOUSE_BUTTON_RIGHT : GLFW_MOUSE_BUTTON_MIDDLE;
+		bool reallyDown = window && glfwGetMouseButton( window, glfwButton ) == GLFW_PRESS;
+		// With viewports the press may be on another platform window (a floating panel on a second monitor).
+		if( ImGui::GetCurrentContext() )
+			for( ImGuiViewport* viewport : ImGui::GetPlatformIO().Viewports )
+				if( GLFWwindow* w = (GLFWwindow*)viewport->PlatformHandle )
+					reallyDown = reallyDown || glfwGetMouseButton( w, glfwButton ) == GLFW_PRESS;
+		if( !reallyDown )
+			io.AddMouseButtonEvent( button, false );
+	}
+}
+
 void App::Frame()
 {
 	if( startViewPending > 0 && ImGui::GetFrameCount() > 2 )
@@ -2819,6 +2842,7 @@ void App::Frame()
 	ApplyUiScale();
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
+	ReleaseStuckMouse();
 	ImGui::NewFrame();
 	monitorShown = false; // the monitor says again when it is drawn (its screens and layer are drawn for it next frame)
 	DrawUi();

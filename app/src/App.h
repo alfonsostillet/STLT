@@ -260,6 +260,7 @@ public:
 	double undoBpm = 120; // the BPM undo steps hold: frozen while the tempo comes from outside
 	void ApplySync();
 	void UpdateAudioInput( double now, double dt );
+	void ReleaseStuckMouse(); // clears a mouse button left held when its window closed mid-press
 	void RestartAudioInput() { audioInput.Stop(); audioInputTried = -1e9; }
 	bool learning  = false; // mapping mode: a click picks a control, the next key or MIDI message maps it
 	bool learnKeys = false; // mapping keys of the computer's keyboard (Ctrl+K), else MIDI (Ctrl+M)
