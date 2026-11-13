@@ -151,7 +151,9 @@ jobs:
         # Mesa pinned to a release that works: 26.2.6 (3 November 2026) gives no OpenGL here, and "latest" would
         # break the test again the day a new one comes out. Move the pin by hand after trying a newer one.
         run: |
-          curl -sSL https://api.github.com/repos/pal1000/mesa-dist-win/releases/tags/26.2.5 -o mesa.json
+          # Authenticated: unauthenticated API calls share a small hourly limit per runner address and then come back
+          # without the asset list.
+          curl -sSL --retry 3 -H "Authorization: Bearer ${{ github.token }}" https://api.github.com/repos/pal1000/mesa-dist-win/releases/tags/26.2.5 -o mesa.json
           URL=$(python -c "import json; d = json.load(open('mesa.json')); print(next(a['browser_download_url'] for a in d['assets'] if a['name'].endswith('release-msvc.7z')))")
           curl -sSL "$URL" -o mesa.7z
           7z x -y -omesa mesa.7z > /dev/null
