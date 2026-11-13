@@ -1447,7 +1447,8 @@
        "gamma": 2.2
       }
      }
-    ]
+    ],
+    "id": "projector-left"
    },
    {
     "name": "Projector right",
@@ -1525,7 +1526,8 @@
        "gamma": 2.2
       }
      }
-    ]
+    ],
+    "id": "projector-right"
    },
    {
     "name": "Stream",
@@ -1605,7 +1607,131 @@
      }
     ]
    }
-  ]
+  ],
+  "stage": {
+   "surfaces": [
+    {
+     "id": "facade",
+     "name": "Façade",
+     "kind": "plane",
+     "position": [
+      0,
+      6,
+      0
+     ],
+     "size": [
+      20,
+      12,
+      1
+     ],
+     "rotation": [
+      0,
+      0,
+      0
+     ]
+    },
+    {
+     "id": "ground",
+     "name": "Ground",
+     "kind": "plane",
+     "position": [
+      0,
+      0,
+      12
+     ],
+     "size": [
+      32,
+      24,
+      1
+     ],
+     "rotation": [
+      0,
+      -90,
+      0
+     ]
+    },
+    {
+     "id": "stage-block",
+     "name": "Stage",
+     "kind": "box",
+     "position": [
+      0,
+      0.6,
+      5
+     ],
+     "size": [
+      8,
+      1.2,
+      4
+     ],
+     "rotation": [
+      0,
+      0,
+      0
+     ]
+    }
+   ],
+   "projectors": [
+    {
+     "id": "pj-left",
+     "name": "Projector left",
+     "position": [
+      -5.5,
+      3,
+      24
+     ],
+     "aim": [
+      0,
+      8,
+      0
+     ],
+     "resolution": [
+      1920,
+      1080
+     ],
+     "throwRatio": 1.65,
+     "throwRange": [
+      1.39,
+      2.23
+     ],
+     "shift": [
+      0,
+      0
+     ],
+     "lumens": 20000,
+     "screen": "projector-left"
+    },
+    {
+     "id": "pj-right",
+     "name": "Projector right",
+     "position": [
+      5.5,
+      3,
+      24
+     ],
+     "aim": [
+      0,
+      8,
+      0
+     ],
+     "resolution": [
+      1920,
+      1080
+     ],
+     "throwRatio": 1.65,
+     "throwRange": [
+      1.39,
+      2.23
+     ],
+     "shift": [
+      0,
+      0
+     ],
+     "lumens": 20000,
+     "screen": "projector-right"
+    }
+   ]
+  }
  },
  "timeline": {
   "format": "stlt-vj-advanced-output",

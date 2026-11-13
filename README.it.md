@@ -15,9 +15,17 @@ Si passa dall'una all'altra con le due icone in alto a destra (o col tasto Tab).
 
 > **Cercasi utenti Mac.** La versione per macOS viene compilata in automatico ma **non è mai stata provata su un Mac vero**. Se puoi provarla, ogni riscontro è molto gradito, anche solo "si apre" o "non si apre": [apri una segnalazione](https://github.com/alfonsostillet/STLT/issues).
 
+## Le novità della 2.0
+
+- **Una nuova interfaccia**, scura e calda (il look *Ember*), con il deck disegnato a blocchi e tutta l'interfaccia che si può ingrandire.
+- **L'Advanced Output in tre passi**: *Screens* (da dove esce l'immagine), *Map* (quale parte dell'immagine va dove) e **Stage**, una vista 3D del luogo in metri con i proiettori dove staranno davvero.
+- **Un menu Output più completo**: schermo intero o finestra su ogni display, condivisione della composizione via NDI e Spout/Syphon, identificazione dei display, una test card e un'istantanea in PNG.
+- **Mappature che seguono la selezione**: un tasto o un controllo MIDI può agire su un layer o una clip fissi, oppure sul layer o sulla clip selezionati.
+- **STLT-CHASER** con lo stesso look e un selettore degli schermi: tutti affiancati, uno solo, oppure la composizione.
+
 ## La Grid: suonare dal vivo
 
-![La Grid: i layer a sinistra, le clip in colonne a destra, sotto i monitor e i pannelli di composizione, clip e prestazioni](docs/images/stlt-grid.webp)
+![La Grid: i layer a sinistra, le clip in colonne a destra, sotto il multiview di quattro schermi e i pannelli di composizione, clip ed effetti](docs/images/stlt-grid.webp)
 
 - **Layer, colonne e deck**: lanci una clip, una colonna intera oppure la clip precedente e successiva. I deck sono pagine di clip sugli stessi layer, e cambiare deck non ferma mai quello che sta suonando.
 - **Crossfader A/B** e, su ogni layer, blend mode, fader separati per master, audio e video, velocità, bypass e solo.
@@ -28,25 +36,43 @@ Si passa dall'una all'altra con le due icone in alto a destra (o col tasto Tab).
 - **Qualsiasi parametro si anima**: a tempo di BPM, su una durata in secondi o seguendo il suono in ingresso (livello, bassi, medi, alti).
 - **Monitor multiview**: la composizione, tutti gli schermi affiancati, un solo schermo o un solo layer. Un Preview Monitor a parte fa vedere una clip prima di mandarla in uscita.
 - **Clip**: punti di in e out, 8 cue point, BPM Sync, trigger Normal, Toggle e Piano, transizioni, lancio al prossimo beat o alla prossima battuta, audio a tempo con l'immagine.
-- **Mappatura da tastiera, MIDI e OSC**, con preset da salvare e portare su un altro computer. I pad mappati si illuminano sul controller, a colori sull'Akai APC mini mk2.
+- **Mappatura da tastiera, MIDI e OSC**, con preset da salvare e portare su un altro computer. Ogni mappatura agisce **per posizione** (sempre il layer 2, sempre quella clip) o **sulla selezione** (il layer selezionato, la clip selezionata), così otto fader di un controller comandano il layer che stai guardando. I pad mappati si illuminano sul controller, a colori sull'Akai APC mini mk2.
 
-### Slice su più schermi
+## L'Advanced Output: dall'immagine al luogo
 
-![L'Advanced Output nella configurazione Grid: l'elenco delle slice a sinistra, otto slice deformate sulla tela, le impostazioni della slice a destra](docs/images/stlt-output-grid.webp)
+L'**Advanced Output** porta il video su qualsiasi palco, in tre passi. Una striscia sotto i passi mostra sempre tutto il percorso: l'immagine, le slice in cui è tagliata, gli schermi che compongono e dove va ogni schermo.
 
-L'**Advanced Output** porta il video su qualsiasi palco: tutti gli schermi che servono, slice e poligoni di qualsiasi forma, warp prospettico, a griglia, a griglia curva e a contorno Bézier, maschere, soft edge per fondere i proiettori, test pattern e preset. Importa anche l'`AdvancedOutput.xml` di Resolume.
+### 1. Screens: da dove esce l'immagine
+
+![Passo 1, Screens: quattro uscite come schede (un processore LED, due proiettori e uno stream), sotto i display di questo computer, a destra le impostazioni dello schermo selezionato](docs/images/stlt-output-screens.webp)
+
+Ogni schermo è un'immagine che STLT manda fuori: trascinalo su uno dei tuoi display, dagli una finestra, oppure mandalo in rete via **NDI** e ad altri programmi con **Spout** (Windows) o **Syphon** (macOS). STLT chiede prima di coprire il proprio display.
+
+### 2. Map: quale parte va dove
+
+![Passo 2, Map: le slice elencate a sinistra, la composizione da cui prendono e lo schermo del processore LED su cui vanno affiancati, a destra le impostazioni della slice selezionata](docs/images/stlt-output-map.webp)
+
+Cosa **prende** una slice dalla composizione e dove **va** sul suo schermo, affiancati, con lo stesso colore e lo stesso numero. Slice e poligoni di qualsiasi forma, warp prospettico, a griglia, a griglia curva e a contorno Bézier, maschere, soft edge per fondere i proiettori, test pattern e preset. STLT segnala i problemi che trova (uno schermo che non va da nessuna parte, due slice sovrapposte su un LED) e importa anche l'`AdvancedOutput.xml` di Resolume.
+
+### 3. Stage: il luogo, in 3D
+
+![Passo 3, Stage: una facciata, il terreno e un palco in 3D, due proiettori che illuminano la facciata con i loro pixel per metro e lux, la zona in cui si sovrappongono contornata, a destra le impostazioni del proiettore selezionato](docs/images/stlt-output-stage.webp)
+
+Progetta una proiezione prima di arrivare sul posto. Inserisci le superfici nella loro misura reale in metri (una facciata, pareti, un pavimento, blocchi), poi i proiettori dove staranno, con i dati della loro scheda tecnica: ottica, escursione dello zoom, lens shift, lumen. STLT mostra cosa illumina ogni proiettore, quanto è nitido (**pixel per metro**) e quanto è luminoso (**lux**) lì, dove due proiettori si sovrappongono e quanta parte dell'immagine finisce nel vuoto. Guarda **attraverso** l'ottica di un proiettore, poi **crea le slice da lì**: ogni superficie che illumina diventa una slice già in prospettiva, da rifinire sul posto.
+
+La Grid e la Timeline hanno ognuna **la sua configurazione**, così gli schermi di uno show non toccano la tua mappatura dal vivo; una si può copiare nell'altra.
 
 ### STLT-CHASER incluso
 
-![L'editor di STLT-CHASER aperto sulle slice di STLT: otto slice sulla tela, il sequencer di step in basso](docs/images/stlt-chaser.webp)
+![L'editor di STLT-CHASER aperto sul processore LED di STLT: 24 slice, quelle centrali accese da un chase dal centro verso l'esterno fatto con la Factory a sinistra, il sequencer di step in basso](docs/images/stlt-chaser.webp)
 
-Bump, chase, tendine, ritardi e contorni sulle tue slice. *Output → Chaser...* apre l'editor sulle slice dell'Advanced Output, e gli effetti STLT-CHASER, STLT-WIPER e STLT-OUTLINER sono nel pannello Effects. Ogni sequenza è un pulsante che puoi mappare su un pad MIDI o un tasto, per cambiare sequenza dal vivo.
+Bump, chase, tendine, ritardi e contorni sulle tue slice. *Output → Chaser...* apre l'editor sulle slice dell'Advanced Output, schermo per schermo o tutti insieme, e gli effetti STLT-CHASER, STLT-WIPER e STLT-OUTLINER sono nel pannello Effects. Ogni sequenza è un pulsante che puoi mappare su un pad MIDI o un tasto, per cambiare sequenza dal vivo.
 
 È costruito intorno a **[STLT-CHASER](https://github.com/alfonsostillet/stlt-chaser)**, il nostro plugin gratuito per Resolume, e funziona allo stesso modo. **Per le istruzioni fai riferimento alla guida del plugin per Resolume**: [italiano](https://github.com/alfonsostillet/stlt-chaser/blob/main/docs/GUIDA.md), [English](https://github.com/alfonsostillet/stlt-chaser#readme).
 
 ## La Timeline: costruire uno show
 
-![La Timeline: blocchi e cue sopra le tracce video e audio, sotto le clip e il multiview di tre schermi](docs/images/stlt-timeline.webp)
+![La Timeline: due blocchi (Song 1, Song 2) sopra due tracce video di clip, sotto le clip del deck e il multiview di quattro schermi](docs/images/stlt-timeline.webp)
 
 Qui crei uno show da zero e poi lo mandi in diretta, agganciato a chi guida lo spettacolo.
 
@@ -72,14 +98,10 @@ Così è lo show ad aspettare chi è sul palco, e non il contrario. Ogni blocco 
 - **Timecode**: la timeline segue **LTC**, **MTC** e **Art-Net**, parte, si ferma e salta con lui, da un banco audio, un DAW o una console luci.
 - **Tempo**: **Ableton Link** e **MIDI clock**, con un ritardo regolabile per i proiettori e i LED che mostrano l'immagine in ritardo. I CDJ Pioneer si agganciano attraverso PRO DJ LINK Bridge di Pioneer.
 
-![L'Advanced Output nella configurazione Timeline: tre schermi come schede con le tracce che ognuno riceve, la slice selezionata che prende da tutti gli schermi](docs/images/stlt-output-timeline.webp)
-
-La Timeline ha la sua **configurazione dell'Advanced Output**, separata da quella della Grid, così gli schermi di uno show non toccano la tua mappatura dal vivo. Ogni schermo mostra le tracce che riceve.
-
 ## E poi
 
-- **Riproduzione veloce**: HAP e DXV 3 vanno direttamente alla scheda video, con salti istantanei a qualsiasi frame. Suonano anche H.264, HEVC, ProRes, DNxHD, VP9, PNG, JPEG, GIF e altri, con la decodifica hardware dove c'è.
-- **Il video verso altri programmi**: **Spout** (Windows), **Syphon** (macOS) e **NDI** in rete, schermo per schermo.
+- **Riproduzione veloce**: HAP e DXV 3 vanno direttamente alla scheda video, con salti istantanei a qualsiasi frame. Suonano anche H.264, HEVC, ProRes, DNxHD, VP9, PNG, JPEG, GIF e altri, con la decodifica hardware dove c'è; il pannello Clip indica il codec e suggerisce HAP o DXV quando una clip pesa sul processore.
+- **Il menu Output**: tutta la composizione a schermo intero o in una finestra su qualsiasi display, condivisa via NDI o Spout/Syphon, un numero su ogni display per riconoscerli, una test card e un'istantanea in PNG.
 - **Movimento regolare**: l'orologio dei fotogrammi si aggancia all'aggiornamento del display, e il pannello Performance mostra i tempi di ogni layer.
 - **Annulla e ripeti** per tutto, anche per l'intero Advanced Output.
 
@@ -120,4 +142,4 @@ GPL-3.0: vedi [LICENSE](LICENSE) e [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.
 
 ## Su questa versione
 
-Questa è la versione 1.0 e sarà sicuramente piena di bug. Non sono riuscito nemmeno a provare la versione per Mac; so per certo che quella per Windows funziona. Se qualcuno volesse mandarmi un feedback ne sarei contento: [apri una segnalazione](https://github.com/alfonsostillet/STLT/issues).
+Questa è la versione 2.0: una nuova interfaccia e un Advanced Output ricostruito intorno al luogo su cui proietti. Avrà sicuramente ancora dei bug. Non sono riuscito a provare la versione per Mac; so per certo che quella per Windows funziona. Se qualcuno volesse mandarmi un feedback ne sarei contento: [apri una segnalazione](https://github.com/alfonsostillet/STLT/issues). L'interfaccia della 1.x resta sul branch [`classic-ui`](https://github.com/alfonsostillet/STLT/tree/classic-ui).
