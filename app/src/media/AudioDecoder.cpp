@@ -47,7 +47,9 @@ struct AudioDecoder::Impl
 	{
 		swr_free( &swr );
 		AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
-		AVChannelLayout source;
+		// Zeroed: av_channel_layout_copy uninitialises its destination first, and stack garbage that reads as a
+		// custom order would have it free a garbage pointer (an intermittent crash on Windows).
+		AVChannelLayout source{};
 		if( codec->ch_layout.nb_channels > 0 && codec->ch_layout.order != AV_CHANNEL_ORDER_UNSPEC )
 			av_channel_layout_copy( &source, &codec->ch_layout );
 		else
