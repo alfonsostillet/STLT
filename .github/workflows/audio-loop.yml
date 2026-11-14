@@ -34,35 +34,36 @@ jobs:
           cmake -S app -B app/build -DCMAKE_BUILD_TYPE=Release
           cmake --build app/build --config Release --target audio_test --parallel
 
-      - name: Run it 400 times (fixed)
+      - name: Run it 1000 times (fixed)
         run: |
           cd app/build/Release
           crashes=0
-          for i in $(seq 1 400); do
+          for i in $(seq 1 1000); do
             if ! ./audio_test.exe > out.txt 2>&1; then
               crashes=$((crashes + 1))
               echo "run $i failed; last lines:"; tail -3 out.txt
             fi
           done
-          echo "fixed: $crashes of 400 failed"
+          echo "fixed: $crashes of 1000 failed"
           echo "FIXED_FAILURES=$crashes" >> "$GITHUB_ENV"
 
       - name: Build audio_test (before the fix)
         run: |
-          git show a265f4a:app/src/media/AudioDecoder.cpp > app/src/media/AudioDecoder.cpp
+          sed -i 's/AVChannelLayout source{};/AVChannelLayout source;/' app/src/media/AudioDecoder.cpp
+          grep -n 'AVChannelLayout source' app/src/media/AudioDecoder.cpp
           cmake --build app/build --config Release --target audio_test --parallel
 
-      - name: Run it 400 times (before the fix)
+      - name: Run it 1000 times (before the fix)
         run: |
           cd app/build/Release
           crashes=0
-          for i in $(seq 1 400); do
+          for i in $(seq 1 1000); do
             if ! ./audio_test.exe > out.txt 2>&1; then
               crashes=$((crashes + 1))
               echo "run $i failed; last line: $(tail -1 out.txt)"
             fi
           done
-          echo "before the fix: $crashes of 400 failed"
+          echo "before the fix: $crashes of 1000 failed"
 
       - name: Where the dumps crashed
         if: always()
