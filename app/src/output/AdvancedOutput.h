@@ -2,6 +2,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "output/Stage.h"
 
 namespace stltvj
 {
@@ -165,6 +166,7 @@ struct AdvancedOutputSetup
 {
 	std::vector< Screen > screens;
 	std::vector< Canvas > canvases;
+	Stage stage; // the space and the projectors in it (the editor's third step)
 	const Canvas* FindCanvas( const std::string& id ) const;
 	// The size of what a slice with this source takes from: the canvas, or the composition ("" or a canvas gone).
 	void SourceSize( const std::string& source, int compWidth, int compHeight, int& width, int& height ) const;

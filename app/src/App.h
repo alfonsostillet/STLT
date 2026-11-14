@@ -1,6 +1,7 @@
 #pragma once
 #include <deque>
 #include <map>
+#include <future>
 #include <string>
 #include <vector>
 #include <memory>
@@ -94,6 +95,15 @@ public:
 	void SavePreferences();
 	void ApplyPreferences( bool restartAudio );
 	int startViewPending = -1; // a view to switch to once the first frame is drawn (the start view)
+	// The interface's size: the display's own scale times the user's zoom (prefs.interfaceScale). ZoomInterface
+	// steps it by 10 % (+1 bigger, -1 smaller, 0 back to 100 %); the fonts and the style are rebuilt before the
+	// next frame, and the panels keep their place.
+	void ZoomInterface( int step );
+	void SetInterfaceScale( float scale );
+	float displayScale   = 1;
+	float appliedUiScale = 0;
+	double zoomShownUntil = 0; // the new size shows in the middle of the window for a moment
+	double prefsSaveAt    = 0; // after a zoom: preferences.json is written once it has settled (and on quit)
 	// STLT-CHASER (Output > Chaser): opens its editor on the Advanced Output's slices, which are kept written to
 	// chaserStage for it.
 	void OpenChaser();
@@ -182,7 +192,19 @@ public:
 	void ShowScreenOn( size_t screen, OutputDevice device, const std::string& display = {} );
 	void StopOutputs() { SetOutputMode( OutputMode::Off ); }
 	OutputMode outputMode = OutputMode::Off;
-	std::string outputDisplay;
+	std::string outputDisplay; // the display of Fullscreen, or the one a Window opens on ("": the system's choice)
+	// The composition to other programs whatever the mode (Output > Composition output sharing): over the network
+	// (NDI), and on this computer (Spout on Windows, Syphon on macOS). Kept with the output mode.
+	bool shareCompositionNdi   = false;
+	bool shareCompositionLocal = false;
+	void SetCompositionSharing( bool ndi, bool local );
+	bool testCard = false;          // every output draws its slices as numbered grids (Output > Show Test Card)
+	double identifyUntil = 0;       // until then, each display shows its number, name and size (Output > Identify Displays)
+	// The composition as a PNG in Documents/STLT/Snapshots, written on a thread of its own (the show goes on): its
+	// path, "" if it cannot be taken. The status line says when it is saved.
+	std::string TakeSnapshot();
+	std::future< bool > snapshotJob;
+	std::string snapshotPath;
 	bool SaveOutputPreset( const std::string& name );
 	bool LoadOutputPreset( const std::string& name );
 	std::vector< std::string > OutputPresets() const;
@@ -238,12 +260,19 @@ public:
 	double undoBpm = 120; // the BPM undo steps hold: frozen while the tempo comes from outside
 	void ApplySync();
 	void UpdateAudioInput( double now, double dt );
+	void ReleaseStuckMouse(); // clears a mouse button left held when its window closed mid-press
 	void RestartAudioInput() { audioInput.Stop(); audioInputTried = -1e9; }
 	bool learning  = false; // mapping mode: a click picks a control, the next key or MIDI message maps it
 	bool learnKeys = false; // mapping keys of the computer's keyboard (Ctrl+K), else MIDI (Ctrl+M)
 	// Turns keyboard or MIDI mapping on, or off when it is the one on.
 	void ToggleMapping( bool keys );
 	std::string learnTarget;
+	MappingTarget learnMapTarget = MappingTarget::Position; // what new mappings act on (when their control can follow it)
+	// The address a mapping acts on now (its target applied to the selection).
+	std::string MappedAddress( const std::string& address, MappingTarget target ) const
+	{
+		return Retarget( address, target, composition.selectedLayer, composition.selectedRow, composition.selectedColumn );
+	}
 	std::string lastControl; // the last message, for the panel
 
 	// Panel state.
@@ -299,6 +328,7 @@ public:
 
 private:
 	void Frame();
+	void ApplyUiScale();
 	void UpdatePlayback( double dt );
 	// How far the composition moves this frame, given what the system clock measured (render/FrameClock.h).
 	double FrameStep( double measured );
@@ -352,6 +382,7 @@ private:
 	std::vector< std::pair< int, std::string > > keysHeld; // mapped keys down (ImGuiKey), to release them
 	double lastRemoteConfigure = -1e9;
 	std::map< int, float > lastMidiValues; // by note or controller: buttons act on the press
+	std::map< std::pair< int, size_t >, std::string > midiHeld; // by note or controller and map held: the address it pressed
 	std::map< std::string, float > lastOscValues; // by address: a 0 after a press is a release (Piano clips)
 	// Takes a composition back to an earlier state, keeping the players, generators and effects that are still
 	// there (playback goes on) and opening the rest.

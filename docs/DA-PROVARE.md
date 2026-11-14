@@ -13,6 +13,28 @@ Fixes already made and checked by the automatic tests, to try on a real PC befor
 
 - [ ] **Spout and NDI**: an Advanced Output screen sent through Spout and NDI must show up in another program.
 
+## Advanced Output: step 3 Stage (new)
+
+- [ ] *Start with a façade 20 x 12 m*, then *+ Projector*: the beam and the lit part of the façade must show, with pixels per metre and lux; move the projector by dragging it (Alt: up and down) and with the numbers on the right.
+- [ ] Throw ratio and lens shift: the lit part must grow, shrink and rise as on the real projector. Try one of your projectors' data sheets and compare with a real setup you know.
+- [ ] Two projectors side by side: the overlap must be outlined and listed in each one's settings.
+- [ ] *Make the slices from here*: in step 1 a screen for the projector appears, in step 2 its slices are in perspective; send that screen to a projector and check how close it is to the real surface.
+- [ ] *Detach the view*: the 3D view in its own window, on another display.
+
+## The Output menu (new)
+
+- [ ] **Windowed** on each display: the output window must open in the middle of the chosen display. **Fullscreen** on the display STLT is on says so in its tooltip; Escape on the output closes it.
+- [ ] **Composition output sharing**: tick *Network streaming (NDI)* with the output Off: another program (OBS with NDI, Resolume, NDI Studio Monitor) must see "STLT Composition". Untick it: the source must go away. The same with *Texture sharing (Spout)*.
+- [ ] **Identify Displays**: a big number with the display's name and size on each display, for four seconds.
+- [ ] **Show Test Card** on Fullscreen and on Advanced: numbered grids on every output; untick it to go back.
+- [ ] **Snapshot**: a PNG of the composition in Documents\STLT\Snapshots, opening in any viewer the right way up.
+- [ ] *System Display Settings...* opens Windows' display settings.
+
+## Maps that follow the selected layer (new)
+
+- [ ] In the Shortcuts panel set *New maps act on* to **Selected layer**, Map MIDI (Ctrl+M), click a layer's Bypass or its opacity, move a pad or knob: selecting another layer (with the mouse or the arrows), the same pad must act on **that** layer.
+- [ ] In the *Acts on* column of an existing map, switch between *By position*, *Selected layer* and *Selected clip*; hover it to see which address it acts on now. The choice must survive a restart and a preset saved and loaded.
+
 ## Controller lights (new)
 
 - [ ] **APC mini mk2**: pads mapped to clips light up **blue** if there is a clip, **green** when it plays, **pulsing green** if it starts on the next beat (Launch on Beat or Bar); the track and scene buttons light up or blink (for example on Bypass, Solo, columns); the pad mapped to TAP blinks with the tempo. They go off when STLT closes.

@@ -4,6 +4,8 @@
 
 namespace stltvj
 {
+constexpr float kMinInterfaceScale = 0.5f, kMaxInterfaceScale = 2.0f;
+
 // What the Preferences window sets, kept in preferences.json in the settings folder. MIDI and OSC live in the
 // control settings, the plugin folders in their own file.
 struct Preferences
@@ -18,6 +20,9 @@ struct Preferences
 	// the Layer panel's sliders stay.
 	bool showLayerMasterFader = true;
 	bool showLayerAudioFader  = true;
+	// The size of the whole interface (View > Zoom In/Out, Ctrl + and Ctrl -), on top of the display's own scale:
+	// smaller on a small laptop, bigger on a large monitor. Kept per computer, not per workspace.
+	float interfaceScale = 1.0f;
 
 	// Audio.
 	std::string audioDevice; // empty: the system's default

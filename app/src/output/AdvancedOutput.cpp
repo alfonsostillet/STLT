@@ -654,6 +654,11 @@ bool AdvancedOutputSetup::EnsureIds()
 		}
 		canvasIds.insert( canvas.id );
 	}
+	// The stage's surfaces and projectors (their own ids: a projector names its screen by the screen's).
+	for( StageSurface& surface : stage.surfaces )
+		ensure( surface.id );
+	for( StageProjector& projector : stage.projectors )
+		ensure( projector.id );
 	return changed;
 }
 
@@ -1105,6 +1110,8 @@ json OutputToJson( const AdvancedOutputSetup& setup )
 	}
 	if( !canvases.empty() )
 		root[ "canvases" ] = canvases;
+	if( !setup.stage.Empty() )
+		root[ "stage" ] = json::parse( SaveStage( setup.stage ) );
 	return root;
 }
 }
@@ -1290,6 +1297,8 @@ bool OutputFromJson( const json& root, AdvancedOutputSetup& out, std::string& er
 			}
 			setup.canvases.push_back( c );
 		}
+	if( root.contains( "stage" ) && root[ "stage" ].is_object() )
+		LoadStage( root[ "stage" ].dump(), setup.stage );
 	setup.EnsureIds();
 	// A slice naming a canvas that is not there takes from the composition.
 	for( Screen& screen : setup.screens )

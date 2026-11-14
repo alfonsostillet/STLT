@@ -390,6 +390,102 @@ std::string KeyChordName( const KeyChord& chord )
 
 // ---- Settings
 
+// ---- Mappings that follow the selection ----
+
+const char* MappingTargetName( MappingTarget target )
+{
+	switch( target )
+	{
+	case MappingTarget::SelectedLayer:
+		return "Selected layer";
+	case MappingTarget::SelectedClip:
+		return "Selected clip";
+	default:
+		return "By position";
+	}
+}
+
+namespace
+{
+constexpr const char* kLayers = "/composition/layers/";
+
+// The layer number of a layer address, where its rest starts (after "L/"), and its clip number and the rest after
+// "clips/C/" when it has one. False: not a layer address.
+bool SplitLayerAddress( const std::string& address, size_t& afterLayer, size_t& afterClip )
+{
+	afterLayer = afterClip = std::string::npos;
+	size_t at = std::strlen( kLayers );
+	if( address.compare( 0, at, kLayers ) != 0 )
+		return false;
+	size_t end = at;
+	while( end < address.size() && std::isdigit( (unsigned char)address[ end ] ) )
+		++end;
+	if( end == at || end >= address.size() || address[ end ] != '/' )
+		return false;
+	afterLayer = end + 1;
+	const std::string clips = "clips/";
+	if( address.compare( afterLayer, clips.size(), clips ) == 0 )
+	{
+		size_t c = afterLayer + clips.size(), e = c;
+		while( e < address.size() && std::isdigit( (unsigned char)address[ e ] ) )
+			++e;
+		if( e > c && e < address.size() && address[ e ] == '/' )
+			afterClip = e + 1;
+	}
+	return true;
+}
+
+const char* TargetKey( MappingTarget target )
+{
+	return target == MappingTarget::SelectedLayer ? "selectedLayer" : target == MappingTarget::SelectedClip ? "selectedClip" : "position";
+}
+
+// A saved target, if the address can take it (a file edited by hand, or from a later version).
+MappingTarget TargetFromKey( const std::string& key, const std::string& address )
+{
+	return TargetFor( key == "selectedLayer" ? MappingTarget::SelectedLayer : key == "selectedClip" ? MappingTarget::SelectedClip : MappingTarget::Position, address );
+}
+}
+
+bool CanTargetLayer( const std::string& address )
+{
+	size_t afterLayer, afterClip;
+	return SplitLayerAddress( address, afterLayer, afterClip );
+}
+
+bool CanTargetClip( const std::string& address )
+{
+	size_t afterLayer, afterClip;
+	return SplitLayerAddress( address, afterLayer, afterClip ) && afterClip != std::string::npos;
+}
+
+MappingTarget TargetFor( MappingTarget wanted, const std::string& address )
+{
+	if( wanted == MappingTarget::SelectedLayer && CanTargetLayer( address ) )
+		return MappingTarget::SelectedLayer;
+	if( wanted == MappingTarget::SelectedClip && CanTargetClip( address ) )
+		return MappingTarget::SelectedClip;
+	return MappingTarget::Position;
+}
+
+std::string Retarget( const std::string& address, MappingTarget target, int selectedLayer, int selectedRow, int selectedColumn )
+{
+	size_t afterLayer, afterClip;
+	if( target == MappingTarget::Position || !SplitLayerAddress( address, afterLayer, afterClip ) )
+		return address;
+	if( target == MappingTarget::SelectedLayer )
+	{
+		if( selectedLayer < 0 )
+			return {};
+		return kLayers + std::to_string( selectedLayer + 1 ) + "/" + address.substr( afterLayer );
+	}
+	if( afterClip == std::string::npos )
+		return address;
+	if( selectedRow < 0 || selectedColumn < 0 )
+		return {};
+	return kLayers + std::to_string( selectedRow + 1 ) + "/clips/" + std::to_string( selectedColumn + 1 ) + "/" + address.substr( afterClip );
+}
+
 std::string ControlSettings::Save() const
 {
 	using nlohmann::json;
@@ -411,12 +507,19 @@ std::string ControlSettings::Save() const
 			             { "address", m.address } };
 		if( !m.device.empty() )
 			mapping[ "device" ] = m.device;
+		if( m.target != MappingTarget::Position )
+			mapping[ "target" ] = TargetKey( m.target );
 		mappings.push_back( mapping );
 	}
 	root[ "midi" ] = mappings;
 	json keyMappings = json::array();
 	for( const KeyMapping& k : keys )
-		keyMappings.push_back( { { "key", k.chord.key }, { "ctrl", k.chord.ctrl }, { "shift", k.chord.shift }, { "alt", k.chord.alt }, { "address", k.address } } );
+	{
+		json mapping = { { "key", k.chord.key }, { "ctrl", k.chord.ctrl }, { "shift", k.chord.shift }, { "alt", k.chord.alt }, { "address", k.address } };
+		if( k.target != MappingTarget::Position )
+			mapping[ "target" ] = TargetKey( k.target );
+		keyMappings.push_back( mapping );
+	}
 	root[ "keys" ] = keyMappings;
 	return root.dump( 1 );
 }
@@ -483,6 +586,7 @@ bool ControlSettings::Load( const std::string& text )
 			mapping.key.number  = std::clamp( m.value( "number", 0 ), 0, 127 );
 			mapping.address     = m.value( "address", "" );
 			mapping.device      = m.value( "device", "" );
+			mapping.target      = TargetFromKey( m.value( "target", "" ), mapping.address );
 			s.midi.push_back( mapping );
 		}
 	if( root.contains( "keys" ) && root[ "keys" ].is_array() )
@@ -496,6 +600,7 @@ bool ControlSettings::Load( const std::string& text )
 			mapping.chord.shift = k.value( "shift", false );
 			mapping.chord.alt   = k.value( "alt", false );
 			mapping.address     = k.value( "address", "" );
+			mapping.target      = TargetFromKey( k.value( "target", "" ), mapping.address );
 			s.keys.push_back( mapping );
 		}
 	*this = std::move( s );

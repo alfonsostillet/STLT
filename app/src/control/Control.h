@@ -126,11 +126,32 @@ struct MidiKey
 bool ReadMidi( const std::vector< unsigned char >& message, MidiKey& key, float& value );
 std::string MidiKeyName( const MidiKey& key ); // "C3 ch 1", "CC 7 ch 1"
 
+// What a mapping acts on. By position: the layer (and clip) it was learnt on, always. The selected layer: the
+// same control of whichever layer is selected when it is used (a clip address: that column's clip of the
+// selected layer). The selected clip: the same control of the clip selected in the grid.
+enum class MappingTarget
+{
+	Position,
+	SelectedLayer,
+	SelectedClip,
+};
+const char* MappingTargetName( MappingTarget target ); // "By position", "Selected layer", "Selected clip"
+// Whether an address can follow the selection: it names a layer (/composition/layers/L/...), or a clip
+// (/composition/layers/L/clips/C/...).
+bool CanTargetLayer( const std::string& address );
+bool CanTargetClip( const std::string& address );
+// `wanted` when the address can take it, else by position.
+MappingTarget TargetFor( MappingTarget wanted, const std::string& address );
+// The address a mapping acts on now: as learnt, or moved to the selected layer or clip (0-based; -1: none,
+// and the address does nothing).
+std::string Retarget( const std::string& address, MappingTarget target, int selectedLayer, int selectedRow, int selectedColumn );
+
 struct MidiMapping
 {
 	MidiKey key;
 	std::string address;
 	std::string device; // the input it was learnt on, which gets its light ("": every input in use)
+	MappingTarget target = MappingTarget::Position;
 };
 
 // A key of the computer's keyboard, with the modifiers held with it. `key` is the key's name as the interface
@@ -147,6 +168,7 @@ struct KeyMapping
 {
 	KeyChord chord;
 	std::string address;
+	MappingTarget target = MappingTarget::Position;
 };
 
 // What the Shortcuts panel sets: the keyboard and MIDI mappings and the inputs in use, saved apart from compositions.

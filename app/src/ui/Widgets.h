@@ -14,4 +14,9 @@ bool ResetValue( float* value, float reset );
 // out of the fields or a click elsewhere), not at every key: what EnterReturnsTrue did before ImGui stopped allowing
 // it on number fields. Returns whether `values` changed.
 bool CommittedInputInts( const char* label, int* values, int count );
+// A dashed rectangle (ImGui draws only solid ones): a clip waiting for its beat, an empty cell, a drop area.
+void DrawDashedRect( ImDrawList* draw, ImVec2 a, ImVec2 b, ImU32 colour, float thickness, float dash );
+// A short word on a small box (FX, T, a slice's number): `height` 0 fits the text; at least as wide as high.
+// From `at` rightwards, or leftwards with fromRight. Returns its width.
+float TextBadge( ImDrawList* draw, ImVec2 at, const char* text, ImU32 bg, ImU32 fg, float height = 0, bool fromRight = false );
 }

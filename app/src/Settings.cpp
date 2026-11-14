@@ -6,8 +6,13 @@
 #ifdef _WIN32
 #include <windows.h>
 #include <shlobj.h>
+#include <shellapi.h> // ShellExecuteW
 #elif defined( __APPLE__ )
 #include <mach-o/dyld.h>
+#include <spawn.h>
+#include <sys/wait.h>
+#include <thread>
+extern char** environ;
 #endif
 
 namespace fs = std::filesystem;
@@ -116,5 +121,22 @@ bool WriteTextFile( const std::string& path, const std::string& text )
 	std::error_code error;
 	fs::rename( temp, target, error );
 	return !error;
+}
+
+bool OpenSystemDisplaySettings()
+{
+#ifdef _WIN32
+	return (INT_PTR)ShellExecuteW( nullptr, L"open", L"ms-settings:display", nullptr, nullptr, SW_SHOWNORMAL ) > 32;
+#elif defined( __APPLE__ )
+	pid_t pid;
+	char program[] = "/usr/bin/open", url[] = "x-apple.systempreferences:com.apple.preference.displays";
+	char* argv[] = { program, url, nullptr };
+	if( posix_spawn( &pid, program, nullptr, nullptr, argv, environ ) != 0 )
+		return false;
+	std::thread( [ pid ]() { waitpid( pid, nullptr, 0 ); } ).detach(); // reaped when it ends, no zombie left
+	return true;
+#else
+	return false;
+#endif
 }
 }

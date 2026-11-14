@@ -1,4 +1,8 @@
 #include "App.h"
+#include <chrono>
+#include <ctime>
+#include "output/Sharing.h"
+#include "output/PngFile.h"
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 #include <imgui_internal.h> // ImGuiDockNodeFlags_NoCloseButton
@@ -9,6 +13,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <filesystem>
 #include <json.hpp>
 #include "Settings.h"
@@ -201,7 +206,8 @@ bool App::Init( const LaunchOptions& launch )
 #ifdef __APPLE__
 	scaleX = 1; // macOS scales the framebuffer itself
 #endif
-	ApplyTheme( std::max( 1.0f, scaleX ) );
+	displayScale = std::max( 1.0f, scaleX );
+	ApplyUiScale();
 	ImGui_ImplGlfw_InitForOpenGL( window, true );
 	ImGui_ImplOpenGL3_Init( "#version 410" );
 
@@ -269,8 +275,13 @@ bool App::Init( const LaunchOptions& launch )
 		std::string name = mode.value( "mode", "off" );
 		outputMode       = name == "window" ? OutputMode::Window : name == "fullscreen" ? OutputMode::Fullscreen : name == "advanced" ? OutputMode::Advanced : OutputMode::Off;
 		outputDisplay    = mode.value( "display", "" );
+		// Before version 2 the display was Fullscreen's only: a window opened where the system put it.
+		if( outputMode == OutputMode::Window && mode.value( "version", 1 ) < 2 )
+			outputDisplay.clear();
 		std::string before = mode.value( "beforeAdvanced", "off" );
 		beforeAdvanced     = before == "window" ? OutputMode::Window : before == "fullscreen" ? OutputMode::Fullscreen : OutputMode::Off;
+		shareCompositionNdi   = mode.value( "shareNdi", false );
+		shareCompositionLocal = mode.value( "shareLocal", false ) && LocalSharingName();
 	}
 	else if( !options.fresh )
 		outputMode = std::any_of( advancedOutput.screens.begin(), advancedOutput.screens.end(), []( const Screen& s ) { return s.device != OutputDevice::Virtual; } )
@@ -347,6 +358,8 @@ void App::Shutdown()
 	if( !window )
 		return;
 	UpdateLights( true ); // the controllers' lights off
+	if( prefsSaveAt > 0 )
+		SavePreferences();
 	if( !options.fresh )
 		WriteTextFile( ( fs::u8path( configDir ) / "last-session.stltvj" ).u8string(), SaveComposition( composition ) );
 	WriteTextFile( ( fs::u8path( configDir ) / "advanced-output.json" ).u8string(), savedOutput );
@@ -1365,15 +1378,33 @@ void App::PollRemote()
 			// One control per key: learning again moves it.
 			control.midi.erase( std::remove_if( control.midi.begin(), control.midi.end(), [ & ]( const MidiMapping& m ) { return m.key == e.key; } ),
 			                    control.midi.end() );
-			control.midi.push_back( { e.key, learnTarget, e.device } );
+			MappingTarget target = TargetFor( learnMapTarget, learnTarget );
+			control.midi.push_back( { e.key, learnTarget, e.device, target } );
 			SetStatus( "Mapped " + MidiKeyName( e.key ) + " to " + learnTarget );
 			learnTarget.clear();
 			SaveControlSettings();
 			continue;
 		}
-		for( const MidiMapping& m : control.midi )
-			if( m.key == e.key )
-				ApplyControl( m.address, true, e.value, e.key.type == MidiKey::Type::Note, previous );
+		// Mappings that follow the selection: let go (a value of 0), the one pressed is let go, wherever the
+		// selection went in between.
+		bool release = e.value <= 0 && previous > 0;
+		for( size_t i = 0; i < control.midi.size(); ++i )
+		{
+			const MidiMapping& m = control.midi[ i ];
+			if( !( m.key == e.key ) )
+				continue;
+			std::string address = m.address;
+			if( m.target != MappingTarget::Position )
+			{
+				auto held = midiHeld.find( { id, i } );
+				address   = release && held != midiHeld.end() ? held->second : MappedAddress( m.address, m.target );
+				if( release )
+					midiHeld.erase( { id, i } );
+				else
+					midiHeld[ { id, i } ] = address;
+			}
+			ApplyControl( address, true, e.value, e.key.type == MidiKey::Type::Note, previous );
+		}
 	}
 }
 
@@ -1477,7 +1508,7 @@ void App::UpdateLights( bool off )
 	std::set< std::string > mapped;
 	for( const MidiMapping& m : control.midi )
 	{
-		Light light = off ? Light::Off : LightFor( m.address );
+		Light light = off ? Light::Off : LightFor( MappedAddress( m.address, m.target ) );
 		for( const std::string& device : inputs )
 		{
 			if( !m.device.empty() && m.device != device )
@@ -1517,9 +1548,16 @@ bool MappableKey( ImGuiKey key, bool ctrl, bool shift, bool alt )
 	    || ( key >= ImGuiKey_LeftCtrl && key <= ImGuiKey_RightSuper ) || ( key == ImGuiKey_Space && !ctrl && !shift && !alt ) )
 		return false;
 	if( ctrl )
-		for( ImGuiKey own : { ImGuiKey_Z, ImGuiKey_Y, ImGuiKey_S, ImGuiKey_O, ImGuiKey_I, ImGuiKey_M, ImGuiKey_K, ImGuiKey_C, ImGuiKey_X, ImGuiKey_V, ImGuiKey_D, ImGuiKey_E, ImGuiKey_Comma } )
+		for( ImGuiKey own : { ImGuiKey_Z, ImGuiKey_Y, ImGuiKey_S, ImGuiKey_O, ImGuiKey_I, ImGuiKey_M, ImGuiKey_K, ImGuiKey_C, ImGuiKey_X, ImGuiKey_V, ImGuiKey_D, ImGuiKey_E, ImGuiKey_Comma, ImGuiKey_Equal, ImGuiKey_Minus, ImGuiKey_0, ImGuiKey_KeypadAdd, ImGuiKey_KeypadSubtract, ImGuiKey_Keypad0 } )
 			if( key == own )
 				return false;
+	if( ctrl && key == ImGuiKey_RightBracket )
+	{
+		// Ctrl + on keyboards with "+" there (Italian, German, Spanish): the interface's zoom.
+		const char* name = glfwGetKeyName( GLFW_KEY_RIGHT_BRACKET, 0 );
+		if( name && std::strcmp( name, "+" ) == 0 )
+			return false;
+	}
 	return !( ctrl && shift && key == ImGuiKey_A );
 }
 }
@@ -1561,7 +1599,8 @@ void App::PollKeyboard()
 			// One control per key: learning again moves it.
 			control.keys.erase( std::remove_if( control.keys.begin(), control.keys.end(), [ & ]( const KeyMapping& m ) { return m.chord == chord; } ),
 			                    control.keys.end() );
-			control.keys.push_back( { chord, learnTarget } );
+			MappingTarget target = TargetFor( learnMapTarget, learnTarget );
+			control.keys.push_back( { chord, learnTarget, target } );
 			SetStatus( "Mapped the key " + KeyChordName( chord ) + " to " + learnTarget );
 			learnTarget.clear();
 			SaveControlSettings();
@@ -1570,9 +1609,10 @@ void App::PollKeyboard()
 		for( const KeyMapping& m : control.keys )
 			if( m.chord == chord )
 			{
-				lastControl = "Key " + KeyChordName( chord );
-				ApplyControl( m.address, true, 1.0f, true, 0.0f );
-				keysHeld.push_back( { k, m.address } );
+				lastControl         = "Key " + KeyChordName( chord );
+				std::string address = MappedAddress( m.address, m.target ); // let go on the same, whatever is selected then
+				ApplyControl( address, true, 1.0f, true, 0.0f );
+				keysHeld.push_back( { k, address } );
 			}
 	}
 }
@@ -1978,11 +2018,51 @@ void App::SetOutputMode( OutputMode mode, const std::string& display )
 	if( mode == OutputMode::Advanced && outputMode != OutputMode::Advanced )
 		beforeAdvanced = outputMode;
 	outputMode = mode;
-	if( mode == OutputMode::Fullscreen )
+	if( mode == OutputMode::Fullscreen || mode == OutputMode::Window )
 		outputDisplay = display;
 	UpdateQuickOutput();
 	SaveOutputMode();
 	SetStatus( "Output: " + OutputModeLabel() );
+}
+
+void App::SetCompositionSharing( bool ndi, bool local )
+{
+	shareCompositionNdi   = ndi;
+	shareCompositionLocal = local && LocalSharingName();
+	UpdateQuickOutput();
+	SaveOutputMode();
+	std::string what = std::string( ndi ? "NDI" : "" ) + ( ndi && shareCompositionLocal ? " and " : "" ) + ( shareCompositionLocal ? LocalSharingName() : "" );
+	SetStatus( what.empty() ? "The composition is no longer shared" : "The composition is shared through " + what );
+}
+
+std::string App::TakeSnapshot()
+{
+	if( snapshotJob.valid() )
+	{
+		SetStatus( "A snapshot is still being saved", true );
+		return {};
+	}
+	int width = composition.width, height = composition.height;
+	std::vector< uint8_t > pixels( (size_t)width * height * 3 );
+	glBindFramebuffer( GL_FRAMEBUFFER, compositor.CompositionFramebuffer() );
+	glPixelStorei( GL_PACK_ALIGNMENT, 1 );
+	glReadPixels( 0, 0, width, height, GL_RGB, GL_UNSIGNED_BYTE, pixels.data() );
+	glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+	fs::path folder = fs::u8path( DocumentsDirectory() ) / "STLT" / "Snapshots";
+	std::error_code error;
+	fs::create_directories( folder, error );
+	std::time_t now = std::time( nullptr );
+	char name[ 64 ];
+	std::strftime( name, sizeof( name ), "Snapshot %Y-%m-%d %H-%M-%S", std::localtime( &now ) );
+	fs::path path = folder / ( std::string( name ) + ".png" );
+	for( int n = 2; fs::exists( path, error ); ++n )
+		path = folder / ( std::string( name ) + " " + std::to_string( n ) + ".png" );
+	snapshotPath = path.u8string();
+	snapshotJob  = std::async( std::launch::async, [ pixels = std::move( pixels ), file = snapshotPath, width, height ]() {
+        return WritePng( file, width, height, pixels, true );
+    } );
+	SetStatus( "Saving the snapshot..." );
+	return snapshotPath;
 }
 
 std::string App::OutputModeLabel() const
@@ -1990,7 +2070,7 @@ std::string App::OutputModeLabel() const
 	switch( outputMode )
 	{
 	case OutputMode::Off: return "Off";
-	case OutputMode::Window: return "Window";
+	case OutputMode::Window: return outputDisplay.empty() ? "Window" : "Window on " + OutputWindow::DisplayLabel( outputDisplay );
 	case OutputMode::Fullscreen:
 		return "Fullscreen on " + OutputWindow::DisplayLabel( outputDisplay );
 	case OutputMode::Advanced: return "Advanced";
@@ -2000,21 +2080,35 @@ std::string App::OutputModeLabel() const
 
 void App::UpdateQuickOutput()
 {
-	// The composition alone on one screen, made again when the mode, the display or the composition's size change.
+	// The composition alone on one screen, made again when the mode, the display, the sharing or the composition's
+	// size change. Shared with no window or display (Off, Advanced): a screen that goes nowhere but to NDI or Spout.
 	bool quick      = outputMode == OutputMode::Window || outputMode == OutputMode::Fullscreen;
-	std::string key = std::to_string( (int)outputMode ) + "|" + outputDisplay + "|" + std::to_string( composition.width ) + "x" + std::to_string( composition.height );
-	if( !quick || key == quickOutputKey )
+	bool shared     = shareCompositionNdi || shareCompositionLocal;
+	std::string key = std::to_string( (int)outputMode ) + "|" + outputDisplay + "|" + std::to_string( composition.width ) + "x" + std::to_string( composition.height )
+	                  + "|" + std::to_string( shareCompositionNdi ) + std::to_string( shareCompositionLocal );
+	if( ( !quick && !shared ) || key == quickOutputKey )
 		return;
 	quickOutputKey = key;
 	quickOutput    = AdvancedOutputSetup::MakeDefault( composition.width, composition.height );
-	quickOutput.screens[ 0 ].name = "Output";
-	PlaceScreen( quickOutput.screens[ 0 ], outputMode == OutputMode::Window ? OutputDevice::Window : OutputDevice::Display, outputDisplay );
+	Screen& screen = quickOutput.screens[ 0 ];
+	screen.name    = "Composition";
+	if( quick )
+		PlaceScreen( screen, outputMode == OutputMode::Window ? OutputDevice::Window : OutputDevice::Display, outputDisplay );
+	else
+		screen.device = OutputDevice::Virtual;
+	screen.ndi   = shareCompositionNdi;
+	screen.share = shareCompositionLocal;
 }
 
 void App::SaveOutputMode() const
 {
 	const char* names[] = { "off", "window", "fullscreen", "advanced" };
-	nlohmann::json mode = { { "mode", names[ (int)outputMode ] }, { "display", outputDisplay }, { "beforeAdvanced", names[ (int)beforeAdvanced ] } };
+	nlohmann::json mode = { { "mode", names[ (int)outputMode ] },
+		                    { "display", outputDisplay },
+		                    { "beforeAdvanced", names[ (int)beforeAdvanced ] },
+		                    { "shareNdi", shareCompositionNdi },
+		                    { "shareLocal", shareCompositionLocal },
+		                    { "version", 2 } };
 	WriteTextFile( ( fs::u8path( configDir ) / "output-mode.json" ).u8string(), mode.dump( 1 ) );
 }
 
@@ -2247,6 +2341,7 @@ int App::ResizeAllClips( FitMode fit )
 
 void App::SavePreferences()
 {
+	prefsSaveAt = 0;
 	WriteTextFile( ( fs::u8path( configDir ) / "preferences.json" ).u8string(), prefs.Save() );
 }
 
@@ -2599,6 +2694,61 @@ void App::UpdatePreview( double dt )
 	wanted->Update( selected->FrameFor( step, composition.bpm ), composition.paused ? 0 : selected->PlayDirection() );
 }
 
+void App::ZoomInterface( int step )
+{
+	SetInterfaceScale( step == 0 ? 1.0f : std::round( prefs.interfaceScale * 10 + step ) / 10 );
+}
+
+void App::SetInterfaceScale( float scale )
+{
+	scale = std::clamp( scale, kMinInterfaceScale, kMaxInterfaceScale );
+	zoomShownUntil = glfwGetTime() + 1.2;
+	if( scale == prefs.interfaceScale )
+		return;
+	prefs.interfaceScale = scale;
+	prefsSaveAt          = glfwGetTime() + 1.0; // held keys zoom many steps: written once they stop
+}
+
+// Between frames (the font atlas is free): the fonts and the style at the interface's size. After a zoom the
+// panels' fixed sizes grow or shrink with it.
+void App::ApplyUiScale()
+{
+	float scale = displayScale * prefs.interfaceScale;
+	if( std::abs( scale - appliedUiScale ) < 1e-4f )
+		return;
+	bool first     = appliedUiScale == 0;
+	float ratio    = first ? 1.0f : scale / appliedUiScale;
+	appliedUiScale = scale;
+	ApplyTheme( scale );
+	if( first )
+		return;
+	ImGui_ImplOpenGL3_DestroyFontsTexture(); // made again, from the new fonts, by the next NewFrame
+	workspaces.Rescale( ratio );
+}
+
+// A mouse button ImGui still thinks is held while no window actually has it down: its release was lost (a window,
+// such as the Advanced Output or the detached Stage view, closed mid-press, so GLFW never delivered the button up).
+// Left so, ImGui keeps the active item and no new widget can take the mouse: menus need several clicks and faders
+// stop scrubbing. Each frame, if a button ImGui holds is down on none of the real windows, send its release.
+void App::ReleaseStuckMouse()
+{
+	ImGuiIO& io = ImGui::GetIO();
+	for( int button = 0; button < 3; ++button )
+	{
+		if( !io.MouseDown[ button ] )
+			continue;
+		int glfwButton = button == 0 ? GLFW_MOUSE_BUTTON_LEFT : button == 1 ? GLFW_MOUSE_BUTTON_RIGHT : GLFW_MOUSE_BUTTON_MIDDLE;
+		bool reallyDown = window && glfwGetMouseButton( window, glfwButton ) == GLFW_PRESS;
+		// With viewports the press may be on another platform window (a floating panel on a second monitor).
+		if( ImGui::GetCurrentContext() )
+			for( ImGuiViewport* viewport : ImGui::GetPlatformIO().Viewports )
+				if( GLFWwindow* w = (GLFWwindow*)viewport->PlatformHandle )
+					reallyDown = reallyDown || glfwGetMouseButton( w, glfwButton ) == GLFW_PRESS;
+		if( !reallyDown )
+			io.AddMouseButtonEvent( button, false );
+	}
+}
+
 void App::Frame()
 {
 	if( startViewPending > 0 && ImGui::GetFrameCount() > 2 )
@@ -2608,6 +2758,15 @@ void App::Frame()
 	}
 	workspaces.ApplyPending();
 	double now = glfwGetTime();
+	if( prefsSaveAt > 0 && now >= prefsSaveAt )
+		SavePreferences();
+	if( snapshotJob.valid() && snapshotJob.wait_for( std::chrono::seconds( 0 ) ) == std::future_status::ready )
+	{
+		if( snapshotJob.get() )
+			SetStatus( "Snapshot saved: " + snapshotPath );
+		else
+			SetStatus( "Could not save the snapshot " + snapshotPath, true );
+	}
 	double measured = std::min( now - lastTime, 0.1 );
 	double dt       = FrameStep( measured );
 	lastTime        = now;
@@ -2637,7 +2796,8 @@ void App::Frame()
 	// works on it. The timeline's screen pictures (its canvases) are mixed when its setup is drawn.
 	AdvancedOutputSetup& live = LiveOutput();
 	bool advancedLive = outputMode == OutputMode::Advanced;
-	bool quickLive    = outputMode == OutputMode::Window || outputMode == OutputMode::Fullscreen;
+	bool quickLive    = outputMode == OutputMode::Window || outputMode == OutputMode::Fullscreen || shareCompositionNdi || shareCompositionLocal;
+	outputs.testCard = editOutputs.testCard = quickOutputs.testCard = testCard;
 	bool monitorScreens = monitorShown && ( monitorSource == MonitorSource::Multiview || monitorSource == MonitorSource::Screen );
 	bool liveDrawn    = advancedLive || ( panels.advancedOutput && EditingLive() ) || options.captureScreen > 0 || monitorScreens;
 	bool otherDrawn   = panels.advancedOutput && !EditingLive();
@@ -2667,6 +2827,8 @@ void App::Frame()
 		editOutputs.Render( EditedOutput(), compositor.CompositionTexture(), composition.width, composition.height, false, pictures( EditedOutput() ) );
 	if( quickLive )
 		quickOutputs.Render( quickOutput, compositor.CompositionTexture(), composition.width, composition.height );
+	else
+		quickOutputs.StopSharing(); // the composition no longer shared
 	UpdatePreview( dt );
 	if( Clip* selected = composition.SelectedClip() )
 		if( selected->generator || ( selected->Loaded() && selected->player->Active() ) )
@@ -2677,8 +2839,10 @@ void App::Frame()
 	if( !dialogError.empty() )
 		SetStatus( "File dialog: " + dialogError + " (Composition > Type a Path works without it)", true );
 
+	ApplyUiScale();
 	ImGui_ImplOpenGL3_NewFrame();
 	ImGui_ImplGlfw_NewFrame();
+	ReleaseStuckMouse();
 	ImGui::NewFrame();
 	monitorShown = false; // the monitor says again when it is drawn (its screens and layer are drawn for it next frame)
 	DrawUi();
@@ -2786,6 +2950,8 @@ void App::DrawUi()
 	ImVec2 dockSize    = ImGui::GetContentRegionAvail();
 	dockSize.y -= statusHeight;
 	ImGuiID dockspace = ImGui::GetID( "MainDock" );
+	workspaces.ApplyRescale();
+	workspaces.deckLayers = (int)composition.layers.size();
 	workspaces.BuildDefaultIfNeeded( dockspace, dockSize );
 	// No close button at the right of each tab bar: a panel's own tab closes it (its X shows on the chosen tab).
 	ImGui::DockSpace( dockspace, dockSize, (ImGuiDockNodeFlags)ImGuiDockNodeFlags_NoCloseButton );
@@ -2835,6 +3001,7 @@ void App::DrawUi()
 	DrawAdvancedOutputSavePrompt( *this );
 	if( panels.advancedOutput )
 		DrawAdvancedOutputPanel( *this );
+	DrawDisplayIdentities( *this );
 	droppedPaths.clear();
 }
 }

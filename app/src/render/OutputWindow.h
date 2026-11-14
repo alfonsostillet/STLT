@@ -43,6 +43,8 @@ public:
 	           bool vsync = true );
 	void Close();
 	bool IsOpen() const { return window != nullptr; }
+	// A window (not fullscreen) in the middle of a display, smaller if it would not fit.
+	void CentreOn( GLFWmonitor* monitor );
 	bool CloseRequested() const;
 	std::string Description() const { return description; }
 

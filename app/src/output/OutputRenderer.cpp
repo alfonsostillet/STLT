@@ -253,7 +253,7 @@ void OutputRenderer::DrawSlice( const Slice& slice, int index, const Screen& scr
 	const SoftEdge& e = slice.edge;
 	glUniform4f( sliceProgram.Uniform( "uEdges" ), e.left, e.right, e.top, e.bottom );
 	glUniform3f( sliceProgram.Uniform( "uRamp" ), e.power, e.luminance, e.gamma );
-	glUniform1i( sliceProgram.Uniform( "uTestPattern" ), screen.testPattern ? 1 : 0 );
+	glUniform1i( sliceProgram.Uniform( "uTestPattern" ), screen.testPattern || testCard ? 1 : 0 );
 	glUniform3f( sliceProgram.Uniform( "uColour" ), colour[ 0 ], colour[ 1 ], colour[ 2 ] );
 	glBindVertexArray( vao );
 	glBindBuffer( GL_ARRAY_BUFFER, vbo );
@@ -396,15 +396,25 @@ void OutputRenderer::Render( const AdvancedOutputSetup& setup, GLuint compositio
 		if( live )
 			Share( screen, state );
 		else
-		{
-			state.local.reset();
-			state.ndi.reset();
-			state.localName.clear();
-			state.ndiName.clear();
-			state.ndiError.clear();
-		}
+			StopSharing( state );
 	}
 	glBindFramebuffer( GL_FRAMEBUFFER, 0 );
+}
+
+void OutputRenderer::StopSharing( ScreenState& state )
+{
+	state.local.reset();
+	state.ndi.reset();
+	state.localName.clear();
+	state.ndiName.clear();
+	state.ndiError.clear();
+}
+
+void OutputRenderer::StopSharing()
+{
+	for( auto& state : screens )
+		if( state->local || state->ndi || !state->ndiError.empty() )
+			StopSharing( *state );
 }
 
 void OutputRenderer::Share( const Screen& screen, ScreenState& state )
@@ -491,7 +501,8 @@ void OutputRenderer::SyncWindows( const AdvancedOutputSetup& setup, GLFWwindow* 
 			windowClosed = true;
 			continue;
 		}
-		bool changed = wanted != state.device || ( wanted == OutputDevice::Display && screen.display != state.display );
+		// A window asked on a display moves there too (Output > Windowed).
+		bool changed = wanted != state.device || ( wanted != OutputDevice::Virtual && screen.display != state.display );
 		if( wanted == OutputDevice::Display && state.missingDisplay && OutputWindow::FindDisplay( screen.display ) )
 			changed = true; // the display came back
 		if( !changed )
@@ -522,7 +533,12 @@ void OutputRenderer::SyncWindows( const AdvancedOutputSetup& setup, GLFWwindow* 
 		if( !state.window->Open( main, monitor, "STLT - " + screen.name, (int)( screen.width * scale ), (int)( screen.height * scale ), !vsyncTaken ) )
 			state.window.reset();
 		else
+		{
 			vsyncTaken = true;
+			if( wanted == OutputDevice::Window && !screen.display.empty() )
+				if( GLFWmonitor* on = OutputWindow::FindDisplay( screen.display ) )
+					state.window->CentreOn( on );
+		}
 	}
 	glfwMakeContextCurrent( main );
 }
