@@ -43,14 +43,15 @@ int main( int argc, char** argv )
 			options.oscPort = std::clamp( std::atoi( argv[ ++i ] ), 0, 65535 );
 		else if( arg == "--size" && hasValue )
 			std::sscanf( argv[ ++i ], "%dx%d", &options.width, &options.height );
-		else if( arg == "--clip" && hasValue )
+		else if( ( arg == "--clip" || arg == "--place" ) && hasValue )
 		{
+			bool launch       = arg == "--clip"; // --place puts it in its cell without launching it
 			std::string value = argv[ ++i ];
 			int layer = 0, column = 0, consumed = 0;
 			if( std::sscanf( value.c_str(), "%d,%d,%n", &layer, &column, &consumed ) == 2 && consumed > 0 && layer > 0 && column > 0 )
-				options.clips.push_back( { layer, column, value.substr( (size_t)consumed ) } );
+				options.clips.push_back( { layer, column, value.substr( (size_t)consumed ), launch } );
 			else
-				std::fprintf( stderr, "Ignoring --clip %s (expected LAYER,COLUMN,PATH)\n", value.c_str() );
+				std::fprintf( stderr, "Ignoring %s %s (expected LAYER,COLUMN,PATH)\n", arg.c_str(), value.c_str() );
 		}
 		else if( arg == "--source" && hasValue )
 		{

@@ -39,6 +39,7 @@ public:
 		std::string name;
 		Address address;
 		float roundTrip = 0; // seconds, as the receiver measured it
+		Visual visuals[ kDecks ] = {};
 		double since    = 0;
 		double heard    = 0; // when it last subscribed
 	};
@@ -101,6 +102,8 @@ public:
 	bool Running() const { return running; }
 	// Transmitters to subscribe to even without hearing them ("192.168.1.14", "dj-laptop:52131").
 	void SetAddresses( const std::vector< std::string >& hosts );
+	// What this VJ has for a transmitter's decks (shown to the DJ); sent with the next subscription.
+	void SetVisuals( uint32_t source, const Visual* visuals );
 	// Every transmitter heard, in the order they were first heard, with their decks as they are at `now`.
 	std::vector< Source > Sources( double now ) const;
 
@@ -115,6 +118,7 @@ private:
 		double lastPing     = -10;
 		double found        = 0;
 		uint32_t lastSeq    = 0;
+		Visual visuals[ kDecks ] = {};
 		bool anySeq         = false;
 	};
 	void Loop();

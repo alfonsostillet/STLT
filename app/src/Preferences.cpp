@@ -38,6 +38,9 @@ std::string Preferences::Save() const
 	root[ "timecodeLtcChannel" ] = timecodeLtcChannel;
 	root[ "timecodeMtcInput" ]  = timecodeMtcInput;
 	root[ "timecodeFreewheelMs" ] = timecodeFreewheelMs;
+	root[ "vjlinkEnabled" ]       = vjlinkEnabled;
+	root[ "vjlinkTempo" ]         = vjlinkTempo;
+	root[ "vjlinkAddresses" ]     = vjlinkAddresses;
 	root[ "hardwareDecoding" ]  = hardwareDecoding;
 	root[ "frameCacheMegabytes" ] = frameCacheMegabytes;
 	root[ "clipFit" ]           = FitModeName( clipFit );
@@ -73,6 +76,9 @@ bool Preferences::Load( const std::string& text )
 	p.timecodeLtcChannel = std::clamp( root.value( "timecodeLtcChannel", 0 ), 0, 63 );
 	p.timecodeMtcInput  = root.value( "timecodeMtcInput", "*" );
 	p.timecodeFreewheelMs = std::clamp( root.value( "timecodeFreewheelMs", 500.0f ), 0.0f, 10000.0f );
+	p.vjlinkEnabled       = root.value( "vjlinkEnabled", true );
+	p.vjlinkTempo         = root.value( "vjlinkTempo", true );
+	p.vjlinkAddresses     = root.value( "vjlinkAddresses", std::string() );
 	p.hardwareDecoding  = root.value( "hardwareDecoding", true );
 	p.frameCacheMegabytes = std::clamp( root.value( "frameCacheMegabytes", 256 ), 0, 4096 );
 	p.clipFit           = ByName( root.value( "clipFit", nlohmann::json() ), FitModeName, FitMode::Fit );

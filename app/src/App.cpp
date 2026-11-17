@@ -290,7 +290,8 @@ bool App::Init( const LaunchOptions& launch )
 	for( const LaunchOptions::ClipArg& clip : options.clips )
 	{
 		LoadClip( clip.layer - 1, clip.column - 1, clip.path );
-		Launch( clip.layer - 1, clip.column - 1, true );
+		if( clip.launch )
+			Launch( clip.layer - 1, clip.column - 1, true );
 	}
 	for( const LaunchOptions::ClipArg& source : options.sources )
 	{
@@ -1430,6 +1431,7 @@ void App::UpdateAudioInput( double now, double dt )
 		for( int b = 0; b < AudioInput::BandCount; ++b )
 			clock.audio[ b ] = audioInput.Value( (AudioInput::Band)b );
 	}
+	std::copy( vjStems, vjStems + 5, clock.traktor );
 	SetAnimationClock( clock );
 }
 
@@ -2620,6 +2622,12 @@ void App::UpdatePlayback( double dt )
 		auto play   = [ & ]( Clip& clip ) {
 			if( !clip.Loaded() )
 				return; // generators run on composition time
+			if( clip.driven )
+			{
+				// VJ LINK placed it at its track's position.
+				clip.player->Update( clip.CurrentFrame(), clip.drivenPlaying ? 1 : 0 );
+				return;
+			}
 			clip.Advance( step, composition.bpm );
 			clip.player->Update( clip.FrameFor( step, composition.bpm ), composition.paused ? 0 : clip.PlayDirection() );
 		};
@@ -2777,6 +2785,7 @@ void App::Frame()
 	PollRemote();
 	if( control.midiEnabled )
 		UpdateLights( !control.midiLights );
+	UpdateVjLink( dt );
 	UpdateAudioInput( now, dt );
 	UpdatePlayback( dt );
 	UpdateTimeline( dt );

@@ -270,14 +270,23 @@ bool TempoSync::Update( double now, double& bpm, double& beat )
 	else
 		clockWasPlaying = false;
 
+	// Traktor's deck that is on, through VJ LINK (unless a MIDI clock leads): its tempo, and its beat on the track's
+	// grid, so bars fall where the DJ's do.
+	if( following != Source::Clock && traktorOn && traktorBpm > 0 )
+	{
+		following = Source::Traktor;
+		bpm       = traktorBpm;
+		beat      = traktorBeat;
+	}
+
 #ifdef STLTVJ_HAS_LINK
 	if( link )
 	{
 		auto time  = link->session.clock().micros() + std::chrono::microseconds( (int64_t)( latency * 1e6 ) );
 		auto state = link->session.captureAppSessionState();
-		if( following == Source::Clock )
+		if( following == Source::Clock || following == Source::Traktor )
 		{
-			// The clock leads; Link's other peers get its tempo.
+			// The clock (or Traktor) leads; Link's other peers get its tempo.
 			if( std::fabs( state.tempo() - bpm ) > 0.005 )
 			{
 				state.setTempo( bpm, time );
@@ -299,6 +308,14 @@ bool TempoSync::Update( double now, double& bpm, double& beat )
 #endif
 	sentBpm = bpm;
 	return beat < before - 0.5;
+}
+
+void TempoSync::SetTraktor( bool on, double bpm, double beat, const std::string& name )
+{
+	traktorOn   = on;
+	traktorBpm  = bpm;
+	traktorBeat = beat;
+	traktorName = name;
 }
 
 void TempoSync::Resync( double now, double& beat )
@@ -330,6 +347,11 @@ std::string TempoSync::Status() const
 	if( following == Source::Clock )
 	{
 		std::snprintf( text, sizeof( text ), "MIDI clock from %s: %.1f BPM%s", from.c_str(), lastClock.bpm, lastClock.playing ? "" : ", stopped" );
+		return text;
+	}
+	if( following == Source::Traktor )
+	{
+		std::snprintf( text, sizeof( text ), "%s: %.2f BPM", traktorName.c_str(), traktorBpm );
 		return text;
 	}
 	std::string status;

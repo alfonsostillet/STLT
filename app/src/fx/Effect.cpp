@@ -7,7 +7,8 @@ namespace stltvj
 {
 const char* AnimModeName( AnimMode mode )
 {
-	static const char* names[] = { "Off", "Saw", "Ping Pong", "Sine", "Square", "Random", "Smooth Random", "Audio Level", "Audio Bass", "Audio Mid", "Audio Treble" };
+	static const char* names[] = { "Off", "Saw", "Ping Pong", "Sine", "Square", "Random", "Smooth Random", "Audio Level", "Audio Bass", "Audio Mid", "Audio Treble",
+	                               "Traktor Drums", "Traktor Bass", "Traktor Other", "Traktor Vocals", "Traktor Level" };
 	static_assert( sizeof( names ) / sizeof( names[ 0 ] ) == (size_t)AnimMode::Count, "a name for every mode" );
 	return names[ std::clamp( (int)mode, 0, (int)AnimMode::Count - 1 ) ];
 }
@@ -15,6 +16,11 @@ const char* AnimModeName( AnimMode mode )
 bool IsAudioMode( AnimMode mode )
 {
 	return mode >= AnimMode::AudioLevel && mode <= AnimMode::AudioTreble;
+}
+
+bool IsTraktorMode( AnimMode mode )
+{
+	return mode >= AnimMode::TraktorDrums && mode <= AnimMode::TraktorLevel;
 }
 
 namespace
@@ -76,6 +82,11 @@ float Animation::Evaluate( double beat ) const
 	case AnimMode::AudioBass:
 	case AnimMode::AudioMid:
 	case AnimMode::AudioTreble: t = std::clamp( animationClock.audio[ (int)mode - (int)AnimMode::AudioLevel ], 0.0f, 1.0f ); break;
+	case AnimMode::TraktorDrums:
+	case AnimMode::TraktorBass:
+	case AnimMode::TraktorOther:
+	case AnimMode::TraktorVocals:
+	case AnimMode::TraktorLevel: t = std::clamp( animationClock.traktor[ (int)mode - (int)AnimMode::TraktorDrums ], 0.0f, 1.0f ); break;
 	case AnimMode::Saw: t = phase; break;
 	case AnimMode::PingPong: t = phase < 0.5f ? phase * 2 : 2 - phase * 2; break;
 	case AnimMode::Sine: t = 0.5f - 0.5f * std::cos( phase * 6.2831853f ); break;

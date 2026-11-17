@@ -143,6 +143,29 @@ jobs:
           fi
           ls -l STLT-*
 
+      # The VJ LINK transmitter, for the DJ's computer (Windows and macOS, where Traktor runs): a download of its own.
+      - name: Pack the VJ LINK transmitter
+        if: runner.os != 'Linux'
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            mkdir -p package/VJLink
+            cp app/build/Release/VJLink.exe package/VJLink/
+            cp docs/VJLINK.md package/VJLink/README.md
+            (cd package && 7z a -tzip -bd ../VJLink-windows.zip VJLink > /dev/null)
+          else
+            TX="app/build/VJ LINK.app"
+            codesign --force --sign - "$TX"
+            codesign --verify --verbose=2 "$TX"
+            ditto -c -k --keepParent "$TX" VJLink-macos.zip
+          fi
+          ls -l VJLink-*
+
+      # VJ LINK end to end on this machine: the transmitter's made-up decks reach the program, which launches the
+      # clip named after the track that plays and follows its tempo.
+      - name: VJ LINK end to end (Linux, virtual screen)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a -s "-screen 0 1600x900x24" python3 app/tests/vjlink_smoke.py package/STLT/stlt app/build/vjlink app/tests/fixtures
+
       # The real program on clips of each kind (HAP, DXV, H.264) and with STLT-CHASER's effects: it must draw the
       # right picture and quit by itself. Windows runners have no GPU, so Mesa's software OpenGL stands in, next
       # to a copy of the program (never in the package).
@@ -172,6 +195,13 @@ jobs:
         with:
           name: STLT-${{ matrix.artifact }}
           path: STLT-${{ matrix.artifact }}.*
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: runner.os != 'Linux'
+        with:
+          name: VJLink-${{ matrix.artifact }}
+          path: VJLink-${{ matrix.artifact }}.*
           if-no-files-found: error
 
   # The tests on Windows under AddressSanitizer (MSVC): reads past a buffer, use after free and the like stop the
@@ -221,6 +251,8 @@ jobs:
           mv artifacts/STLT-windows.zip "release/STLT-$V-windows.zip"
           mv artifacts/STLT-linux.tar.gz "release/STLT-$V-linux.tar.gz"
           if [ -f artifacts/STLT-macos.zip ]; then mv artifacts/STLT-macos.zip "release/STLT-$V-macos.zip"; fi
+          if [ -f artifacts/VJLink-windows.zip ]; then mv artifacts/VJLink-windows.zip "release/VJLink-$V-windows.zip"; fi
+          if [ -f artifacts/VJLink-macos.zip ]; then mv artifacts/VJLink-macos.zip "release/VJLink-$V-macos.zip"; fi
           ls -l release
 
       - uses: softprops/action-gh-release@v2

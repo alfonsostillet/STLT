@@ -1,5 +1,6 @@
 #include "ui/PreferencesUi.h"
 #include <imgui.h>
+#include <imgui_stdlib.h>
 #include <algorithm>
 #include <cfloat>
 #include <cmath>
@@ -314,6 +315,35 @@ bool Sync( App& app )
 	std::string status = sync.Status();
 	if( !status.empty() )
 		ImGui::TextDisabled( "%s", status.c_str() );
+
+	ImGui::SeparatorText( "VJ LINK (Traktor)" );
+	if( ImGui::Checkbox( "Receive##vjlink", &p.vjlinkEnabled ) )
+		changed = true;
+	Help( "Traktor's decks from the DJ's computer, through the VJ LINK transmitter there (docs/VJLINK.md). A clip "
+	      "named after a track plays on its layer when the track plays with its fader up, at the track's place." );
+	if( p.vjlinkEnabled )
+	{
+		if( ImGui::Checkbox( "Follow Traktor's tempo##vjlinkTempo", &p.vjlinkTempo ) )
+			changed = true;
+		Help( "The BPM and the beat come from the deck that is on (playing, with the highest fader); bars fall on "
+		      "Traktor's grid. A MIDI clock coming in leads over it." );
+		Caption( "Addresses" );
+		ImGui::SetNextItemWidth( Ui( 300 ) );
+		if( ImGui::InputTextWithHint( "##vjlinkAddresses", "found by itself", &p.vjlinkAddresses ) )
+			changed = true;
+		Help( "Only for networks that do not let broadcasts through: the DJ's computer, by address or name "
+		      "(192.168.1.14, dj-laptop), several separated by commas." );
+		int found = 0;
+		for( const vjlink::Source& s : app.vjSources )
+			if( s.online )
+			{
+				++found;
+				ImGui::TextDisabled( "%s, %s: %s, %.1f ms", s.name.c_str(), s.address.IpText().c_str(),
+				                     s.program.empty() ? "Traktor not sending" : s.program.c_str(), s.roundTrip * 1000 / 2 );
+			}
+		if( !found )
+			ImGui::TextDisabled( app.vjlink.Running() ? "No transmitter found yet" : "Not listening (the port is taken?)" );
+	}
 
 	ImGui::SeparatorText( "Timecode" );
 	{

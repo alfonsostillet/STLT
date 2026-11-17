@@ -59,10 +59,17 @@ enum class AnimMode
 	AudioBass,
 	AudioMid,
 	AudioTreble,
+	// The DJ's music through VJ LINK: the level of each stem (and of the channel) of the deck that is on.
+	TraktorDrums,
+	TraktorBass,
+	TraktorOther,
+	TraktorVocals,
+	TraktorLevel,
 	Count
 };
 const char* AnimModeName( AnimMode mode );
 bool IsAudioMode( AnimMode mode );
+bool IsTraktorMode( AnimMode mode );
 
 struct Animation
 {
@@ -81,6 +88,7 @@ struct AnimationClock
 {
 	double seconds = 0;
 	float audio[ 4 ] = {}; // level, bass, mid, treble, 0..1 (AudioInput's bands)
+	float traktor[ 5 ] = {}; // drums, bass, other, vocals, level of the deck on (VJ LINK), 0..1
 };
 void SetAnimationClock( const AnimationClock& clock );
 const AnimationClock& CurrentAnimationClock();

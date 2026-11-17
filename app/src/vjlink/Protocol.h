@@ -88,8 +88,19 @@ struct TrackId
 TrackId IdOf( const TrackInfo& info );
 // Same title and artist (case and spaces aside) and lengths within a second (0: any length).
 bool SameTrack( const TrackId& a, const TrackId& b );
+// A clip named after the track (its video file "Kerala.mov", "Bonobo - Kerala.mp4", "03 Kerala"): linked without
+// being linked by hand. Case, punctuation, the extension and a leading number do not count.
+bool NameMatches( const std::string& clipName, const TrackInfo& track );
 
 // ---- Packets
+
+// What the VJ's program has for a deck's track, shown on the DJ's side.
+enum class Visual : uint8_t
+{
+	None  = 0, // nothing linked to it
+	Ready = 1, // a clip is linked to the track
+	OnAir = 2, // and it is playing
+};
 
 struct Packet
 {
@@ -100,6 +111,7 @@ struct Packet
 	std::string program;        // Announce: "Traktor Pro 4" or empty while Traktor sends nothing
 	uint16_t port      = 0;     // Announce: the transmitter's data port
 	float roundTrip    = 0;     // Subscribe: seconds, as the receiver measured it (0: not yet)
+	uint8_t visuals[ kDecks ] = {}; // Subscribe: what the VJ has for each deck's track (Visual), for the DJ to see
 	// Ping, Pong
 	double t0 = 0, t1 = 0, t2 = 0;
 	// Decks

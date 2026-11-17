@@ -516,6 +516,8 @@ static nlohmann::json SaveClip( const Clip& clip )
 		k[ "cues" ] = cues;
 	if( clip.syncBeats > 0 )
 		k[ "syncBeats" ] = clip.syncBeats;
+	if( !clip.track.Empty() )
+		k[ "track" ] = { { "title", clip.track.title }, { "artist", clip.track.artist }, { "length", clip.track.length } };
 	json animations = json::object();
 	for( int p = 0; p < (int)ClipProperty::Count; ++p )
 		if( clip.animations[ p ].mode != AnimMode::Off )
@@ -644,6 +646,13 @@ static Clip LoadClip( const nlohmann::json& k )
 			for( int i = 0; i < kCuePoints && i < (int)k[ "cues" ].size(); ++i )
 				clip.cues[ i ] = k[ "cues" ][ i ].is_number() ? k[ "cues" ][ i ].get< double >() : -1.0;
 		clip.syncBeats = std::max( 0.0f, k.value( "syncBeats", 0.0f ) );
+		if( k.contains( "track" ) && k[ "track" ].is_object() )
+		{
+			const json& t      = k[ "track" ];
+			clip.track.title  = t.value( "title", "" );
+			clip.track.artist = t.value( "artist", "" );
+			clip.track.length = std::max( 0.0, t.value( "length", 0.0 ) );
+		}
 		if( k.contains( "animations" ) && k[ "animations" ].is_object() )
 			for( int p = 0; p < (int)ClipProperty::Count; ++p )
 				if( k[ "animations" ].contains( ClipPropertyName( (ClipProperty)p ) ) )

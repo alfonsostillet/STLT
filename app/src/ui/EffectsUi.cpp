@@ -87,6 +87,8 @@ void AnimationControls( Animation& a, float min, float max )
 		{
 			if( m == (int)AnimMode::AudioLevel )
 				ImGui::SeparatorText( "The sound coming in" );
+			if( m == (int)AnimMode::TraktorDrums )
+				ImGui::SeparatorText( "The DJ's stems (VJ LINK)" );
 			if( ImGui::Selectable( AnimModeName( (AnimMode)m ), (int)a.mode == m ) )
 				a.mode = (AnimMode)m;
 		}
@@ -102,6 +104,17 @@ void AnimationControls( Animation& a, float min, float max )
 		ImGui::TextUnformatted( "Input" );
 		if( ImGui::IsItemHovered() )
 			ImGui::SetTooltip( "The sound coming in (Preferences > Audio > Audio Input), where its gain is set too." );
+	}
+	else if( IsTraktorMode( a.mode ) )
+	{
+		// The stem's level on the deck that is on, as Traktor meters it.
+		float level = CurrentAnimationClock().traktor[ (int)a.mode - (int)AnimMode::TraktorDrums ];
+		ImGui::SetNextItemWidth( Ui( 140 ) );
+		ImGui::ProgressBar( level, ImVec2( Ui( 140 ), 0 ), "" );
+		ImGui::SameLine();
+		ImGui::TextUnformatted( "Traktor" );
+		if( ImGui::IsItemHovered() )
+			ImGui::SetTooltip( "The deck that is on (playing, with the highest fader), through VJ LINK. Stems need a Stem file in Traktor." );
 	}
 	else if( a.mode != AnimMode::Off )
 	{

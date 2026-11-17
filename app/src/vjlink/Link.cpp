@@ -249,6 +249,8 @@ void Sender::Loop()
 						it->name      = in.name;
 						it->address   = from;
 						it->roundTrip = in.roundTrip;
+						for( int d = 0; d < kDecks; ++d )
+							it->visuals[ d ] = (Visual)std::min< uint8_t >( in.visuals[ d ], 2 );
 						it->heard     = arrived;
 					}
 					if( added )
@@ -479,6 +481,8 @@ void Receiver::Loop()
 					sub.from      = id;
 					sub.name      = name;
 					sub.roundTrip = (float)k.clock.RoundTrip();
+					for( int d = 0; d < kDecks; ++d )
+						sub.visuals[ d ] = (uint8_t)k.visuals[ d ];
 					out.emplace_back( sub, k.source.address );
 				}
 				// Pings: ten a second at first, to lock on quickly; then two.
@@ -521,6 +525,17 @@ void Receiver::Loop()
 			Send( packet, to );
 		}
 	}
+}
+
+void Receiver::SetVisuals( uint32_t source, const Visual* visuals )
+{
+	std::lock_guard< std::mutex > lock( mutex );
+	for( Known& k : known )
+		if( k.source.id == source && !std::equal( visuals, visuals + kDecks, k.visuals ) )
+		{
+			std::copy( visuals, visuals + kDecks, k.visuals );
+			k.lastSubscribe = -10; // told at once
+		}
 }
 
 std::vector< Source > Receiver::Sources( double now ) const

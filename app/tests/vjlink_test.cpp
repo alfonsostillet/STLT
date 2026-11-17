@@ -15,6 +15,9 @@
 #include "vjlink/Protocol.h"
 #include "vjlink/TraktorBridge.h"
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <winsock2.h>
 #else
 #include <arpa/inet.h>
@@ -144,6 +147,10 @@ static void TestTrackIds()
 	untagged.file = "/Users/dj/Music/03 Cirrus.aiff";
 	CHECK( IdOf( untagged ).title == "03 Cirrus" );
 	CHECK( !SameTrack( TrackId(), TrackId() ) );
+	// Clips named after the track.
+	CHECK( NameMatches( "Kerala.mov", k ) && NameMatches( "Bonobo - Kerala.mp4", k ) && NameMatches( "03 Kerala", k ) );
+	CHECK( NameMatches( "KERALA", k ) && NameMatches( "/videos/kerala.mov", k ) );
+	CHECK( !NameMatches( "Kerala loop", k ) && !NameMatches( "Kong.mov", k ) && !NameMatches( "", k ) );
 }
 
 // The transmitter's clock runs 20 parts per million fast and 1234.5 s ahead; round trips take 0.2..0.6 ms, and one
@@ -387,7 +394,7 @@ static void TestTraktorPosts()
 class BadNetwork
 {
 public:
-	BadNetwork( uint16_t target, double jitter, double loss ) : target{ 0x7F000001, target }, jitter( jitter ), loss( loss )
+	BadNetwork( uint16_t port, double delay, double lost ) : target{ 0x7F000001, port }, jitter( delay ), loss( lost )
 	{
 		std::string error;
 		front.Open( 0, false, error ); // the receiver's side
@@ -578,6 +585,12 @@ static void TestOnThisComputer()
 	// The transmitter knows who listens.
 	std::vector< Sender::Subscriber > subs = sender.Subscribers();
 	CHECK( subs.size() == 1 && subs[ 0 ].name == "VJ-ARENA" );
+	// The VJ's side tells what it has for each deck: the DJ sees it at once.
+	Visual visuals[ kDecks ] = { Visual::OnAir, Visual::Ready, Visual::None, Visual::None };
+	receiver.SetVisuals( receiver.Sources( Now() )[ 0 ].id, visuals );
+	Sleep( 0.1 );
+	subs = sender.Subscribers();
+	CHECK( subs.size() == 1 && subs[ 0 ].visuals[ 0 ] == Visual::OnAir && subs[ 0 ].visuals[ 1 ] == Visual::Ready && subs[ 0 ].visuals[ 2 ] == Visual::None );
 	// The transmitter goes away: the receiver says so at once.
 	sender.Stop();
 	Sleep( 0.1 );

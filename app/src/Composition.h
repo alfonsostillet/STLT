@@ -6,6 +6,7 @@
 #include "fx/Effect.h"
 #include "render/ClipPlayer.h"
 #include "render/Fbo.h"
+#include "vjlink/Protocol.h"
 
 namespace stltvj
 {
@@ -133,6 +134,10 @@ struct Clip
 
 	EffectChain effects;
 
+	// VJ LINK: the DJ's track this clip belongs to (none when empty). When the track plays on a deck, the clip plays
+	// on its layer, at the track's place: pausing, jumping and looping with it.
+	vjlink::TrackId track;
+
 	// A generated clip (built-in or FFGL source) instead of a movie: `path` is empty, the source renders
 	// at the composition size. generatorState holds its settings until the registry recreates it.
 	std::string generatorId;
@@ -146,6 +151,9 @@ struct Clip
 	double time        = 0.0; // seconds into the movie
 	int bounceSign     = 1;
 	bool finished      = false;
+	// Placed by VJ LINK this frame (its track's deck): the playhead is `time`, moving when drivenPlaying.
+	bool driven        = false;
+	bool drivenPlaying = false;
 
 	bool Loaded() const { return player && player->Error().empty() && player->FrameCount() > 0; }
 	bool IsGenerator() const { return !generatorId.empty(); }

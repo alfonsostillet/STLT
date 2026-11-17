@@ -95,7 +95,8 @@ static void TestAnimation()
 	SetAnimationClock( clock );
 	CHECK( !AudioAnimationWanted( 10 ) ); // nobody listened for 11 seconds
 	for( int m = 0; m < (int)AnimMode::Count; ++m )
-		CHECK( AnimModeName( (AnimMode)m ) != nullptr && IsAudioMode( (AnimMode)m ) == ( m >= (int)AnimMode::AudioLevel ) );
+		CHECK( AnimModeName( (AnimMode)m ) != nullptr && IsAudioMode( (AnimMode)m ) == ( m >= (int)AnimMode::AudioLevel && m <= (int)AnimMode::AudioTreble ) &&
+		       IsTraktorMode( (AnimMode)m ) == ( m >= (int)AnimMode::TraktorDrums ) );
 	SetAnimationClock( AnimationClock() );
 }
 
