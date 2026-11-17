@@ -188,6 +188,30 @@ if(STLTVJ_WITH_FFMPEG)
     target_link_libraries(stltvj-media PUBLIC ffmpeg)
 endif()
 
+# VJ LINK: the decks of a DJ program over the network (the protocol, the sockets, Traktor's side). No OpenGL: the
+# transmitter, STLT and the tests share it.
+add_library(stltvj-vjlink STATIC
+    src/vjlink/Link.cpp
+    src/vjlink/Link.h
+    src/vjlink/Net.cpp
+    src/vjlink/Net.h
+    src/vjlink/Protocol.cpp
+    src/vjlink/Protocol.h
+    src/vjlink/TraktorBridge.cpp
+    src/vjlink/TraktorBridge.h
+)
+target_include_directories(stltvj-vjlink PUBLIC src PRIVATE "${THIRD_PARTY}/nlohmann")
+target_link_libraries(stltvj-vjlink PUBLIC Threads::Threads)
+if(WIN32)
+    target_compile_definitions(stltvj-vjlink PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(stltvj-vjlink PUBLIC ws2_32 iphlpapi)
+endif()
+
+# VJ LINK end to end: packets, clocks, decks followed between packets, Traktor's posts, two programs on this computer.
+add_executable(vjlink_test tests/vjlink_test.cpp)
+target_link_libraries(vjlink_test PRIVATE stltvj-vjlink)
+add_test(NAME vjlink_test COMMAND vjlink_test)
+
 if(STLTVJ_BUILD_APP)
 # Everything but the user interface: composition model, effects, FFGL host, rendering.
 add_library(stltvj-core STATIC
