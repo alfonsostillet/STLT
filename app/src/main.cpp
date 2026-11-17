@@ -53,6 +53,16 @@ int main( int argc, char** argv )
 			else
 				std::fprintf( stderr, "Ignoring %s %s (expected LAYER,COLUMN,PATH)\n", arg.c_str(), value.c_str() );
 		}
+		else if( arg == "--link-track" && hasValue )
+		{
+			// LAYER,COLUMN,ARTIST - TITLE: the clip there is linked to that Traktor track (VJ LINK; for tests).
+			std::string value = argv[ ++i ];
+			int layer = 0, column = 0, consumed = 0;
+			if( std::sscanf( value.c_str(), "%d,%d,%n", &layer, &column, &consumed ) == 2 && consumed > 0 && layer > 0 && column > 0 )
+				options.trackLinks.push_back( { layer, column, value.substr( (size_t)consumed ) } );
+			else
+				std::fprintf( stderr, "Ignoring --link-track %s (expected LAYER,COLUMN,ARTIST - TITLE)\n", value.c_str() );
+		}
 		else if( arg == "--source" && hasValue )
 		{
 			std::string value = argv[ ++i ];

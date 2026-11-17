@@ -385,7 +385,7 @@ void Compositor::DrawClipInto( Clip& clip, Fbo& target, const FrameInfo& frame, 
 	struct
 	{
 		float opacity, x, y, scale, rotation;
-	} shown = { clip.Shown( ClipProperty::Opacity, frame.beat, W, H ), clip.Shown( ClipProperty::PositionX, frame.beat, W, H ),
+	} shown = { clip.Shown( ClipProperty::Opacity, frame.beat, W, H ) * clip.trackGain, clip.Shown( ClipProperty::PositionX, frame.beat, W, H ),
 		        clip.Shown( ClipProperty::PositionY, frame.beat, W, H ), clip.Shown( ClipProperty::Scale, frame.beat, W, H ),
 		        clip.Shown( ClipProperty::Rotation, frame.beat, W, H ) };
 	Fbo* source = RenderClipSource( clip, compWidth, compHeight, frame );

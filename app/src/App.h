@@ -40,6 +40,7 @@ struct LaunchOptions
 		bool launch = true;
 	};
 	std::vector< ClipArg > clips;     // --clip layer,column,path (1-based, launched right away; --place: not launched)
+	std::vector< ClipArg > trackLinks; // --link-track layer,column,"artist - title" (path holds the track)
 	std::vector< ClipArg > sources;   // --source layer,column,effect-id (a generator, launched right away)
 	struct EffectArg
 	{

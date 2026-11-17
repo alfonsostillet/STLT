@@ -45,12 +45,14 @@ Open STLT. Nothing needs setting: VJ LINK is on by default (*Preferences > Sync*
 - deck C has "Cirrus" loaded;
 - deck D is empty.
 
-In STLT, a clip named `Kerala` starts by itself on its layer.
+In STLT, link a clip to deck A in the Traktor panel: it starts on its layer at once.
 
 ## How a clip follows a track
 
-- **Linking.** A clip is linked to a track by the track's title, artist and length. The file's path is not used, because it is the DJ computer's path. A clip whose name is the track's (`Kerala.mov`, `Bonobo - Kerala.mp4`, `03 Kerala`) is linked without doing anything.
-- **Starting.** A layer plays its linked clip when the track plays with its channel fader up. While the DJ only cues a track in the headphones (fader down), the visual waits. When two linked tracks play at once, the louder one holds the layer, so the DJ's mix becomes the layer's transition. The clip that is on keeps the layer until another is clearly louder.
+- **Linking.** In the **Traktor** panel (*View*), drag a deck onto a clip of the grid. Or right-click a clip and choose a track loaded now. The clip is then linked to that track by its title, artist and length, saved with the composition. The file's path is not used, because it is the DJ computer's path.
+- **Linked clips in the grid.** A linked clip shows its deck's letter in the deck's colour while the track is loaded, and a link sign while no deck has it. The *Traktor* section of the Clip panel shows the track, where it plays, an offset in seconds and *Unlink*.
+- **Starting.** A layer plays its linked clip when the track plays with its channel fader up. While the DJ only cues a track in the headphones (fader down), the visual waits. When two linked tracks play at once, the louder one holds the layer. The clip that is on keeps the layer until another is clearly louder.
+- **The fader.** A linked clip's opacity follows its track's channel fader, so the DJ's mix is the visuals' mix.
 - **Following.** The clip's playhead is the track's position, updated every frame. Small differences are taken up over a few frames; jumps (a cue, a hotcue, a beatjump, a loop going round) are followed at once.
 - **Pausing.** When the deck pauses, the clip holds its frame.
 - **Long and short movies.** A movie at least half as long as the track follows the track and holds its last frame at the end. A shorter movie is a loop that goes round with the track (or bounces, or plays once, as its play mode says).
@@ -109,6 +111,5 @@ Data goes to each receiver on its own (unicast), because Wi-Fi delivers broadcas
 
 ## Still to do
 
-- **Linking a clip by hand** in STLT: a Traktor panel with the decks, and a deck dragged onto a clip. This waits for the interface to be agreed.
 - **Measuring on two computers**, by cable and by Wi-Fi, and checking the script on macOS.
 - **The protocol's name.** "VJ LINK" is provisional.

@@ -517,7 +517,7 @@ static nlohmann::json SaveClip( const Clip& clip )
 	if( clip.syncBeats > 0 )
 		k[ "syncBeats" ] = clip.syncBeats;
 	if( !clip.track.Empty() )
-		k[ "track" ] = { { "title", clip.track.title }, { "artist", clip.track.artist }, { "length", clip.track.length } };
+		k[ "track" ] = { { "title", clip.track.title }, { "artist", clip.track.artist }, { "length", clip.track.length }, { "offset", clip.trackOffset } };
 	json animations = json::object();
 	for( int p = 0; p < (int)ClipProperty::Count; ++p )
 		if( clip.animations[ p ].mode != AnimMode::Off )
@@ -652,6 +652,7 @@ static Clip LoadClip( const nlohmann::json& k )
 			clip.track.title  = t.value( "title", "" );
 			clip.track.artist = t.value( "artist", "" );
 			clip.track.length = std::max( 0.0, t.value( "length", 0.0 ) );
+			clip.trackOffset  = t.value( "offset", 0.0 );
 		}
 		if( k.contains( "animations" ) && k[ "animations" ].is_object() )
 			for( int p = 0; p < (int)ClipProperty::Count; ++p )

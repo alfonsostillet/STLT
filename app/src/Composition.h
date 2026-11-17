@@ -137,6 +137,7 @@ struct Clip
 	// VJ LINK: the DJ's track this clip belongs to (none when empty). When the track plays on a deck, the clip plays
 	// on its layer, at the track's place: pausing, jumping and looping with it.
 	vjlink::TrackId track;
+	double trackOffset = 0; // seconds added to the track's position (a movie that starts a little earlier or later)
 
 	// A generated clip (built-in or FFGL source) instead of a movie: `path` is empty, the source renders
 	// at the composition size. generatorState holds its settings until the registry recreates it.
@@ -154,6 +155,7 @@ struct Clip
 	// Placed by VJ LINK this frame (its track's deck): the playhead is `time`, moving when drivenPlaying.
 	bool driven        = false;
 	bool drivenPlaying = false;
+	float trackGain    = 1; // a linked clip's opacity follows its track's channel fader
 
 	bool Loaded() const { return player && player->Error().empty() && player->FrameCount() > 0; }
 	bool IsGenerator() const { return !generatorId.empty(); }

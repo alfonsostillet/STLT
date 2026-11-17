@@ -34,6 +34,7 @@ const Flag kFlags[] = {
 	{ "Performance", &PanelVisibility::performance },
 	{ "Effects", &PanelVisibility::effects },
 	{ "Control", &PanelVisibility::control },
+	{ "Traktor", &PanelVisibility::traktor },
 	{ "AdvancedOutput", &PanelVisibility::advancedOutput },
 };
 
@@ -226,7 +227,7 @@ void Workspaces::BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size )
 		ImGui::DockBuilderDockWindow( panel::Timeline, top );
 		ImGui::DockBuilderDockWindow( panel::Clips, clipsNode );
 		ImGui::DockBuilderDockWindow( panel::CompositionMonitor, monitor );
-		for( const char* name : { panel::Effects, panel::Files, panel::Output, panel::Control, panel::Composition, panel::Performance } )
+		for( const char* name : { panel::Effects, panel::Files, panel::Output, panel::Control, panel::Composition, panel::Performance, panel::Traktor } )
 			ImGui::DockBuilderDockWindow( name, browser );
 		ImGui::DockBuilderFinish( dockspace );
 		return;
@@ -259,6 +260,7 @@ void Workspaces::BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size )
 	ImGui::DockBuilderDockWindow( panel::Output, browser );
 	ImGui::DockBuilderDockWindow( panel::Performance, browser );
 	ImGui::DockBuilderDockWindow( panel::Control, browser );
+	ImGui::DockBuilderDockWindow( panel::Traktor, browser );
 	ImGui::DockBuilderFinish( dockspace );
 }
 

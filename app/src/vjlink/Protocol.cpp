@@ -168,31 +168,6 @@ bool SameTrack( const TrackId& a, const TrackId& b )
 	return a.length <= 0 || b.length <= 0 || std::fabs( a.length - b.length ) < 1.0;
 }
 
-bool NameMatches( const std::string& clipName, const TrackInfo& track )
-{
-	auto bare = []( std::string s ) {
-		size_t slash = s.find_last_of( "/\\" );
-		if( slash != std::string::npos )
-			s = s.substr( slash + 1 );
-		size_t dot = s.find_last_of( '.' );
-		if( dot != std::string::npos && dot > 0 && s.size() - dot <= 5 )
-			s = s.substr( 0, dot );
-		s        = Folded( s );
-		size_t n = 0;
-		while( n < s.size() && std::isdigit( (unsigned char)s[ n ] ) )
-			++n;
-		if( n > 0 && n < s.size() && s[ n ] == ' ' )
-			s = s.substr( n + 1 );
-		return s;
-	};
-	std::string name = bare( clipName );
-	if( name.size() < 2 )
-		return false;
-	TrackId id = IdOf( track );
-	std::string title = Folded( id.title ), artist = Folded( id.artist );
-	return name == title || name == bare( id.title ) || ( !artist.empty() && ( name == artist + " " + title || name == title + " " + artist ) );
-}
-
 std::vector< uint8_t > Encode( const Packet& p )
 {
 	Writer w;

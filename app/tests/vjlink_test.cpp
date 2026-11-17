@@ -147,10 +147,6 @@ static void TestTrackIds()
 	untagged.file = "/Users/dj/Music/03 Cirrus.aiff";
 	CHECK( IdOf( untagged ).title == "03 Cirrus" );
 	CHECK( !SameTrack( TrackId(), TrackId() ) );
-	// Clips named after the track.
-	CHECK( NameMatches( "Kerala.mov", k ) && NameMatches( "Bonobo - Kerala.mp4", k ) && NameMatches( "03 Kerala", k ) );
-	CHECK( NameMatches( "KERALA", k ) && NameMatches( "/videos/kerala.mov", k ) );
-	CHECK( !NameMatches( "Kerala loop", k ) && !NameMatches( "Kong.mov", k ) && !NameMatches( "", k ) );
 }
 
 // The transmitter's clock runs 20 parts per million fast and 1234.5 s ahead; round trips take 0.2..0.6 ms, and one

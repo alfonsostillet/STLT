@@ -426,6 +426,8 @@ add_executable(stlt-vj WIN32 MACOSX_BUNDLE
     src/ui/Theme.h
     src/ui/TimelineUi.cpp
     src/ui/TimelineUi.h
+    src/ui/TraktorUi.cpp
+    src/ui/TraktorUi.h
     src/ui/Widgets.cpp
     src/ui/Widgets.h
     src/ui/Workspaces.cpp

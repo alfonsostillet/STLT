@@ -27,14 +27,10 @@ std::vector< std::string > SplitAddresses( const std::string& text )
 	return list;
 }
 
-// Whether `clip` belongs to `track`: linked to it, or (not linked to anything) named after it.
+// Whether `clip` is linked to `track`.
 bool Belongs( const Clip& clip, const vjlink::TrackInfo& track )
 {
-	if( !clip.Playable() )
-		return false;
-	if( !clip.track.Empty() )
-		return vjlink::SameTrack( clip.track, vjlink::IdOf( track ) );
-	return vjlink::NameMatches( clip.name.empty() ? clip.path : clip.name, track );
+	return clip.Playable() && !clip.track.Empty() && vjlink::SameTrack( clip.track, vjlink::IdOf( track ) );
 }
 
 // Where in the movie a track position falls. A movie at least half as long as the track follows it (and holds its
@@ -98,10 +94,14 @@ bool App::VjDeckFor( const Clip& clip, int& source, int& deck ) const
 
 void App::UpdateVjLink( double dt )
 {
-	// Nothing is driven unless found so again below.
+	// Nothing is driven unless found so again below; a clip linked to no track shows at its own opacity.
 	for( Layer& layer : composition.layers )
 		for( Clip& clip : layer.clips )
+		{
 			clip.driven = false;
+			if( clip.track.Empty() )
+				clip.trackGain = 1;
+		}
 	if( !prefs.vjlinkEnabled )
 	{
 		if( vjlink.Running() )
@@ -157,8 +157,9 @@ void App::UpdateVjLink( double dt )
 		tempoSync.SetTraktor( false, 0, 0, "" );
 	}
 
-	// Each layer plays the linked clip whose track is on: playing with its fader up, the loudest if several are
-	// (the DJ's mix becomes the layer's transition); a clip holds where it is when its deck stops.
+	// Each layer plays the linked clip whose track is on: playing with its fader up, the loudest if several are.
+	// A clip holds where it is when its deck stops, and its opacity follows the channel's fader: the DJ's mix is the
+	// visuals' mix.
 	std::vector< std::vector< vjlink::Visual > > visuals( vjSources.size(), std::vector< vjlink::Visual >( vjlink::kDecks, vjlink::Visual::None ) );
 	for( int l = 0; l < (int)composition.layers.size(); ++l )
 	{
@@ -216,7 +217,8 @@ void App::UpdateVjLink( double dt )
 			f.source       = src.id;
 			f.deck         = d;
 			f.jumps        = deck.jumps;
-			clip->time          = MovieTime( *clip, f.shown, src.tracks[ d ].length );
+			clip->time          = MovieTime( *clip, f.shown + clip->trackOffset, src.tracks[ d ].length );
+			clip->trackGain     = deck.state.volume; // the DJ's fader is the visual's
 			clip->driven        = true;
 			clip->drivenPlaying = playing && !composition.paused;
 			clip->finished      = false;

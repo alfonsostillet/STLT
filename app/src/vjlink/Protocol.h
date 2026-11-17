@@ -88,9 +88,6 @@ struct TrackId
 TrackId IdOf( const TrackInfo& info );
 // Same title and artist (case and spaces aside) and lengths within a second (0: any length).
 bool SameTrack( const TrackId& a, const TrackId& b );
-// A clip named after the track (its video file "Kerala.mov", "Bonobo - Kerala.mp4", "03 Kerala"): linked without
-// being linked by hand. Case, punctuation, the extension and a leading number do not count.
-bool NameMatches( const std::string& clipName, const TrackInfo& track );
 
 // ---- Packets
 

@@ -28,6 +28,7 @@
 #include "ui/FileDialogs.h"
 #include "chaser/ChaserLink.h"
 #include "ui/Panels.h"
+#include "ui/TraktorUi.h"
 #include "ui/PreferencesUi.h"
 #include "ui/TimelineUi.h"
 #include "ui/Theme.h"
@@ -293,6 +294,13 @@ bool App::Init( const LaunchOptions& launch )
 		if( clip.launch )
 			Launch( clip.layer - 1, clip.column - 1, true );
 	}
+	for( const LaunchOptions::ClipArg& link : options.trackLinks )
+		if( Clip* clip = composition.ClipAt( link.layer - 1, link.column - 1 ) )
+		{
+			size_t dash        = link.path.find( " - " );
+			clip->track.artist = dash == std::string::npos ? "" : link.path.substr( 0, dash );
+			clip->track.title  = dash == std::string::npos ? link.path : link.path.substr( dash + 3 );
+		}
 	for( const LaunchOptions::ClipArg& source : options.sources )
 	{
 		LoadGenerator( source.layer - 1, source.column - 1, source.path );
@@ -3004,6 +3012,8 @@ void App::DrawUi()
 		DrawOutputPanel( *this );
 	if( panels.performance )
 		DrawPerformancePanel( *this );
+	if( panels.traktor )
+		DrawTraktorPanel( *this );
 	if( panels.effects )
 		DrawEffectsPanel( *this );
 	DrawPreferences( *this );

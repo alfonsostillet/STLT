@@ -1,4 +1,5 @@
 #include "ui/Panels.h"
+#include "ui/TraktorUi.h"
 #include <GLFW/glfw3.h>
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -755,6 +756,7 @@ void DrawMainMenu( App& app )
 			ImGui::MenuItem( panel::Performance, nullptr, &p.performance );
 			ImGui::MenuItem( panel::Effects, nullptr, &p.effects );
 			ImGui::MenuItem( panel::Control, nullptr, &p.control );
+			ImGui::MenuItem( panel::Traktor, nullptr, &p.traktor );
 			ImGui::MenuItem( panel::AdvancedOutput, nullptr, &p.advancedOutput );
 			ImGui::Separator();
 			// The size of the whole interface: smaller on a small laptop, bigger on a large monitor.
@@ -2188,6 +2190,8 @@ static void DrawDeck( App& app, bool layersPart )
 						TextBadge( draw, ImVec2( bx, pic0.y + Ui( 3 ) ), onLayer, theme::Accent, theme::OnAccent, 0, false );
 					}
 					float rx = pic1.x - Ui( 3 );
+					if( float w = DrawTrackBadge( app, clip, draw, ImVec2( rx, pic0.y + Ui( 3 ) ) ) )
+						rx -= w + Ui( 3 );
 					if( clip.trigger != TriggerStyle::Normal )
 						rx -= TextBadge( draw, ImVec2( rx, pic0.y + Ui( 3 ) ), clip.trigger == TriggerStyle::Toggle ? "T" : "P", IM_COL32( 0, 0, 0, 190 ), IM_COL32_WHITE, 0, true ) + Ui( 3 );
 					if( clip.ignoreColumn )
@@ -2321,6 +2325,10 @@ static void DrawDeck( App& app, bool layersPart )
 					}
 					if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kFilePayload ) )
 						pendingLoad = { l, c, { std::string( (const char*)payload->Data ) }, {} };
+					// A Traktor deck (VJ LINK): the clip is linked to its track.
+					if( !clip.Empty() )
+						if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kDeckPayload ) )
+							LinkClipToDeck( app, clip, *(const DeckRef*)payload->Data );
 					if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kEffectPayload ) )
 					{
 						std::string id                = (const char*)payload->Data;
@@ -2345,6 +2353,7 @@ static void DrawDeck( App& app, bool layersPart )
 						                [ &app, l, c ]( const std::vector< std::string >& paths ) { LoadInto( app, l, c, paths ); } );
 					if( ImGui::MenuItem( "Remove Clip", nullptr, false, !clip.Empty() ) )
 						app.RemoveClip( l, c );
+					TrackMenuItems( app, clip );
 					ImGui::EndPopup();
 				}
 				if( app.learning )
@@ -2984,6 +2993,8 @@ void DrawClipPanel( App& app )
 			ImGui::TextColored( ImVec4( 0.95f, 0.7f, 0.3f, 1 ), "%s: decoded by the processor, heavy with many layers. Convert to HAP or DXV for the best performance.",
 			                    source.CodecName().c_str() );
 	}
+
+	TrackSection( app, *clip );
 
 	Composition& comp      = app.composition;
 	std::string clipAddress = "/composition/layers/" + std::to_string( comp.selectedRow + 1 ) + "/clips/" + std::to_string( comp.selectedColumn + 1 );
