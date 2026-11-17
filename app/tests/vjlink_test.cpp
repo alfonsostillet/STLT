@@ -327,18 +327,16 @@ static void TestTraktorPosts()
 	TrackInfo tracks[ kDecks ];
 	int decksCalls = 0;
 	std::string error;
-	// Parse alone, without the server.
-	struct Capture
-	{
-		DeckState* got;
-		int* calls;
-	} capture{ got, &decksCalls };
-	(void)capture;
+	std::mutex mutex; // the handlers run on the bridge's thread
 	TraktorBridge::DecksHandler onDecks = [ & ]( const DeckState* d, double ) {
+		std::lock_guard< std::mutex > lock( mutex );
 		std::copy( d, d + kDecks, got );
 		++decksCalls;
 	};
-	TraktorBridge::TrackHandler onTrack = [ & ]( int deck, const TrackInfo& t ) { tracks[ deck ] = t; };
+	TraktorBridge::TrackHandler onTrack = [ & ]( int deck, const TrackInfo& t ) {
+		std::lock_guard< std::mutex > lock( mutex );
+		tracks[ deck ] = t;
+	};
 	// The server on a test port, and a post as Traktor's script makes it.
 	CHECK( bridge.Start( onDecks, onTrack, error, 19125 ) );
 	std::string body    = kPost;
@@ -369,21 +367,23 @@ static void TestTraktorPosts()
 	std::string reply = post( request );
 	CHECK( reply.find( "204" ) != std::string::npos && reply.find( "Connection: close" ) != std::string::npos );
 	Sleep( 0.05 );
+	std::unique_lock< std::mutex > lock( mutex );
 	CHECK( decksCalls == 1 && bridge.Posts() == 1 && bridge.Silence() < 1 );
 	CHECK( got[ 0 ].loaded && got[ 0 ].playing && got[ 0 ].position == 61.5 && got[ 0 ].bpm == 62.5f && std::fabs( got[ 0 ].stems[ 2 ] - 0.64f ) < 1e-6 );
 	CHECK( got[ 1 ].loaded && !got[ 1 ].playing && !got[ 2 ].loaded );
 	CHECK( tracks[ 0 ].title == "Kerala" && tracks[ 0 ].hotcues[ 3 ].exists && tracks[ 0 ].hotcues[ 3 ].type == 5 && tracks[ 0 ].hotcues[ 3 ].length == 7.68 );
 	CHECK( tracks[ 0 ].hotcues[ 0 ].name == "Intro" && !tracks[ 0 ].hotcues[ 1 ].exists && tracks[ 1 ].title == "Kong" );
+	lock.unlock();
 	// A GET is the status page.
 	reply = post( "GET / HTTP/1.1\r\nHost: x\r\n\r\n" );
 	CHECK( reply.find( "200 OK" ) != std::string::npos && reply.find( "1 posts" ) != std::string::npos );
+	bridge.Stop(); // what follows is parsed here, not on the bridge's thread
 	// A second session (the script loaded twice) is left out while the first one posts.
 	std::string other = body;
 	other.replace( other.find( "\"s1\"" ), 4, "\"s2\"" );
 	CHECK( bridge.Parse( other, Now() ) );
 	CHECK( decksCalls == 1 );
 	CHECK( !bridge.Parse( "not json", Now() ) );
-	bridge.Stop();
 	// The port is free again.
 	CHECK( bridge.Start( onDecks, onTrack, error, 19125 ) );
 	bridge.Stop();
