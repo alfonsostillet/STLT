@@ -1439,7 +1439,7 @@ void App::UpdateAudioInput( double now, double dt )
 		for( int b = 0; b < AudioInput::BandCount; ++b )
 			clock.audio[ b ] = audioInput.Value( (AudioInput::Band)b );
 	}
-	std::copy( vjStems, vjStems + 5, clock.traktor );
+	std::copy( niStems, niStems + 5, clock.traktor );
 	SetAnimationClock( clock );
 }
 
@@ -2632,7 +2632,7 @@ void App::UpdatePlayback( double dt )
 				return; // generators run on composition time
 			if( clip.driven )
 			{
-				// VJ LINK placed it at its track's position.
+				// NI LINK placed it at its track's position.
 				clip.player->Update( clip.CurrentFrame(), clip.drivenPlaying ? 1 : 0 );
 				return;
 			}
@@ -2793,7 +2793,7 @@ void App::Frame()
 	PollRemote();
 	if( control.midiEnabled )
 		UpdateLights( !control.midiLights );
-	UpdateVjLink( dt );
+	UpdateNiLink( dt );
 	UpdateAudioInput( now, dt );
 	UpdatePlayback( dt );
 	UpdateTimeline( dt );

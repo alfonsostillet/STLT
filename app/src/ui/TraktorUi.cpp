@@ -20,8 +20,8 @@ const ImU32 kOnline           = IM_COL32( 169, 210, 58, 255 );
 
 int SourceIndex( const App& app, uint32_t id )
 {
-	for( int s = 0; s < (int)app.vjSources.size(); ++s )
-		if( app.vjSources[ s ].id == id )
+	for( int s = 0; s < (int)app.niSources.size(); ++s )
+		if( app.niSources[ s ].id == id )
 			return s;
 	return -1;
 }
@@ -67,15 +67,15 @@ void LinkSign( ImDrawList* draw, ImVec2 c, float s, ImU32 colour )
 }
 
 // The clips of the grid linked to `track` (the deck on show), as layer/column.
-std::vector< std::pair< int, int > > LinkedClips( App& app, const vjlink::TrackInfo& track )
+std::vector< std::pair< int, int > > LinkedClips( App& app, const nilink::TrackInfo& track )
 {
 	std::vector< std::pair< int, int > > found;
-	vjlink::TrackId id = vjlink::IdOf( track );
+	nilink::TrackId id = nilink::IdOf( track );
 	for( int l = 0; l < (int)app.composition.layers.size(); ++l )
 	{
 		const Layer& layer = app.composition.layers[ l ];
 		for( int c = 0; c < (int)layer.clips.size(); ++c )
-			if( !layer.clips[ c ].track.Empty() && vjlink::SameTrack( layer.clips[ c ].track, id ) )
+			if( !layer.clips[ c ].track.Empty() && nilink::SameTrack( layer.clips[ c ].track, id ) )
 				found.emplace_back( l, c );
 	}
 	return found;
@@ -83,13 +83,13 @@ std::vector< std::pair< int, int > > LinkedClips( App& app, const vjlink::TrackI
 
 void DrawDeck( App& app, int s, int d, float width )
 {
-	const vjlink::Source& src  = app.vjSources[ s ];
-	const vjlink::DeckNow& now = src.decks[ d ];
-	const vjlink::DeckState& st = now.state;
+	const nilink::Source& src  = app.niSources[ s ];
+	const nilink::DeckNow& now = src.decks[ d ];
+	const nilink::DeckState& st = now.state;
 	const UiFonts& f           = Fonts();
 	ImDrawList* draw           = ImGui::GetWindowDrawList();
 	bool loaded                = now.present && st.loaded;
-	const vjlink::TrackInfo* t = loaded && src.hasTrack[ d ] ? &src.tracks[ d ] : nullptr;
+	const nilink::TrackInfo* t = loaded && src.hasTrack[ d ] ? &src.tracks[ d ] : nullptr;
 	// Narrow (the panel docked among others): the linked clip on a line of its own under the meters.
 	bool narrow                = width < Ui( 600 );
 	float h                    = !loaded ? Ui( 34 ) : narrow ? Ui( 114 ) : Ui( 92 );
@@ -150,7 +150,7 @@ void DrawDeck( App& app, int s, int d, float width )
 	draw->AddRectFilled( b0, ImVec2( xAt( now.position ), b1.y ), IM_COL32( 42, 36, 28, 255 ) );
 	if( st.inLoop && st.loopLength > 0 )
 		draw->AddRectFilled( ImVec2( xAt( st.loopStart ), b0.y ), ImVec2( xAt( st.loopStart + st.loopLength ), b1.y ), IM_COL32( 169, 210, 58, 60 ) );
-	for( int k = 0; t && k < vjlink::kHotcues; ++k )
+	for( int k = 0; t && k < nilink::kHotcues; ++k )
 		if( t->hotcues[ k ].exists && t->hotcues[ k ].type != 4 ) // AutoGrid markers aside
 		{
 			float hx = xAt( t->hotcues[ k ].start );
@@ -164,7 +164,7 @@ void DrawDeck( App& app, int s, int d, float width )
 	float sx = x0;
 	ImFont* small = f.small;
 	if( t && t->stems )
-		for( int k = 0; k < vjlink::kStems; ++k )
+		for( int k = 0; k < nilink::kStems; ++k )
 		{
 			draw->AddText( small, small->FontSize, ImVec2( sx, y ), theme::TextFaint, kStemNames[ k ] );
 			sx += TextWidth( small, kStemNames[ k ] ) + Ui( 4 );
@@ -233,10 +233,10 @@ ImU32 DeckColour( int deck )
 bool LinkClipToDeck( App& app, Clip& clip, const DeckRef& ref )
 {
 	int s = SourceIndex( app, ref.source );
-	if( s < 0 || ref.deck < 0 || ref.deck >= vjlink::kDecks || !app.vjSources[ s ].hasTrack[ ref.deck ] || clip.Empty() )
+	if( s < 0 || ref.deck < 0 || ref.deck >= nilink::kDecks || !app.niSources[ s ].hasTrack[ ref.deck ] || clip.Empty() )
 		return false;
-	const vjlink::TrackInfo& t = app.vjSources[ s ].tracks[ ref.deck ];
-	clip.track                 = vjlink::IdOf( t );
+	const nilink::TrackInfo& t = app.niSources[ s ].tracks[ ref.deck ];
+	clip.track                 = nilink::IdOf( t );
 	clip.trackOffset           = 0;
 	app.SetStatus( "Linked " + clip.name + " to " + clip.track.title + ( clip.track.artist.empty() ? "" : " (" + clip.track.artist + ")" ) );
 	return true;
@@ -248,7 +248,7 @@ float DrawTrackBadge( App& app, const Clip& clip, ImDrawList* draw, ImVec2 topRi
 		return 0;
 	int s, d;
 	float size = Fonts().small->FontSize + Ui( 2 );
-	if( clip.Playable() && app.VjDeckFor( clip, s, d ) )
+	if( clip.Playable() && app.NiDeckFor( clip, s, d ) )
 	{
 		char letter[ 2 ] = { (char)( 'A' + d ), 0 };
 		return TextBadge( draw, topRight, letter, DeckColour( d ), IM_COL32( 17, 17, 17, 255 ), size, true );
@@ -265,23 +265,23 @@ void TrackMenuItems( App& app, Clip& clip )
 	if( clip.Empty() )
 		return;
 	bool any = false;
-	for( const vjlink::Source& src : app.vjSources )
-		for( int d = 0; d < vjlink::kDecks; ++d )
+	for( const nilink::Source& src : app.niSources )
+		for( int d = 0; d < nilink::kDecks; ++d )
 			any |= src.online && src.hasTrack[ d ];
 	if( !any && clip.track.Empty() )
 		return;
 	ImGui::Separator();
 	ImGui::TextDisabled( "Link to a Traktor track" );
-	for( int s = 0; s < (int)app.vjSources.size(); ++s )
+	for( int s = 0; s < (int)app.niSources.size(); ++s )
 	{
-		const vjlink::Source& src = app.vjSources[ s ];
-		for( int d = 0; d < vjlink::kDecks; ++d )
+		const nilink::Source& src = app.niSources[ s ];
+		for( int d = 0; d < nilink::kDecks; ++d )
 		{
 			if( !src.online || !src.hasTrack[ d ] )
 				continue;
-			const vjlink::TrackInfo& t = src.tracks[ d ];
-			bool linked = vjlink::SameTrack( clip.track, vjlink::IdOf( t ) );
-			std::string label = app.VjDeckName( s, d ) + "   " + ( t.title.empty() ? "Untitled" : t.title ) + ( t.artist.empty() ? "" : "  -  " + t.artist );
+			const nilink::TrackInfo& t = src.tracks[ d ];
+			bool linked = nilink::SameTrack( clip.track, nilink::IdOf( t ) );
+			std::string label = app.NiDeckName( s, d ) + "   " + ( t.title.empty() ? "Untitled" : t.title ) + ( t.artist.empty() ? "" : "  -  " + t.artist );
 			ImGui::PushID( s * 8 + d );
 			ImGui::PushStyleColor( ImGuiCol_Text, ImGui::ColorConvertU32ToFloat4( DeckColour( d ) ) );
 			bool picked = ImGui::MenuItem( label.c_str(), nullptr, linked );
@@ -293,7 +293,7 @@ void TrackMenuItems( App& app, Clip& clip )
 	}
 	if( ImGui::MenuItem( "Unlink from Traktor", nullptr, false, !clip.track.Empty() ) )
 	{
-		clip.track       = vjlink::TrackId();
+		clip.track       = nilink::TrackId();
 		clip.trackOffset = 0;
 	}
 }
@@ -312,10 +312,10 @@ void TrackSection( App& app, Clip& clip )
 	int s, d;
 	ImGui::TextDisabled( "Now" );
 	ImGui::SameLine( Ui( 90 ) );
-	if( clip.Playable() && app.VjDeckFor( clip, s, d ) )
+	if( clip.Playable() && app.NiDeckFor( clip, s, d ) )
 	{
-		const vjlink::DeckNow& deck = app.vjSources[ s ].decks[ d ];
-		ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( DeckColour( d ) ), "deck %s", app.VjDeckName( s, d ).c_str() );
+		const nilink::DeckNow& deck = app.niSources[ s ].decks[ d ];
+		ImGui::TextColored( ImGui::ColorConvertU32ToFloat4( DeckColour( d ) ), "deck %s", app.NiDeckName( s, d ).c_str() );
 		ImGui::SameLine();
 		ImGui::Text( "%s  %s  fader %d%%", deck.state.playing ? "playing" : "paused", Clock( deck.position, false ).c_str(), (int)std::lround( deck.state.volume * 100 ) );
 	}
@@ -340,7 +340,7 @@ void TrackSection( App& app, Clip& clip )
 		ImGui::SetTooltip( "Seconds added to the track's position: the movie a little ahead (+) or behind (-)" );
 	if( ImGui::Button( "Unlink" ) )
 	{
-		clip.track       = vjlink::TrackId();
+		clip.track       = nilink::TrackId();
 		clip.trackOffset = 0;
 	}
 }
@@ -349,7 +349,7 @@ void DrawTraktorPanel( App& app )
 {
 	// The first time a DJ shows up, the panel comes to the front of its tabs.
 	static bool shownOnce = false;
-	bool anyDj            = std::any_of( app.vjSources.begin(), app.vjSources.end(), []( const vjlink::Source& s ) { return s.online; } );
+	bool anyDj            = std::any_of( app.niSources.begin(), app.niSources.end(), []( const nilink::Source& s ) { return s.online; } );
 	if( anyDj && !shownOnce )
 	{
 		ImGui::SetNextWindowFocus();
@@ -362,21 +362,21 @@ void DrawTraktorPanel( App& app )
 	}
 	ImDrawList* draw = ImGui::GetWindowDrawList();
 	float width      = ImGui::GetContentRegionAvail().x;
-	if( !app.prefs.vjlinkEnabled )
+	if( !app.prefs.nilinkEnabled )
 	{
-		ImGui::TextDisabled( "VJ LINK is off." );
+		ImGui::TextDisabled( "NI LINK is off." );
 		if( ImGui::Button( "Turn on" ) )
 		{
-			app.prefs.vjlinkEnabled = true;
+			app.prefs.nilinkEnabled = true;
 			app.ApplyPreferences( false );
 		}
 		ImGui::End();
 		return;
 	}
 	int shown = 0;
-	for( int s = 0; s < (int)app.vjSources.size(); ++s )
+	for( int s = 0; s < (int)app.niSources.size(); ++s )
 	{
-		const vjlink::Source& src = app.vjSources[ s ];
+		const nilink::Source& src = app.niSources[ s ];
 		if( !src.online )
 			continue;
 		++shown;
@@ -389,15 +389,15 @@ void DrawTraktorPanel( App& app )
 		char info[ 96 ];
 		std::snprintf( info, sizeof( info ), "%s \xC2\xB7 %.1f ms", sending ? src.program.c_str() : "Traktor not sending", src.roundTrip * 1000 / 2 );
 		draw->AddText( ImVec2( h0.x + Ui( 26 ) + ImGui::CalcTextSize( src.name.c_str() ).x, h0.y + Ui( 5 ) ), theme::TextDim, info );
-		if( app.vjLeadDeck >= 0 && app.vjLeadSource == src.id && app.tempoSync.Following() == TempoSync::Source::Traktor )
+		if( app.niLeadDeck >= 0 && app.niLeadSource == src.id && app.tempoSync.Following() == TempoSync::Source::Traktor )
 		{
 			char tempo[ 64 ];
-			std::snprintf( tempo, sizeof( tempo ), "tempo from deck %c \xC2\xB7 %.2f", 'A' + app.vjLeadDeck, app.composition.bpm );
+			std::snprintf( tempo, sizeof( tempo ), "tempo from deck %c \xC2\xB7 %.2f", 'A' + app.niLeadDeck, app.composition.bpm );
 			float tw = ImGui::CalcTextSize( tempo ).x;
 			draw->AddText( ImVec2( h0.x + width - tw - Ui( 6 ), h0.y + Ui( 5 ) ), theme::TextDim, tempo );
 		}
 		ImGui::Dummy( ImVec2( width, hh ) );
-		for( int d = 0; d < vjlink::kDecks; ++d )
+		for( int d = 0; d < nilink::kDecks; ++d )
 		{
 			DrawDeck( app, s, d, width );
 		}
@@ -406,9 +406,9 @@ void DrawTraktorPanel( App& app )
 	if( !shown )
 	{
 		ImGui::Spacing();
-		ImGui::TextDisabled( app.vjlink.Running() ? "No DJ found yet." : "Not listening: the network port is taken." );
+		ImGui::TextDisabled( app.nilink.Running() ? "No DJ found yet." : "Not listening: the network port is taken." );
 		ImGui::PushTextWrapPos( 0 );
-		ImGui::TextDisabled( "On the DJ's computer, open the VJ LINK transmitter next to Traktor, on the same network. "
+		ImGui::TextDisabled( "On the DJ's computer, open the NI LINK transmitter next to Traktor, on the same network. "
 		                     "Its decks show here by themselves (Preferences > Sync for networks without broadcast)." );
 		ImGui::PopTextWrapPos();
 	}

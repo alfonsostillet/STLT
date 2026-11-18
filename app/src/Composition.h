@@ -6,7 +6,7 @@
 #include "fx/Effect.h"
 #include "render/ClipPlayer.h"
 #include "render/Fbo.h"
-#include "vjlink/Protocol.h"
+#include "nilink/Protocol.h"
 
 namespace stltvj
 {
@@ -134,9 +134,9 @@ struct Clip
 
 	EffectChain effects;
 
-	// VJ LINK: the DJ's track this clip belongs to (none when empty). When the track plays on a deck, the clip plays
+	// NI LINK: the DJ's track this clip belongs to (none when empty). When the track plays on a deck, the clip plays
 	// on its layer, at the track's place: pausing, jumping and looping with it.
-	vjlink::TrackId track;
+	nilink::TrackId track;
 	double trackOffset = 0; // seconds added to the track's position (a movie that starts a little earlier or later)
 
 	// A generated clip (built-in or FFGL source) instead of a movie: `path` is empty, the source renders
@@ -152,7 +152,7 @@ struct Clip
 	double time        = 0.0; // seconds into the movie
 	int bounceSign     = 1;
 	bool finished      = false;
-	// Placed by VJ LINK this frame (its track's deck): the playhead is `time`, moving when drivenPlaying.
+	// Placed by NI LINK this frame (its track's deck): the playhead is `time`, moving when drivenPlaying.
 	bool driven        = false;
 	bool drivenPlaying = false;
 	float trackGain    = 1; // a linked clip's opacity follows its track's channel fader

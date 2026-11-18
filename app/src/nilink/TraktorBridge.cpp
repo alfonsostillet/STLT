@@ -1,11 +1,11 @@
-#include "vjlink/TraktorBridge.h"
+#include "nilink/TraktorBridge.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstdlib>
 #include <cstring>
 #include <json.hpp>
-#include "vjlink/Net.h"
+#include "nilink/Net.h"
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -21,7 +21,7 @@
 #include <unistd.h>
 #endif
 
-namespace vjlink
+namespace nilink
 {
 namespace
 {
@@ -197,7 +197,7 @@ void TraktorBridge::Loop()
 		}
 		if( whole )
 		{
-			std::string text = "VJ LINK transmitter: " + std::to_string( posts.load() ) + " posts from Traktor, " +
+			std::string text = "NI LINK transmitter: " + std::to_string( posts.load() ) + " posts from Traktor, " +
 			                   std::to_string( (int)std::lround( rate.load() ) ) + " a second.\n";
 			std::string reply = "HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: " +
 			                    std::to_string( text.size() ) + "\r\n\r\n" + text;

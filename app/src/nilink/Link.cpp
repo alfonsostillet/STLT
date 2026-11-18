@@ -1,10 +1,10 @@
-#include "vjlink/Link.h"
+#include "nilink/Link.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <random>
 
-namespace vjlink
+namespace nilink
 {
 namespace
 {

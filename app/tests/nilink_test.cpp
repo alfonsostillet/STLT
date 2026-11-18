@@ -1,4 +1,4 @@
-// Tests for VJ LINK: packets, the clock difference, decks followed between packets, Traktor's posts, and a
+// Tests for NI LINK: packets, the clock difference, decks followed between packets, Traktor's posts, and a
 // transmitter and a receiver on this computer, straight and through a network that delays, jitters and loses.
 // The measurements are printed: they are the numbers to compare with the real thing on two computers.
 #include <algorithm>
@@ -10,10 +10,10 @@
 #include <random>
 #include <thread>
 #include <vector>
-#include "vjlink/Link.h"
-#include "vjlink/Net.h"
-#include "vjlink/Protocol.h"
-#include "vjlink/TraktorBridge.h"
+#include "nilink/Link.h"
+#include "nilink/Net.h"
+#include "nilink/Protocol.h"
+#include "nilink/TraktorBridge.h"
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
@@ -26,7 +26,7 @@
 #include <unistd.h>
 #endif
 
-using namespace vjlink;
+using namespace nilink;
 
 static int failures = 0;
 
@@ -633,6 +633,6 @@ int main()
 	if( failures )
 		std::fprintf( stderr, "%d check(s) failed\n", failures );
 	else
-		std::printf( "vjlink_test: all passed\n" );
+		std::printf( "nilink_test: all passed\n" );
 	return failures ? 1 : 0;
 }

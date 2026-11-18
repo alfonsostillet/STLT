@@ -4,10 +4,10 @@
 #include <string>
 #include <vector>
 
-// The few socket calls VJ LINK needs, the same on Windows, macOS and Linux.
-namespace vjlink
+// The few socket calls NI LINK needs, the same on Windows, macOS and Linux.
+namespace nilink
 {
-// Seconds on the steady clock (never jumps), as every time in VJ LINK is kept.
+// Seconds on the steady clock (never jumps), as every time in NI LINK is kept.
 double Now();
 // This computer's name, as the other side shows it.
 std::string HostName();

@@ -1,4 +1,4 @@
-#include "vjlink/Net.h"
+#include "nilink/Net.h"
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -22,7 +22,7 @@
 #include <unistd.h>
 #endif
 
-namespace vjlink
+namespace nilink
 {
 namespace
 {

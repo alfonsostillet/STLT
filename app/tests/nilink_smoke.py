@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""VJ LINK end to end on one computer: the transmitter sends its made-up decks (--demo: deck A plays "Kerala" with
+"""NI LINK end to end on one computer: the transmitter sends its made-up decks (--demo: deck A plays "Kerala" with
 its fader up, deck B has "Kong" loaded and paused) and the real program, with clips put in their cells but not
 launched, must find it by itself, launch the clip linked to the track that plays and leave the other alone.
 
-usage: vjlink_smoke.py <STLT executable> <transmitter executable> <fixtures folder>
+usage: nilink_smoke.py <STLT executable> <transmitter executable> <fixtures folder>
 """
 import os
 import subprocess
@@ -31,7 +31,7 @@ def read_bmp(path):
 
 
 def run(name, placed, frames=400, links=()):
-    home = tempfile.mkdtemp(prefix="stltvj-vjlink-")
+    home = tempfile.mkdtemp(prefix="stltvj-nilink-")
     env = dict(os.environ, STLTVJ_NO_AUDIO="1", APPDATA=home, HOME=home, XDG_CONFIG_HOME=home, GALLIUM_DRIVER="llvmpipe")
     capture = os.path.join(home, "capture.bmp")
     args = [EXE, "--fresh", "--size", "1280x720", "--capture", capture, "--capture-composition", "--frames", str(frames)]
@@ -89,6 +89,6 @@ finally:
         transmitter.kill()
 
 if failures:
-    print("VJ LINK smoke test FAILED:\n" + "\n".join(failures))
+    print("NI LINK smoke test FAILED:\n" + "\n".join(failures))
     sys.exit(1)
-print("VJ LINK smoke test passed")
+print("NI LINK smoke test passed")

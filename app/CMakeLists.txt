@@ -188,29 +188,29 @@ if(STLTVJ_WITH_FFMPEG)
     target_link_libraries(stltvj-media PUBLIC ffmpeg)
 endif()
 
-# VJ LINK: the decks of a DJ program over the network (the protocol, the sockets, Traktor's side). No OpenGL: the
+# NI LINK: the decks of a DJ program over the network (the protocol, the sockets, Traktor's side). No OpenGL: the
 # transmitter, STLT and the tests share it.
-add_library(stltvj-vjlink STATIC
-    src/vjlink/Link.cpp
-    src/vjlink/Link.h
-    src/vjlink/Net.cpp
-    src/vjlink/Net.h
-    src/vjlink/Protocol.cpp
-    src/vjlink/Protocol.h
-    src/vjlink/TraktorBridge.cpp
-    src/vjlink/TraktorBridge.h
+add_library(stltvj-nilink STATIC
+    src/nilink/Link.cpp
+    src/nilink/Link.h
+    src/nilink/Net.cpp
+    src/nilink/Net.h
+    src/nilink/Protocol.cpp
+    src/nilink/Protocol.h
+    src/nilink/TraktorBridge.cpp
+    src/nilink/TraktorBridge.h
 )
-target_include_directories(stltvj-vjlink PUBLIC src PRIVATE "${THIRD_PARTY}/nlohmann")
-target_link_libraries(stltvj-vjlink PUBLIC Threads::Threads)
+target_include_directories(stltvj-nilink PUBLIC src PRIVATE "${THIRD_PARTY}/nlohmann")
+target_link_libraries(stltvj-nilink PUBLIC Threads::Threads)
 if(WIN32)
-    target_compile_definitions(stltvj-vjlink PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-    target_link_libraries(stltvj-vjlink PUBLIC ws2_32 iphlpapi)
+    target_compile_definitions(stltvj-nilink PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(stltvj-nilink PUBLIC ws2_32 iphlpapi)
 endif()
 
-# VJ LINK end to end: packets, clocks, decks followed between packets, Traktor's posts, two programs on this computer.
-add_executable(vjlink_test tests/vjlink_test.cpp)
-target_link_libraries(vjlink_test PRIVATE stltvj-vjlink)
-add_test(NAME vjlink_test COMMAND vjlink_test)
+# NI LINK end to end: packets, clocks, decks followed between packets, Traktor's posts, two programs on this computer.
+add_executable(nilink_test tests/nilink_test.cpp)
+target_link_libraries(nilink_test PRIVATE stltvj-nilink)
+add_test(NAME nilink_test COMMAND nilink_test)
 
 if(STLTVJ_BUILD_APP)
 # Everything but the user interface: composition model, effects, FFGL host, rendering.
@@ -281,7 +281,7 @@ add_library(stltvj-core STATIC
 )
 target_include_directories(stltvj-core PUBLIC src third_party/khronos "${THIRD_PARTY}/nlohmann")
 target_compile_definitions(stltvj-core PUBLIC GLFW_INCLUDE_NONE STLT_VERSION="${STLT_VERSION}")
-target_link_libraries(stltvj-core PUBLIC stltvj-media stltvj-vjlink glfw)
+target_link_libraries(stltvj-core PUBLIC stltvj-media stltvj-nilink glfw)
 if(WIN32)
     target_compile_definitions(stltvj-core PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
     target_compile_options(stltvj-core PUBLIC /utf-8)
@@ -407,7 +407,7 @@ add_executable(stlt-vj WIN32 MACOSX_BUNDLE
     src/main.cpp
     src/App.cpp
     src/App.h
-    src/AppVjLink.cpp
+    src/AppNiLink.cpp
     src/ui/AdvancedOutputUi.cpp
     src/ui/AdvancedOutputUi.h
     src/ui/StageUi.cpp
@@ -460,43 +460,43 @@ endif()
 add_custom_command(TARGET stlt-vj POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/isf" "${STLTVJ_ISF_DIR}")
 
-# The VJ LINK transmitter, for the DJ's computer: Traktor's decks out to the network (transmitter/main.cpp). Its
+# The NI LINK transmitter, for the DJ's computer: Traktor's decks out to the network (transmitter/main.cpp). Its
 # QML script for Traktor is compiled in, and put into Traktor from the program.
-set(VJLINK_QML
-    "${CMAKE_CURRENT_SOURCE_DIR}/resources/vjlink/qml/TraktorVJLink.qml"
-    "${CMAKE_CURRENT_SOURCE_DIR}/resources/vjlink/qml/VJLinkDeck.qml")
-set(VJLINK_QML_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/generated/VJLinkQml.cpp")
-add_custom_command(OUTPUT "${VJLINK_QML_SOURCE}"
-    COMMAND ${CMAKE_COMMAND} "-DOUTPUT=${VJLINK_QML_SOURCE}" "-DFILES=${VJLINK_QML}" -DNAMESPACE=vjlink -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedText.cmake"
-    DEPENDS ${VJLINK_QML} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedText.cmake"
-    COMMENT "Embedding the VJ LINK script for Traktor"
+set(NILINK_QML
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/nilink/qml/TraktorNILink.qml"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/nilink/qml/NILinkDeck.qml")
+set(NILINK_QML_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/generated/NILinkQml.cpp")
+add_custom_command(OUTPUT "${NILINK_QML_SOURCE}"
+    COMMAND ${CMAKE_COMMAND} "-DOUTPUT=${NILINK_QML_SOURCE}" "-DFILES=${NILINK_QML}" -DNAMESPACE=nilink -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedText.cmake"
+    DEPENDS ${NILINK_QML} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedText.cmake"
+    COMMENT "Embedding the NI LINK script for Traktor"
     VERBATIM)
-add_executable(vjlink-transmitter WIN32 MACOSX_BUNDLE
+add_executable(nilink-transmitter WIN32 MACOSX_BUNDLE
     "${STLTVJ_FONT_SOURCE}"
-    "${VJLINK_QML_SOURCE}"
+    "${NILINK_QML_SOURCE}"
     transmitter/main.cpp
     transmitter/TraktorInstall.cpp
     transmitter/TraktorInstall.h)
-target_link_libraries(vjlink-transmitter PRIVATE stltvj-vjlink imgui)
-target_compile_definitions(vjlink-transmitter PRIVATE GLFW_INCLUDE_NONE)
+target_link_libraries(nilink-transmitter PRIVATE stltvj-nilink imgui)
+target_compile_definitions(nilink-transmitter PRIVATE GLFW_INCLUDE_NONE)
 if(WIN32)
-    target_compile_definitions(vjlink-transmitter PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
-    target_compile_options(vjlink-transmitter PRIVATE /utf-8)
-    target_link_libraries(vjlink-transmitter PRIVATE opengl32 shell32)
-    set_target_properties(vjlink-transmitter PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup" OUTPUT_NAME VJLink)
+    target_compile_definitions(nilink-transmitter PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+    target_compile_options(nilink-transmitter PRIVATE /utf-8)
+    target_link_libraries(nilink-transmitter PRIVATE opengl32 shell32)
+    set_target_properties(nilink-transmitter PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup" OUTPUT_NAME NILink)
 elseif(APPLE)
-    target_sources(vjlink-transmitter PRIVATE transmitter/KeepAwake.mm)
+    target_sources(nilink-transmitter PRIVATE transmitter/KeepAwake.mm)
     set_source_files_properties(transmitter/KeepAwake.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-    target_link_libraries(vjlink-transmitter PRIVATE "-framework OpenGL" "-framework Cocoa" "-framework IOKit" "-framework Foundation")
-    set_target_properties(vjlink-transmitter PROPERTIES OUTPUT_NAME "VJ LINK"
-        MACOSX_BUNDLE_BUNDLE_NAME "VJ LINK"
-        MACOSX_BUNDLE_GUI_IDENTIFIER com.stillet.vjlink
+    target_link_libraries(nilink-transmitter PRIVATE "-framework OpenGL" "-framework Cocoa" "-framework IOKit" "-framework Foundation")
+    set_target_properties(nilink-transmitter PROPERTIES OUTPUT_NAME "NI LINK"
+        MACOSX_BUNDLE_BUNDLE_NAME "NI LINK"
+        MACOSX_BUNDLE_GUI_IDENTIFIER com.stillet.nilink
         MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
         MACOSX_BUNDLE_BUNDLE_VERSION "1.0")
 else()
     find_package(OpenGL REQUIRED)
-    target_link_libraries(vjlink-transmitter PRIVATE OpenGL::GL ${CMAKE_DL_LIBS})
-    set_target_properties(vjlink-transmitter PROPERTIES OUTPUT_NAME vjlink)
+    target_link_libraries(nilink-transmitter PRIVATE OpenGL::GL ${CMAKE_DL_LIBS})
+    set_target_properties(nilink-transmitter PROPERTIES OUTPUT_NAME nilink)
 endif()
 
 # Effects, parameters and composition files, without a GPU.

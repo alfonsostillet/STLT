@@ -1,14 +1,14 @@
-#include "vjlink/Protocol.h"
+#include "nilink/Protocol.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstring>
 
-namespace vjlink
+namespace nilink
 {
 namespace
 {
-const uint8_t kMagic[ 4 ] = { 'V', 'J', 'L', 'K' };
+const uint8_t kMagic[ 4 ] = { 'N', 'I', 'L', 'K' };
 
 struct Writer
 {

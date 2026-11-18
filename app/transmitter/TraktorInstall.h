@@ -2,11 +2,11 @@
 #include <string>
 #include <vector>
 
-// Puts VJ LINK's QML script into Traktor, and takes it out again. Traktor draws the screens of its controllers with
+// Puts NI LINK's QML script into Traktor, and takes it out again. Traktor draws the screens of its controllers with
 // QML files in its own folder; the script is added to the Kontrol D2's mapping (Traktor loads it when a D2, real
 // or not, is in its Controller Manager): two files of ours next to D2.qml, and one line in D2.qml. The D2.qml found
-// first is kept as D2.qml.vjlink-backup, and put back by Remove. Nothing else of Traktor is touched.
-namespace vjlink
+// first is kept as D2.qml.nilink-backup, and put back by Remove. Nothing else of Traktor is touched.
+namespace nilink
 {
 struct TraktorFolder
 {

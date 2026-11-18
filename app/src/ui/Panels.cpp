@@ -2325,7 +2325,7 @@ static void DrawDeck( App& app, bool layersPart )
 					}
 					if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kFilePayload ) )
 						pendingLoad = { l, c, { std::string( (const char*)payload->Data ) }, {} };
-					// A Traktor deck (VJ LINK): the clip is linked to its track.
+					// A Traktor deck (NI LINK): the clip is linked to its track.
 					if( !clip.Empty() )
 						if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kDeckPayload ) )
 							LinkClipToDeck( app, clip, *(const DeckRef*)payload->Data );

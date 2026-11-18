@@ -1,8 +1,8 @@
-// VJ LINK transmitter: runs on the DJ's computer next to Traktor. It takes the decks Traktor's script posts (see
-// resources/vjlink/qml) and sends them to the VJ programs on the network. A small window with no settings: lights
+// NI LINK transmitter: runs on the DJ's computer next to Traktor. It takes the decks Traktor's script posts (see
+// resources/nilink/qml) and sends them to the VJ programs on the network. A small window with no settings: lights
 // for Traktor, the network and the VJs listening, and the four decks.
 //
-//   VJLink [--install | --uninstall]   put the script into Traktor / take it out, and quit (exit code 0: done)
+//   NILink [--install | --uninstall]   put the script into Traktor / take it out, and quit (exit code 0: done)
 //          [--demo]                    send four made-up decks instead of Traktor's (to try the network first)
 //          [--headless]                no window (prints the state every few seconds)
 //          [--name NAME]               the name the VJs see (the computer's otherwise)
@@ -17,10 +17,10 @@
 #include <thread>
 #include <vector>
 #include "TraktorInstall.h"
-#include "vjlink/Link.h"
-#include "vjlink/Net.h"
-#include "vjlink/TraktorBridge.h"
-#ifndef VJLINK_HEADLESS_ONLY
+#include "nilink/Link.h"
+#include "nilink/Net.h"
+#include "nilink/TraktorBridge.h"
+#ifndef NILINK_HEADLESS_ONLY
 
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -42,7 +42,7 @@ void KeepAwake(); // KeepAwake.mm: no App Nap, which would hold the network back
 static void KeepAwake() {}
 #endif
 
-using namespace vjlink;
+using namespace nilink;
 
 namespace
 {
@@ -290,7 +290,7 @@ int InstallCommand( const Options& o, bool install )
 	return code;
 }
 
-#ifndef VJLINK_HEADLESS_ONLY
+#ifndef NILINK_HEADLESS_ONLY
 // ---- The window
 
 namespace colour
@@ -383,8 +383,8 @@ void Draw( Transmitter& tx, const View& v, const Fonts& f, float s, ImVec2 size 
 	float y        = o.y + pad;
 	dl->AddRectFilled( o, ImVec2( o.x + size.x, o.y + size.y ), colour::Background );
 	// Title.
-	dl->AddText( f.title, Px( f.title ), ImVec2( o.x + pad, y ), colour::Text, "VJ LINK" );
-	float tw = f.title->CalcTextSizeA( Px( f.title ), FLT_MAX, 0, "VJ LINK" ).x;
+	dl->AddText( f.title, Px( f.title ), ImVec2( o.x + pad, y ), colour::Text, "NI LINK" );
+	float tw = f.title->CalcTextSizeA( Px( f.title ), FLT_MAX, 0, "NI LINK" ).x;
 	dl->AddText( f.small, Px( f.small ), ImVec2( o.x + pad + tw + 12 * s, y + 5 * s ), colour::Muted, "TRANSMITTER" );
 	y += 32 * s;
 
@@ -467,7 +467,7 @@ void Draw( Transmitter& tx, const View& v, const Fonts& f, float s, ImVec2 size 
 		line( "Install Traktor Pro 4, then open this again.", colour::Muted );
 	else if( !v.traktor && ( !installed || outdated ) )
 	{
-		line( outdated ? "A newer VJ LINK script is ready for Traktor." : "VJ LINK needs a small script in Traktor.", colour::Dim );
+		line( outdated ? "A newer NI LINK script is ready for Traktor." : "NI LINK needs a small script in Traktor.", colour::Dim );
 		if( Button( dl, f, s, ImVec2( o.x + pad, y + 2 * s ), outdated ? "Update Traktor" : "Set up Traktor", true, "install" ) )
 			tx.Change( true );
 		y += 40 * s;
@@ -475,7 +475,7 @@ void Draw( Transmitter& tx, const View& v, const Fonts& f, float s, ImVec2 size 
 	else if( !v.traktor )
 	{
 		line( "Start Traktor. In Preferences > Controller Manager, add a", colour::Dim );
-		line( "Kontrol D2 (no hardware needed): VJ LINK reads its screens.", colour::Dim );
+		line( "Kontrol D2 (no hardware needed): NI LINK reads its screens.", colour::Dim );
 	}
 	else
 		line( "No settings: it finds the VJs on the same network.", colour::Muted );
@@ -546,7 +546,7 @@ int RunWindow( Transmitter& tx )
 	glfwWindowHint( GLFW_OPENGL_FORWARD_COMPAT, GLFW_TRUE );
 	glfwWindowHint( GLFW_RESIZABLE, GLFW_FALSE );
 	glfwWindowHint( GLFW_SCALE_TO_MONITOR, GLFW_TRUE );
-	GLFWwindow* window = glfwCreateWindow( 440, 390, "VJ LINK Transmitter", nullptr, nullptr );
+	GLFWwindow* window = glfwCreateWindow( 440, 390, "NI LINK Transmitter", nullptr, nullptr );
 	if( !window )
 	{
 		glfwTerminate();
@@ -667,7 +667,7 @@ int main( int argc, char** argv )
 			o.traktorFolder = next();
 		else if( a == "--version" )
 		{
-			std::printf( "VJ LINK transmitter %s\n", kTransmitterVersion );
+			std::printf( "NI LINK transmitter %s\n", kTransmitterVersion );
 			return 0;
 		}
 	}
@@ -678,12 +678,12 @@ int main( int argc, char** argv )
 	std::string error;
 	if( !tx.Start( error ) )
 	{
-		std::fprintf( stderr, "VJ LINK transmitter: %s\n", error.c_str() );
-#ifndef VJLINK_HEADLESS_ONLY
+		std::fprintf( stderr, "NI LINK transmitter: %s\n", error.c_str() );
+#ifndef NILINK_HEADLESS_ONLY
 		if( !o.headless && glfwInit() )
 		{
 			// Said in a window too: double-clicked, there is no console to read.
-			GLFWwindow* w = glfwCreateWindow( 520, 80, ( "VJ LINK: " + error ).c_str(), nullptr, nullptr );
+			GLFWwindow* w = glfwCreateWindow( 520, 80, ( "NI LINK: " + error ).c_str(), nullptr, nullptr );
 			while( w && !glfwWindowShouldClose( w ) )
 				glfwWaitEvents();
 			glfwTerminate();
@@ -692,7 +692,7 @@ int main( int argc, char** argv )
 		return 1;
 	}
 	int code = 0;
-#ifndef VJLINK_HEADLESS_ONLY
+#ifndef NILINK_HEADLESS_ONLY
 	if( !o.headless )
 		code = RunWindow( tx );
 	else

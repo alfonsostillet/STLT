@@ -1,9 +1,9 @@
-// VJ LINK in STLT: Traktor's decks, from the DJ's computer, drive the clips linked to their tracks, the tempo and
-// the stem animations. The protocol is in vjlink/; docs/VJLINK.md says how it all fits.
+// NI LINK in STLT: Traktor's decks, from the DJ's computer, drive the clips linked to their tracks, the tempo and
+// the stem animations. The protocol is in nilink/; docs/NILINK.md says how it all fits.
 #include <algorithm>
 #include <cmath>
 #include "App.h"
-#include "vjlink/Net.h"
+#include "nilink/Net.h"
 
 namespace stltvj
 {
@@ -28,9 +28,9 @@ std::vector< std::string > SplitAddresses( const std::string& text )
 }
 
 // Whether `clip` is linked to `track`.
-bool Belongs( const Clip& clip, const vjlink::TrackInfo& track )
+bool Belongs( const Clip& clip, const nilink::TrackInfo& track )
 {
-	return clip.Playable() && !clip.track.Empty() && vjlink::SameTrack( clip.track, vjlink::IdOf( track ) );
+	return clip.Playable() && !clip.track.Empty() && nilink::SameTrack( clip.track, nilink::IdOf( track ) );
 }
 
 // Where in the movie a track position falls. A movie at least half as long as the track follows it (and holds its
@@ -54,30 +54,30 @@ double MovieTime( const Clip& clip, double position, double trackLength )
 }
 }
 
-std::string App::VjDeckName( int source, int deck ) const
+std::string App::NiDeckName( int source, int deck ) const
 {
 	std::string letter( 1, (char)( 'A' + deck ) );
 	int online = 0;
-	for( const vjlink::Source& s : vjSources )
+	for( const nilink::Source& s : niSources )
 		online += s.online ? 1 : 0;
-	if( online <= 1 || source < 0 || source >= (int)vjSources.size() )
+	if( online <= 1 || source < 0 || source >= (int)niSources.size() )
 		return letter;
-	return vjSources[ source ].name + " " + letter;
+	return niSources[ source ].name + " " + letter;
 }
 
-bool App::VjDeckFor( const Clip& clip, int& source, int& deck ) const
+bool App::NiDeckFor( const Clip& clip, int& source, int& deck ) const
 {
 	// The loudest deck that has the track loaded (a track can be on two decks).
 	float best = -1;
 	source = deck = -1;
-	for( int s = 0; s < (int)vjSources.size(); ++s )
+	for( int s = 0; s < (int)niSources.size(); ++s )
 	{
-		const vjlink::Source& src = vjSources[ s ];
+		const nilink::Source& src = niSources[ s ];
 		if( !src.online )
 			continue;
-		for( int d = 0; d < vjlink::kDecks; ++d )
+		for( int d = 0; d < nilink::kDecks; ++d )
 		{
-			const vjlink::DeckNow& now = src.decks[ d ];
+			const nilink::DeckNow& now = src.decks[ d ];
 			if( !now.present || !now.state.loaded || !src.hasTrack[ d ] || !Belongs( clip, src.tracks[ d ] ) )
 				continue;
 			float loud = now.state.volume + ( now.state.playing ? 2.0f : 0.0f );
@@ -92,7 +92,7 @@ bool App::VjDeckFor( const Clip& clip, int& source, int& deck ) const
 	return source >= 0;
 }
 
-void App::UpdateVjLink( double dt )
+void App::UpdateNiLink( double dt )
 {
 	// Nothing is driven unless found so again below; a clip linked to no track shows at its own opacity.
 	for( Layer& layer : composition.layers )
@@ -102,57 +102,57 @@ void App::UpdateVjLink( double dt )
 			if( clip.track.Empty() )
 				clip.trackGain = 1;
 		}
-	if( !prefs.vjlinkEnabled )
+	if( !prefs.nilinkEnabled )
 	{
-		if( vjlink.Running() )
-			vjlink.Stop();
-		vjSources.clear();
-		vjLeadDeck = -1;
-		std::fill( vjStems, vjStems + 5, 0.0f );
+		if( nilink.Running() )
+			nilink.Stop();
+		niSources.clear();
+		niLeadDeck = -1;
+		std::fill( niStems, niStems + 5, 0.0f );
 		tempoSync.SetTraktor( false, 0, 0, "" );
 		return;
 	}
-	double now = vjlink::Now();
-	if( !vjlink.Running() && now - vjlinkTried > 10 )
+	double now = nilink::Now();
+	if( !nilink.Running() && now - nilinkTried > 10 )
 	{
-		vjlinkTried = now;
+		nilinkTried = now;
 		std::string error;
-		if( !vjlink.Start( vjlink::HostName(), error ) && vjlinkTried > 0 )
-			SetStatus( "VJ LINK: " + error, true );
+		if( !nilink.Start( nilink::HostName(), error ) && nilinkTried > 0 )
+			SetStatus( "NI LINK: " + error, true );
 	}
-	vjlink.SetAddresses( SplitAddresses( prefs.vjlinkAddresses ) );
+	nilink.SetAddresses( SplitAddresses( prefs.nilinkAddresses ) );
 	// The decks as they are when this frame shows (the picture comes out later: Preferences > Sync > Latency).
-	vjSources = vjlink.Sources( now + prefs.syncLatencyMs / 1000.0 );
+	niSources = nilink.Sources( now + prefs.syncLatencyMs / 1000.0 );
 
 	// The deck that is on: playing, the highest fader, across every transmitter (b2b).
-	std::vector< vjlink::DeckNow > all;
+	std::vector< nilink::DeckNow > all;
 	std::vector< std::pair< int, int > > where;
 	int current = -1;
-	for( int s = 0; s < (int)vjSources.size(); ++s )
-		for( int d = 0; d < vjlink::kDecks; ++d )
+	for( int s = 0; s < (int)niSources.size(); ++s )
+		for( int d = 0; d < nilink::kDecks; ++d )
 		{
-			if( vjSources[ s ].id == vjLeadSource && d == vjLeadDeck )
+			if( niSources[ s ].id == niLeadSource && d == niLeadDeck )
 				current = (int)all.size();
-			all.push_back( vjSources[ s ].decks[ d ] );
+			all.push_back( niSources[ s ].decks[ d ] );
 			where.emplace_back( s, d );
 		}
-	int lead = vjlink::LeadingDeck( all.data(), (int)all.size(), current );
+	int lead = nilink::LeadingDeck( all.data(), (int)all.size(), current );
 	if( lead >= 0 )
 	{
-		const vjlink::Source& src = vjSources[ where[ lead ].first ];
-		const vjlink::DeckNow& d  = all[ lead ];
-		vjLeadSource              = src.id;
-		vjLeadDeck                = where[ lead ].second;
+		const nilink::Source& src = niSources[ where[ lead ].first ];
+		const nilink::DeckNow& d  = all[ lead ];
+		niLeadSource              = src.id;
+		niLeadDeck                = where[ lead ].second;
 		for( int k = 0; k < 4; ++k )
-			vjStems[ k ] = d.state.stems[ k ];
-		vjStems[ 4 ] = d.state.level;
-		tempoSync.SetTraktor( prefs.vjlinkTempo && d.bpm > 0, d.bpm, d.beat, "Traktor deck " + VjDeckName( where[ lead ].first, vjLeadDeck ) );
+			niStems[ k ] = d.state.stems[ k ];
+		niStems[ 4 ] = d.state.level;
+		tempoSync.SetTraktor( prefs.nilinkTempo && d.bpm > 0, d.bpm, d.beat, "Traktor deck " + NiDeckName( where[ lead ].first, niLeadDeck ) );
 	}
 	else
 	{
-		vjLeadDeck = -1;
+		niLeadDeck = -1;
 		// The stems fall back to silence rather than freezing where they were.
-		for( float& s : vjStems )
+		for( float& s : niStems )
 			s = std::max( 0.0f, s - (float)dt * 4 );
 		tempoSync.SetTraktor( false, 0, 0, "" );
 	}
@@ -160,7 +160,7 @@ void App::UpdateVjLink( double dt )
 	// Each layer plays the linked clip whose track is on: playing with its fader up, the loudest if several are.
 	// A clip holds where it is when its deck stops, and its opacity follows the channel's fader: the DJ's mix is the
 	// visuals' mix.
-	std::vector< std::vector< vjlink::Visual > > visuals( vjSources.size(), std::vector< vjlink::Visual >( vjlink::kDecks, vjlink::Visual::None ) );
+	std::vector< std::vector< nilink::Visual > > visuals( niSources.size(), std::vector< nilink::Visual >( nilink::kDecks, nilink::Visual::None ) );
 	for( int l = 0; l < (int)composition.layers.size(); ++l )
 	{
 		Layer& layer = composition.layers[ l ];
@@ -170,10 +170,10 @@ void App::UpdateVjLink( double dt )
 		{
 			Clip& clip = layer.clips[ c ];
 			int s, d;
-			if( clip.Empty() || !VjDeckFor( clip, s, d ) )
+			if( clip.Empty() || !NiDeckFor( clip, s, d ) )
 				continue;
-			visuals[ s ][ d ] = std::max( visuals[ s ][ d ], vjlink::Visual::Ready );
-			const vjlink::DeckNow& deck = vjSources[ s ].decks[ d ];
+			visuals[ s ][ d ] = std::max( visuals[ s ][ d ], nilink::Visual::Ready );
+			const nilink::DeckNow& deck = niSources[ s ].decks[ d ];
 			if( !deck.state.playing )
 				continue;
 			float loud = deck.state.volume;
@@ -193,27 +193,27 @@ void App::UpdateVjLink( double dt )
 			composition.selectedRow    = row;
 			composition.selectedColumn = column;
 			composition.selectedLayer  = selected;
-			vjFollow.erase( l );
+			niFollow.erase( l );
 		}
 		// The clip on the layer (and one fading out) follows its deck.
 		for( Clip* clip : { composition.ActiveClip( l ), composition.OutgoingClip( l ) } )
 		{
 			int s, d;
-			if( !clip || !clip->Loaded() || !VjDeckFor( *clip, s, d ) )
+			if( !clip || !clip->Loaded() || !NiDeckFor( *clip, s, d ) )
 				continue;
-			const vjlink::Source& src  = vjSources[ s ];
-			const vjlink::DeckNow& deck = src.decks[ d ];
+			const nilink::Source& src  = niSources[ s ];
+			const nilink::DeckNow& deck = src.decks[ d ];
 			if( clip == composition.ActiveClip( l ) )
-				visuals[ s ][ d ] = vjlink::Visual::OnAir;
+				visuals[ s ][ d ] = nilink::Visual::OnAir;
 			// Smoothly towards the deck's position: small differences are taken up over a few frames, jumps at once.
-			VjFollow& f    = vjFollow[ clip == composition.ActiveClip( l ) ? l : -1 - l ];
+			NiFollow& f    = niFollow[ clip == composition.ActiveClip( l ) ? l : -1 - l ];
 			bool playing   = deck.state.playing;
 			double rate    = deck.state.rate > 0 ? deck.state.rate : 1.0;
 			double target  = deck.position;
 			bool fresh     = f.source != src.id || f.deck != d || f.jumps != deck.jumps;
 			double shown   = f.shown + ( playing ? rate * dt : 0.0 );
 			double error   = target - shown;
-			f.shown        = fresh || !playing || std::fabs( error ) > vjlink::DeckTracker::kJumpThreshold ? target : shown + error * 0.25;
+			f.shown        = fresh || !playing || std::fabs( error ) > nilink::DeckTracker::kJumpThreshold ? target : shown + error * 0.25;
 			f.source       = src.id;
 			f.deck         = d;
 			f.jumps        = deck.jumps;
@@ -224,8 +224,8 @@ void App::UpdateVjLink( double dt )
 			clip->finished      = false;
 		}
 	}
-	for( int s = 0; s < (int)vjSources.size(); ++s )
-		if( vjSources[ s ].online )
-			vjlink.SetVisuals( vjSources[ s ].id, visuals[ s ].data() );
+	for( int s = 0; s < (int)niSources.size(); ++s )
+		if( niSources[ s ].online )
+			nilink.SetVisuals( niSources[ s ].id, visuals[ s ].data() );
 }
 }

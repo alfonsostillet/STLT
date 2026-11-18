@@ -16,22 +16,24 @@
 extern char** environ;
 #endif
 
-namespace vjlink
+namespace nilink
 {
-// The scripts, compiled in from resources/vjlink/qml.
-extern const unsigned char kText_TraktorVJLink[];
-extern const size_t kText_TraktorVJLink_size;
-extern const unsigned char kText_VJLinkDeck[];
-extern const size_t kText_VJLinkDeck_size;
+// The scripts, compiled in from resources/nilink/qml.
+extern const unsigned char kText_TraktorNILink[];
+extern const size_t kText_TraktorNILink_size;
+extern const unsigned char kText_NILinkDeck[];
+extern const size_t kText_NILinkDeck_size;
 
 namespace
 {
 namespace fs = std::filesystem;
 
-const char* kLine      = "  TraktorVJLink { name: \"vjlink\" } // VJ LINK (added by the VJ LINK transmitter)";
-const char* kBackup    = "D2.qml.vjlink-backup";
-const char* kProbe[]   = { "TraktorVJProbe.qml", "VJProbeDeck.qml", "VJProbeGlobal.qml" }; // the first prototype's
-const char* kProbeBackup = "D2.qml.vjprobe-backup";
+const char* kLine      = "  TraktorNILink { name: \"nilink\" } // NI LINK (added by the NI LINK transmitter)";
+const char* kBackup    = "D2.qml.nilink-backup";
+// What the prototypes before NI LINK left (the probe, then "VJ LINK"): their files go, their copy of Traktor's own
+// D2.qml is the original.
+const char* kOldFiles[]   = { "TraktorVJProbe.qml", "VJProbeDeck.qml", "VJProbeGlobal.qml", "TraktorVJLink.qml", "VJLinkDeck.qml" };
+const char* kOldBackups[] = { "D2.qml.vjprobe-backup", "D2.qml.vjlink-backup" };
 
 struct Script
 {
@@ -40,8 +42,8 @@ struct Script
 };
 std::vector< Script > Scripts()
 {
-	return { { "TraktorVJLink.qml", std::string( (const char*)kText_TraktorVJLink, kText_TraktorVJLink_size ) },
-	         { "VJLinkDeck.qml", std::string( (const char*)kText_VJLinkDeck, kText_VJLinkDeck_size ) } };
+	return { { "TraktorNILink.qml", std::string( (const char*)kText_TraktorNILink, kText_TraktorNILink_size ) },
+	         { "NILinkDeck.qml", std::string( (const char*)kText_NILinkDeck, kText_NILinkDeck_size ) } };
 }
 
 bool Read( const fs::path& path, std::string& text )
@@ -71,7 +73,8 @@ std::string WithoutOurLines( const std::string& text )
 	bool first = true;
 	while( std::getline( in, line ) )
 	{
-		if( line.find( "TraktorVJLink" ) != std::string::npos || line.find( "TraktorVJProbe" ) != std::string::npos )
+		if( line.find( "TraktorNILink" ) != std::string::npos || line.find( "TraktorVJProbe" ) != std::string::npos ||
+		    line.find( "TraktorVJLink" ) != std::string::npos )
 			continue;
 		if( !first )
 			out += '\n';
@@ -85,7 +88,7 @@ std::string WithoutOurLines( const std::string& text )
 
 bool CanWrite( const fs::path& folder )
 {
-	fs::path probe = folder / ".vjlink_write_test";
+	fs::path probe = folder / ".nilink_write_test";
 	{
 		std::ofstream out( probe, std::ios::binary );
 		if( !out )
@@ -101,7 +104,7 @@ void Check( TraktorFolder& t )
 	fs::path folder = fs::u8path( t.folder );
 	std::string d2;
 	Read( folder / "D2.qml", d2 );
-	bool line = d2.find( "TraktorVJLink" ) != std::string::npos;
+	bool line = d2.find( "TraktorNILink" ) != std::string::npos;
 	bool same = true, any = false;
 	for( const Script& s : Scripts() )
 	{
@@ -197,7 +200,10 @@ bool InstallInto( const TraktorFolder& traktor, std::string& error, bool& denied
 	if( !fs::exists( backup, ec ) )
 	{
 		std::string original;
-		if( !Read( folder / kProbeBackup, original ) )
+		bool found = false;
+		for( const char* old : kOldBackups )
+			found = found || Read( folder / old, original );
+		if( !found )
 			original = WithoutOurLines( d2 );
 		if( !Write( backup, original ) )
 		{
@@ -205,9 +211,10 @@ bool InstallInto( const TraktorFolder& traktor, std::string& error, bool& denied
 			return false;
 		}
 	}
-	for( const char* p : kProbe )
+	for( const char* p : kOldFiles )
 		fs::remove( folder / p, ec );
-	fs::remove( folder / kProbeBackup, ec );
+	for( const char* p : kOldBackups )
+		fs::remove( folder / p, ec );
 	std::string original;
 	Read( backup, original );
 	size_t close = original.rfind( "} //Mapping" );
@@ -244,7 +251,10 @@ bool RemoveFrom( const TraktorFolder& traktor, std::string& error, bool& denied 
 	}
 	std::error_code ec;
 	std::string original;
-	if( Read( folder / kBackup, original ) )
+	bool found = Read( folder / kBackup, original );
+	for( const char* old : kOldBackups )
+		found = found || Read( folder / old, original );
+	if( found )
 	{
 		if( !Write( folder / "D2.qml", original ) )
 		{
@@ -252,6 +262,8 @@ bool RemoveFrom( const TraktorFolder& traktor, std::string& error, bool& denied 
 			return false;
 		}
 		fs::remove( folder / kBackup, ec );
+		for( const char* old : kOldBackups )
+			fs::remove( folder / old, ec );
 	}
 	else
 	{
@@ -264,6 +276,8 @@ bool RemoveFrom( const TraktorFolder& traktor, std::string& error, bool& denied 
 	}
 	for( const Script& s : Scripts() )
 		fs::remove( folder / s.name, ec );
+	for( const char* old : kOldFiles )
+		fs::remove( folder / old, ec );
 	return true;
 }
 

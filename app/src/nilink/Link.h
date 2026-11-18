@@ -4,10 +4,10 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include "vjlink/Net.h"
-#include "vjlink/Protocol.h"
+#include "nilink/Net.h"
+#include "nilink/Protocol.h"
 
-namespace vjlink
+namespace nilink
 {
 // The DJ's side: announces itself, answers pings and sends the decks to every receiver that subscribed.
 class Sender

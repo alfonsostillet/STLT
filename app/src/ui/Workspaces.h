@@ -21,7 +21,7 @@ struct PanelVisibility
 	bool performance        = true;
 	bool effects            = true;
 	bool control            = true;
-	bool traktor            = true; // VJ LINK's decks
+	bool traktor            = true; // NI LINK's decks
 	bool advancedOutput     = false; // a big editor: floats on top when opened
 };
 
@@ -42,7 +42,7 @@ constexpr const char* Performance        = "Performance";
 constexpr const char* Effects            = "Effects";
 constexpr const char* Control            = "Shortcuts"; // keyboard, MIDI and OSC
 constexpr const char* AdvancedOutput     = "Advanced Output";
-constexpr const char* Traktor            = "Traktor"; // VJ LINK: the DJs' decks
+constexpr const char* Traktor            = "Traktor"; // NI LINK: the DJs' decks
 }
 
 // Named workspaces: snapshots of where every panel is docked, floating, sized and shown.

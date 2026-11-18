@@ -55,7 +55,7 @@ int main( int argc, char** argv )
 		}
 		else if( arg == "--link-track" && hasValue )
 		{
-			// LAYER,COLUMN,ARTIST - TITLE: the clip there is linked to that Traktor track (VJ LINK; for tests).
+			// LAYER,COLUMN,ARTIST - TITLE: the clip there is linked to that Traktor track (NI LINK; for tests).
 			std::string value = argv[ ++i ];
 			int layer = 0, column = 0, consumed = 0;
 			if( std::sscanf( value.c_str(), "%d,%d,%n", &layer, &column, &consumed ) == 2 && consumed > 0 && layer > 0 && column > 0 )

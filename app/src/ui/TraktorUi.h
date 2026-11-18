@@ -7,7 +7,7 @@ namespace stltvj
 class App;
 struct Clip;
 
-// The Traktor panel (VJ LINK): the decks of the DJs' Traktor, filled by themselves. A deck dragged onto a clip of
+// The Traktor panel (NI LINK): the decks of the DJs' Traktor, filled by themselves. A deck dragged onto a clip of
 // the grid links the clip to the deck's track: from then on the clip plays on its layer when the track plays.
 void DrawTraktorPanel( App& app );
 

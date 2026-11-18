@@ -1,5 +1,5 @@
-// VJ LINK: one Traktor deck, read for the transmitter (TraktorVJLink.qml posts it).
-// Paths checked on Traktor 4.5.1 (docs/VJLINK.md). Installed by the VJ LINK transmitter; do not edit there.
+// NI LINK: one Traktor deck, read for the transmitter (TraktorNILink.qml posts it).
+// Paths checked on Traktor 4.5.1 (docs/NILINK.md). Installed by the NI LINK transmitter; do not edit there.
 import QtQuick 2.0
 import CSI 1.0
 

@@ -88,7 +88,7 @@ void AnimationControls( Animation& a, float min, float max )
 			if( m == (int)AnimMode::AudioLevel )
 				ImGui::SeparatorText( "The sound coming in" );
 			if( m == (int)AnimMode::TraktorDrums )
-				ImGui::SeparatorText( "The DJ's stems (VJ LINK)" );
+				ImGui::SeparatorText( "The DJ's stems (NI LINK)" );
 			if( ImGui::Selectable( AnimModeName( (AnimMode)m ), (int)a.mode == m ) )
 				a.mode = (AnimMode)m;
 		}
@@ -114,7 +114,7 @@ void AnimationControls( Animation& a, float min, float max )
 		ImGui::SameLine();
 		ImGui::TextUnformatted( "Traktor" );
 		if( ImGui::IsItemHovered() )
-			ImGui::SetTooltip( "The deck that is on (playing, with the highest fader), through VJ LINK. Stems need a Stem file in Traktor." );
+			ImGui::SetTooltip( "The deck that is on (playing, with the highest fader), through NI LINK. Stems need a Stem file in Traktor." );
 	}
 	else if( a.mode != AnimMode::Off )
 	{
