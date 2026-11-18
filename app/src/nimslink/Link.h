@@ -59,6 +59,7 @@ private:
 	uint32_t id = 0;
 	std::string name;
 
+	std::mutex sendMutex;     // held while sending to the subscribers (Stop waits for it)
 	mutable std::mutex mutex; // what follows
 	std::string program;
 	std::vector< Subscriber > subscribers;

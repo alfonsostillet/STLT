@@ -47,7 +47,9 @@ struct AudioDecoder::Impl
 	{
 		swr_free( &swr );
 		AVChannelLayout stereo = AV_CHANNEL_LAYOUT_STEREO;
-		AVChannelLayout source;
+		// Zeroed: av_channel_layout_copy frees the destination first, and garbage there (on a thread's stack after a
+		// seek) could read as a custom layout with a map to free. That crashed the Windows build at random.
+		AVChannelLayout source = {};
 		if( codec->ch_layout.nb_channels > 0 && codec->ch_layout.order != AV_CHANNEL_ORDER_UNSPEC )
 			av_channel_layout_copy( &source, &codec->ch_layout );
 		else

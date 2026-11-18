@@ -61,16 +61,24 @@ void Sender::Stop()
 {
 	if( !running )
 		return;
-	Packet bye;
-	bye.type = PacketType::Bye;
-	bye.from = id;
-	SendAll( Encode( bye ) );
+	// Everything that sends stops first (the loop, and Publish, which takes sendMutex), then the receivers are told:
+	// nothing may reach them after the Bye, or they would take the transmitter for alive again.
 	running = false;
 	if( thread.joinable() )
 		thread.join();
+	std::vector< Subscriber > told;
+	{
+		std::lock_guard< std::mutex > sending( sendMutex );
+		std::lock_guard< std::mutex > lock( mutex );
+		told.swap( subscribers );
+	}
+	Packet bye;
+	bye.type = PacketType::Bye;
+	bye.from = id;
+	std::vector< uint8_t > bytes = Encode( bye );
+	for( const Subscriber& s : told )
+		socket.Send( s.address, bytes.data(), bytes.size() );
 	socket.Close();
-	std::lock_guard< std::mutex > lock( mutex );
-	subscribers.clear();
 }
 
 void Sender::SetProgram( const std::string& p )
@@ -117,12 +125,14 @@ void Sender::SendTrack( int deck, const Address& to )
 		p.track = tracks[ deck ];
 	}
 	std::vector< uint8_t > bytes = Encode( p );
-	if( socket.Send( to, bytes.data(), bytes.size() ) )
+	std::lock_guard< std::mutex > sending( sendMutex );
+	if( running && socket.Send( to, bytes.data(), bytes.size() ) )
 		++sent;
 }
 
 void Sender::SendAll( const std::vector< uint8_t >& bytes )
 {
+	std::lock_guard< std::mutex > sending( sendMutex );
 	std::vector< Address > to;
 	{
 		std::lock_guard< std::mutex > lock( mutex );
