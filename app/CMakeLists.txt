@@ -188,29 +188,29 @@ if(STLTVJ_WITH_FFMPEG)
     target_link_libraries(stltvj-media PUBLIC ffmpeg)
 endif()
 
-# NI LINK: the decks of a DJ program over the network (the protocol, the sockets, Traktor's side). No OpenGL: the
+# NIMS PRO LINK: the decks of a DJ program over the network (the protocol, the sockets, Traktor's side). No OpenGL: the
 # transmitter, STLT and the tests share it.
-add_library(stltvj-nilink STATIC
-    src/nilink/Link.cpp
-    src/nilink/Link.h
-    src/nilink/Net.cpp
-    src/nilink/Net.h
-    src/nilink/Protocol.cpp
-    src/nilink/Protocol.h
-    src/nilink/TraktorBridge.cpp
-    src/nilink/TraktorBridge.h
+add_library(stltvj-nimslink STATIC
+    src/nimslink/Link.cpp
+    src/nimslink/Link.h
+    src/nimslink/Net.cpp
+    src/nimslink/Net.h
+    src/nimslink/Protocol.cpp
+    src/nimslink/Protocol.h
+    src/nimslink/TraktorBridge.cpp
+    src/nimslink/TraktorBridge.h
 )
-target_include_directories(stltvj-nilink PUBLIC src PRIVATE "${THIRD_PARTY}/nlohmann")
-target_link_libraries(stltvj-nilink PUBLIC Threads::Threads)
+target_include_directories(stltvj-nimslink PUBLIC src PRIVATE "${THIRD_PARTY}/nlohmann")
+target_link_libraries(stltvj-nimslink PUBLIC Threads::Threads)
 if(WIN32)
-    target_compile_definitions(stltvj-nilink PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
-    target_link_libraries(stltvj-nilink PUBLIC ws2_32 iphlpapi)
+    target_compile_definitions(stltvj-nimslink PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+    target_link_libraries(stltvj-nimslink PUBLIC ws2_32 iphlpapi)
 endif()
 
-# NI LINK end to end: packets, clocks, decks followed between packets, Traktor's posts, two programs on this computer.
-add_executable(nilink_test tests/nilink_test.cpp)
-target_link_libraries(nilink_test PRIVATE stltvj-nilink)
-add_test(NAME nilink_test COMMAND nilink_test)
+# NIMS PRO LINK end to end: packets, clocks, decks followed between packets, Traktor's posts, two programs on this computer.
+add_executable(nimslink_test tests/nimslink_test.cpp)
+target_link_libraries(nimslink_test PRIVATE stltvj-nimslink)
+add_test(NAME nimslink_test COMMAND nimslink_test)
 
 if(STLTVJ_BUILD_APP)
 # Everything but the user interface: composition model, effects, FFGL host, rendering.
@@ -281,7 +281,7 @@ add_library(stltvj-core STATIC
 )
 target_include_directories(stltvj-core PUBLIC src third_party/khronos "${THIRD_PARTY}/nlohmann")
 target_compile_definitions(stltvj-core PUBLIC GLFW_INCLUDE_NONE STLT_VERSION="${STLT_VERSION}")
-target_link_libraries(stltvj-core PUBLIC stltvj-media stltvj-nilink glfw)
+target_link_libraries(stltvj-core PUBLIC stltvj-media stltvj-nimslink glfw)
 if(WIN32)
     target_compile_definitions(stltvj-core PUBLIC NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
     target_compile_options(stltvj-core PUBLIC /utf-8)
@@ -407,7 +407,7 @@ add_executable(stlt-vj WIN32 MACOSX_BUNDLE
     src/main.cpp
     src/App.cpp
     src/App.h
-    src/AppNiLink.cpp
+    src/AppNimsLink.cpp
     src/ui/AdvancedOutputUi.cpp
     src/ui/AdvancedOutputUi.h
     src/ui/StageUi.cpp
@@ -460,43 +460,43 @@ endif()
 add_custom_command(TARGET stlt-vj POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/isf" "${STLTVJ_ISF_DIR}")
 
-# The NI LINK transmitter, for the DJ's computer: Traktor's decks out to the network (transmitter/main.cpp). Its
+# The NIMS PRO LINK transmitter, for the DJ's computer: Traktor's decks out to the network (transmitter/main.cpp). Its
 # QML script for Traktor is compiled in, and put into Traktor from the program.
-set(NILINK_QML
-    "${CMAKE_CURRENT_SOURCE_DIR}/resources/nilink/qml/TraktorNILink.qml"
-    "${CMAKE_CURRENT_SOURCE_DIR}/resources/nilink/qml/NILinkDeck.qml")
-set(NILINK_QML_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/generated/NILinkQml.cpp")
-add_custom_command(OUTPUT "${NILINK_QML_SOURCE}"
-    COMMAND ${CMAKE_COMMAND} "-DOUTPUT=${NILINK_QML_SOURCE}" "-DFILES=${NILINK_QML}" -DNAMESPACE=nilink -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedText.cmake"
-    DEPENDS ${NILINK_QML} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedText.cmake"
-    COMMENT "Embedding the NI LINK script for Traktor"
+set(NIMSLINK_QML
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/nimslink/qml/TraktorNIMSLink.qml"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/nimslink/qml/NIMSLinkDeck.qml")
+set(NIMSLINK_QML_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/generated/NIMSLinkQml.cpp")
+add_custom_command(OUTPUT "${NIMSLINK_QML_SOURCE}"
+    COMMAND ${CMAKE_COMMAND} "-DOUTPUT=${NIMSLINK_QML_SOURCE}" "-DFILES=${NIMSLINK_QML}" -DNAMESPACE=nimslink -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedText.cmake"
+    DEPENDS ${NIMSLINK_QML} "${CMAKE_CURRENT_SOURCE_DIR}/cmake/EmbedText.cmake"
+    COMMENT "Embedding the NIMS PRO LINK script for Traktor"
     VERBATIM)
-add_executable(nilink-transmitter WIN32 MACOSX_BUNDLE
+add_executable(nimslink-transmitter WIN32 MACOSX_BUNDLE
     "${STLTVJ_FONT_SOURCE}"
-    "${NILINK_QML_SOURCE}"
+    "${NIMSLINK_QML_SOURCE}"
     transmitter/main.cpp
     transmitter/TraktorInstall.cpp
     transmitter/TraktorInstall.h)
-target_link_libraries(nilink-transmitter PRIVATE stltvj-nilink imgui)
-target_compile_definitions(nilink-transmitter PRIVATE GLFW_INCLUDE_NONE)
+target_link_libraries(nimslink-transmitter PRIVATE stltvj-nimslink imgui)
+target_compile_definitions(nimslink-transmitter PRIVATE GLFW_INCLUDE_NONE)
 if(WIN32)
-    target_compile_definitions(nilink-transmitter PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
-    target_compile_options(nilink-transmitter PRIVATE /utf-8)
-    target_link_libraries(nilink-transmitter PRIVATE opengl32 shell32)
-    set_target_properties(nilink-transmitter PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup" OUTPUT_NAME NILink)
+    target_compile_definitions(nimslink-transmitter PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _CRT_SECURE_NO_WARNINGS)
+    target_compile_options(nimslink-transmitter PRIVATE /utf-8)
+    target_link_libraries(nimslink-transmitter PRIVATE opengl32 shell32)
+    set_target_properties(nimslink-transmitter PROPERTIES LINK_FLAGS "/ENTRY:mainCRTStartup" OUTPUT_NAME NIMSProLink)
 elseif(APPLE)
-    target_sources(nilink-transmitter PRIVATE transmitter/KeepAwake.mm)
+    target_sources(nimslink-transmitter PRIVATE transmitter/KeepAwake.mm)
     set_source_files_properties(transmitter/KeepAwake.mm PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-    target_link_libraries(nilink-transmitter PRIVATE "-framework OpenGL" "-framework Cocoa" "-framework IOKit" "-framework Foundation")
-    set_target_properties(nilink-transmitter PROPERTIES OUTPUT_NAME "NI LINK"
-        MACOSX_BUNDLE_BUNDLE_NAME "NI LINK"
-        MACOSX_BUNDLE_GUI_IDENTIFIER com.stillet.nilink
+    target_link_libraries(nimslink-transmitter PRIVATE "-framework OpenGL" "-framework Cocoa" "-framework IOKit" "-framework Foundation")
+    set_target_properties(nimslink-transmitter PROPERTIES OUTPUT_NAME "NIMS PRO LINK"
+        MACOSX_BUNDLE_BUNDLE_NAME "NIMS PRO LINK"
+        MACOSX_BUNDLE_GUI_IDENTIFIER com.stillet.nimslink
         MACOSX_BUNDLE_SHORT_VERSION_STRING "1.0"
         MACOSX_BUNDLE_BUNDLE_VERSION "1.0")
 else()
     find_package(OpenGL REQUIRED)
-    target_link_libraries(nilink-transmitter PRIVATE OpenGL::GL ${CMAKE_DL_LIBS})
-    set_target_properties(nilink-transmitter PROPERTIES OUTPUT_NAME nilink)
+    target_link_libraries(nimslink-transmitter PRIVATE OpenGL::GL ${CMAKE_DL_LIBS})
+    set_target_properties(nimslink-transmitter PROPERTIES OUTPUT_NAME nimsprolink)
 endif()
 
 # Effects, parameters and composition files, without a GPU.

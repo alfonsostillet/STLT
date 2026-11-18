@@ -1,14 +1,14 @@
-#include "nilink/Protocol.h"
+#include "nimslink/Protocol.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
 #include <cstring>
 
-namespace nilink
+namespace nimslink
 {
 namespace
 {
-const uint8_t kMagic[ 4 ] = { 'N', 'I', 'L', 'K' };
+const uint8_t kMagic[ 4 ] = { 'N', 'I', 'M', 'S' };
 
 struct Writer
 {

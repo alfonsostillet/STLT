@@ -59,7 +59,7 @@ enum class AnimMode
 	AudioBass,
 	AudioMid,
 	AudioTreble,
-	// The DJ's music through NI LINK: the level of each stem (and of the channel) of the deck that is on.
+	// The DJ's music through NIMS PRO LINK: the level of each stem (and of the channel) of the deck that is on.
 	TraktorDrums,
 	TraktorBass,
 	TraktorOther,
@@ -88,7 +88,7 @@ struct AnimationClock
 {
 	double seconds = 0;
 	float audio[ 4 ] = {}; // level, bass, mid, treble, 0..1 (AudioInput's bands)
-	float traktor[ 5 ] = {}; // drums, bass, other, vocals, level of the deck on (NI LINK), 0..1
+	float traktor[ 5 ] = {}; // drums, bass, other, vocals, level of the deck on (NIMS PRO LINK), 0..1
 };
 void SetAnimationClock( const AnimationClock& clock );
 const AnimationClock& CurrentAnimationClock();

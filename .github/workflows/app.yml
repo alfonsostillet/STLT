@@ -143,28 +143,28 @@ jobs:
           fi
           ls -l STLT-*
 
-      # The NI LINK transmitter, for the DJ's computer (Windows and macOS, where Traktor runs): a download of its own.
-      - name: Pack the NI LINK transmitter
+      # The NIMS PRO LINK transmitter, for the DJ's computer (Windows and macOS, where Traktor runs): a download of its own.
+      - name: Pack the NIMS PRO LINK transmitter
         if: runner.os != 'Linux'
         run: |
           if [ "$RUNNER_OS" = "Windows" ]; then
-            mkdir -p package/NILink
-            cp app/build/Release/NILink.exe package/NILink/
-            cp docs/NILINK.md package/NILink/README.md
-            (cd package && 7z a -tzip -bd ../NILink-windows.zip NILink > /dev/null)
+            mkdir -p package/NIMSProLink
+            cp app/build/Release/NIMSProLink.exe package/NIMSProLink/
+            cp docs/NIMSLINK.md package/NIMSProLink/README.md
+            (cd package && 7z a -tzip -bd ../NIMSProLink-windows.zip NIMSProLink > /dev/null)
           else
-            TX="app/build/NI LINK.app"
+            TX="app/build/NIMS PRO LINK.app"
             codesign --force --sign - "$TX"
             codesign --verify --verbose=2 "$TX"
-            ditto -c -k --keepParent "$TX" NILink-macos.zip
+            ditto -c -k --keepParent "$TX" NIMSProLink-macos.zip
           fi
-          ls -l NILink-*
+          ls -l NIMSProLink-*
 
-      # NI LINK end to end on this machine: the transmitter's made-up decks reach the program, which launches the
+      # NIMS PRO LINK end to end on this machine: the transmitter's made-up decks reach the program, which launches the
       # clip named after the track that plays and follows its tempo.
-      - name: NI LINK end to end (Linux, virtual screen)
+      - name: NIMS PRO LINK end to end (Linux, virtual screen)
         if: runner.os == 'Linux'
-        run: xvfb-run -a -s "-screen 0 1600x900x24" python3 app/tests/nilink_smoke.py package/STLT/stlt app/build/nilink app/tests/fixtures
+        run: xvfb-run -a -s "-screen 0 1600x900x24" python3 app/tests/nimslink_smoke.py package/STLT/stlt app/build/nimsprolink app/tests/fixtures
 
       # The real program on clips of each kind (HAP, DXV, H.264) and with STLT-CHASER's effects: it must draw the
       # right picture and quit by itself. Windows runners have no GPU, so Mesa's software OpenGL stands in, next
@@ -200,8 +200,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: runner.os != 'Linux'
         with:
-          name: NILink-${{ matrix.artifact }}
-          path: NILink-${{ matrix.artifact }}.*
+          name: NIMSProLink-${{ matrix.artifact }}
+          path: NIMSProLink-${{ matrix.artifact }}.*
           if-no-files-found: error
 
   # The tests on Windows under AddressSanitizer (MSVC): reads past a buffer, use after free and the like stop the
@@ -251,8 +251,8 @@ jobs:
           mv artifacts/STLT-windows.zip "release/STLT-$V-windows.zip"
           mv artifacts/STLT-linux.tar.gz "release/STLT-$V-linux.tar.gz"
           if [ -f artifacts/STLT-macos.zip ]; then mv artifacts/STLT-macos.zip "release/STLT-$V-macos.zip"; fi
-          if [ -f artifacts/NILink-windows.zip ]; then mv artifacts/NILink-windows.zip "release/NILink-$V-windows.zip"; fi
-          if [ -f artifacts/NILink-macos.zip ]; then mv artifacts/NILink-macos.zip "release/NILink-$V-macos.zip"; fi
+          if [ -f artifacts/NIMSProLink-windows.zip ]; then mv artifacts/NIMSProLink-windows.zip "release/NIMSProLink-$V-windows.zip"; fi
+          if [ -f artifacts/NIMSProLink-macos.zip ]; then mv artifacts/NIMSProLink-macos.zip "release/NIMSProLink-$V-macos.zip"; fi
           ls -l release
 
       - uses: softprops/action-gh-release@v2

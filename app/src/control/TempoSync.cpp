@@ -270,7 +270,7 @@ bool TempoSync::Update( double now, double& bpm, double& beat )
 	else
 		clockWasPlaying = false;
 
-	// Traktor's deck that is on, through NI LINK (unless a MIDI clock leads): its tempo, and its beat on the track's
+	// Traktor's deck that is on, through NIMS PRO LINK (unless a MIDI clock leads): its tempo, and its beat on the track's
 	// grid, so bars fall where the DJ's do.
 	if( following != Source::Clock && traktorOn && traktorBpm > 0 )
 	{

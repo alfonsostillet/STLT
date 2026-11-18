@@ -5,9 +5,9 @@
 #include <string>
 #include <vector>
 
-// NI LINK: the decks of a DJ program (Traktor, through a QML script added to a controller's mapping) sent over
+// NIMS PRO LINK: the decks of a DJ program (Traktor, through a QML script added to a controller's mapping) sent over
 // the network to a VJ program on another computer, as Pioneer's Pro DJ Link and Denon's StageLinQ do. The DJ's
-// computer runs the transmitter; the VJ program has the receiver. docs/NILINK.md has the why and the how.
+// computer runs the transmitter; the VJ program has the receiver. docs/NIMSLINK.md has the why and the how.
 //
 // On the wire, UDP:
 // - the transmitter announces itself every second, by broadcast to kDiscoveryPort on every network it is on;
@@ -17,7 +17,7 @@
 //   deck loads another track, the track's details (and again now and then, as UDP can lose a packet).
 // Data goes to each receiver on its own (unicast): Wi-Fi delivers broadcast late and at a low rate.
 // Every value is little-endian; strings are a length byte and UTF-8.
-namespace nilink
+namespace nimslink
 {
 constexpr uint16_t kDiscoveryPort = 52130; // receivers listen here for announces
 constexpr uint16_t kSenderPort    = 52131; // the transmitter's socket (another one if taken)

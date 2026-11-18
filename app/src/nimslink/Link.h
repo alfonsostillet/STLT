@@ -4,10 +4,10 @@
 #include <string>
 #include <thread>
 #include <vector>
-#include "nilink/Net.h"
-#include "nilink/Protocol.h"
+#include "nimslink/Net.h"
+#include "nimslink/Protocol.h"
 
-namespace nilink
+namespace nimslink
 {
 // The DJ's side: announces itself, answers pings and sends the decks to every receiver that subscribed.
 class Sender

@@ -316,25 +316,25 @@ bool Sync( App& app )
 	if( !status.empty() )
 		ImGui::TextDisabled( "%s", status.c_str() );
 
-	ImGui::SeparatorText( "NI LINK (Traktor)" );
-	if( ImGui::Checkbox( "Receive##nilink", &p.nilinkEnabled ) )
+	ImGui::SeparatorText( "NIMS PRO LINK (Traktor)" );
+	if( ImGui::Checkbox( "Receive##nimslink", &p.nimslinkEnabled ) )
 		changed = true;
-	Help( "Traktor's decks from the DJ's computer, through the NI LINK transmitter there (docs/NILINK.md). A clip "
+	Help( "Traktor's decks from the DJ's computer, through the NIMS PRO LINK transmitter there (docs/NIMSLINK.md). A clip "
 	      "named after a track plays on its layer when the track plays with its fader up, at the track's place." );
-	if( p.nilinkEnabled )
+	if( p.nimslinkEnabled )
 	{
-		if( ImGui::Checkbox( "Follow Traktor's tempo##nilinkTempo", &p.nilinkTempo ) )
+		if( ImGui::Checkbox( "Follow Traktor's tempo##nimslinkTempo", &p.nimslinkTempo ) )
 			changed = true;
 		Help( "The BPM and the beat come from the deck that is on (playing, with the highest fader); bars fall on "
 		      "Traktor's grid. A MIDI clock coming in leads over it." );
 		Caption( "Addresses" );
 		ImGui::SetNextItemWidth( Ui( 300 ) );
-		if( ImGui::InputTextWithHint( "##nilinkAddresses", "found by itself", &p.nilinkAddresses ) )
+		if( ImGui::InputTextWithHint( "##nimslinkAddresses", "found by itself", &p.nimslinkAddresses ) )
 			changed = true;
 		Help( "Only for networks that do not let broadcasts through: the DJ's computer, by address or name "
 		      "(192.168.1.14, dj-laptop), several separated by commas." );
 		int found = 0;
-		for( const nilink::Source& s : app.niSources )
+		for( const nimslink::Source& s : app.linkSources )
 			if( s.online )
 			{
 				++found;
@@ -342,7 +342,7 @@ bool Sync( App& app )
 				                     s.program.empty() ? "Traktor not sending" : s.program.c_str(), s.roundTrip * 1000 / 2 );
 			}
 		if( !found )
-			ImGui::TextDisabled( app.nilink.Running() ? "No transmitter found yet" : "Not listening (the port is taken?)" );
+			ImGui::TextDisabled( app.nimslink.Running() ? "No transmitter found yet" : "Not listening (the port is taken?)" );
 	}
 
 	ImGui::SeparatorText( "Timecode" );

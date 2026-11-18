@@ -4,10 +4,10 @@
 #include <string>
 #include <vector>
 
-// The few socket calls NI LINK needs, the same on Windows, macOS and Linux.
-namespace nilink
+// The few socket calls NIMS PRO LINK needs, the same on Windows, macOS and Linux.
+namespace nimslink
 {
-// Seconds on the steady clock (never jumps), as every time in NI LINK is kept.
+// Seconds on the steady clock (never jumps), as every time in NIMS PRO LINK is kept.
 double Now();
 // This computer's name, as the other side shows it.
 std::string HostName();

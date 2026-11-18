@@ -73,9 +73,9 @@ public:
 		Internal,
 		Link,
 		Clock,
-		Traktor, // NI LINK: the deck that is on
+		Traktor, // NIMS PRO LINK: the deck that is on
 	};
-	// NI LINK, before each Update: the deck that is on (`on`: one plays, and the tempo should follow it), its tempo
+	// NIMS PRO LINK, before each Update: the deck that is on (`on`: one plays, and the tempo should follow it), its tempo
 	// and its beat on Traktor's grid, and what to call it ("Traktor deck A").
 	void SetTraktor( bool on, double bpm, double beat, const std::string& name );
 	// Once a frame, after the composition's own beat moved: `bpm` and `beat` follow the source. A BPM the user

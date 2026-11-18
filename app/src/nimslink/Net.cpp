@@ -1,4 +1,4 @@
-#include "nilink/Net.h"
+#include "nimslink/Net.h"
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
@@ -22,7 +22,7 @@
 #include <unistd.h>
 #endif
 
-namespace nilink
+namespace nimslink
 {
 namespace
 {

@@ -1,10 +1,10 @@
-#include "nilink/Link.h"
+#include "nimslink/Link.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <random>
 
-namespace nilink
+namespace nimslink
 {
 namespace
 {

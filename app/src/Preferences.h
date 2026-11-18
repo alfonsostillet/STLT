@@ -35,10 +35,10 @@ struct Preferences
 	int timecodeLtcChannel = 0;    // its channel, from 0
 	std::string timecodeMtcInput = "*"; // the MIDI input with MTC ("*": any)
 	float timecodeFreewheelMs = 500;    // the timeline runs on this long when the timecode stops arriving
-	// NI LINK: Traktor's decks from the DJ's computer (its transmitter is found on the network by itself).
-	bool nilinkEnabled = true;
-	bool nilinkTempo   = true; // the tempo and beat follow the deck that is on
-	std::string nilinkAddresses; // transmitters to reach without broadcast: "192.168.1.14, dj-laptop"
+	// NIMS PRO LINK: Traktor's decks from the DJ's computer (its transmitter is found on the network by itself).
+	bool nimslinkEnabled = true;
+	bool nimslinkTempo   = true; // the tempo and beat follow the deck that is on
+	std::string nimslinkAddresses; // transmitters to reach without broadcast: "192.168.1.14, dj-laptop"
 
 	// Video.
 	bool hardwareDecoding = true;

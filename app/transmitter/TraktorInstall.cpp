@@ -16,24 +16,25 @@
 extern char** environ;
 #endif
 
-namespace nilink
+namespace nimslink
 {
-// The scripts, compiled in from resources/nilink/qml.
-extern const unsigned char kText_TraktorNILink[];
-extern const size_t kText_TraktorNILink_size;
-extern const unsigned char kText_NILinkDeck[];
-extern const size_t kText_NILinkDeck_size;
+// The scripts, compiled in from resources/nimslink/qml.
+extern const unsigned char kText_TraktorNIMSLink[];
+extern const size_t kText_TraktorNIMSLink_size;
+extern const unsigned char kText_NIMSLinkDeck[];
+extern const size_t kText_NIMSLinkDeck_size;
 
 namespace
 {
 namespace fs = std::filesystem;
 
-const char* kLine      = "  TraktorNILink { name: \"nilink\" } // NI LINK (added by the NI LINK transmitter)";
-const char* kBackup    = "D2.qml.nilink-backup";
-// What the prototypes before NI LINK left (the probe, then "VJ LINK"): their files go, their copy of Traktor's own
+const char* kLine      = "  TraktorNIMSLink { name: \"nimslink\" } // NIMS PRO LINK (added by the NIMS PRO LINK transmitter)";
+const char* kBackup    = "D2.qml.nimslink-backup";
+// What the versions before NIMS PRO LINK left (the probe, "VJ LINK", "NI LINK"): their files go, their copy of Traktor's own
 // D2.qml is the original.
-const char* kOldFiles[]   = { "TraktorVJProbe.qml", "VJProbeDeck.qml", "VJProbeGlobal.qml", "TraktorVJLink.qml", "VJLinkDeck.qml" };
-const char* kOldBackups[] = { "D2.qml.vjprobe-backup", "D2.qml.vjlink-backup" };
+const char* kOldFiles[]   = { "TraktorVJProbe.qml", "VJProbeDeck.qml", "VJProbeGlobal.qml", "TraktorVJLink.qml", "VJLinkDeck.qml",
+	                            "TraktorNILink.qml", "NILinkDeck.qml" };
+const char* kOldBackups[] = { "D2.qml.vjprobe-backup", "D2.qml.vjlink-backup", "D2.qml.nilink-backup" };
 
 struct Script
 {
@@ -42,8 +43,8 @@ struct Script
 };
 std::vector< Script > Scripts()
 {
-	return { { "TraktorNILink.qml", std::string( (const char*)kText_TraktorNILink, kText_TraktorNILink_size ) },
-	         { "NILinkDeck.qml", std::string( (const char*)kText_NILinkDeck, kText_NILinkDeck_size ) } };
+	return { { "TraktorNIMSLink.qml", std::string( (const char*)kText_TraktorNIMSLink, kText_TraktorNIMSLink_size ) },
+	         { "NIMSLinkDeck.qml", std::string( (const char*)kText_NIMSLinkDeck, kText_NIMSLinkDeck_size ) } };
 }
 
 bool Read( const fs::path& path, std::string& text )
@@ -73,8 +74,8 @@ std::string WithoutOurLines( const std::string& text )
 	bool first = true;
 	while( std::getline( in, line ) )
 	{
-		if( line.find( "TraktorNILink" ) != std::string::npos || line.find( "TraktorVJProbe" ) != std::string::npos ||
-		    line.find( "TraktorVJLink" ) != std::string::npos )
+		if( line.find( "TraktorNIMSLink" ) != std::string::npos || line.find( "TraktorVJProbe" ) != std::string::npos ||
+		    line.find( "TraktorVJLink" ) != std::string::npos || line.find( "TraktorNILink" ) != std::string::npos )
 			continue;
 		if( !first )
 			out += '\n';
@@ -88,7 +89,7 @@ std::string WithoutOurLines( const std::string& text )
 
 bool CanWrite( const fs::path& folder )
 {
-	fs::path probe = folder / ".nilink_write_test";
+	fs::path probe = folder / ".nimslink_write_test";
 	{
 		std::ofstream out( probe, std::ios::binary );
 		if( !out )
@@ -104,7 +105,7 @@ void Check( TraktorFolder& t )
 	fs::path folder = fs::u8path( t.folder );
 	std::string d2;
 	Read( folder / "D2.qml", d2 );
-	bool line = d2.find( "TraktorNILink" ) != std::string::npos;
+	bool line = d2.find( "TraktorNIMSLink" ) != std::string::npos;
 	bool same = true, any = false;
 	for( const Script& s : Scripts() )
 	{

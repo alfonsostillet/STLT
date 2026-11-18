@@ -21,7 +21,7 @@
 #include "output/AdvancedOutput.h"
 #include "output/OutputRenderer.h"
 #include "ui/Workspaces.h"
-#include "nilink/Link.h"
+#include "nimslink/Link.h"
 
 struct GLFWwindow;
 
@@ -263,26 +263,26 @@ public:
 	double undoBpm = 120; // the BPM undo steps hold: frozen while the tempo comes from outside
 	void ApplySync();
 	void UpdateAudioInput( double now, double dt );
-	// NI LINK (AppNiLink.cpp): Traktor's decks from the DJ's computer. Clips linked to a track play on their layer
+	// NIMS PRO LINK (AppNimsLink.cpp): Traktor's decks from the DJ's computer. Clips linked to a track play on their layer
 	// when it plays, at its place; the deck that is on can lead the tempo and its stems move parameters.
-	nilink::Receiver nilink;
-	double nilinkTried = -1e9;
-	std::vector< nilink::Source > niSources; // as of this frame
-	uint32_t niLeadSource = 0; // the deck that is on: its transmitter and deck (niLeadDeck -1: none)
-	int niLeadDeck        = -1;
-	float niStems[ 5 ]    = {}; // its stems and level, for the animations
-	struct NiFollow
+	nimslink::Receiver nimslink;
+	double nimslinkTried = -1e9;
+	std::vector< nimslink::Source > linkSources; // as of this frame
+	uint32_t linkLeadSource = 0; // the deck that is on: its transmitter and deck (linkLeadDeck -1: none)
+	int linkLeadDeck        = -1;
+	float linkStems[ 5 ]    = {}; // its stems and level, for the animations
+	struct LinkFollow
 	{
 		double shown = 0; // the track position the clip shows, moving smoothly towards the deck's
 		int jumps    = -1;
 		uint32_t source = 0;
 		int deck        = -1;
 	};
-	std::map< int, NiFollow > niFollow; // by layer
-	void UpdateNiLink( double dt );
-	// The deck (transmitter index in niSources, deck) whose loaded track `clip` belongs to; false when none.
-	bool NiDeckFor( const Clip& clip, int& source, int& deck ) const;
-	std::string NiDeckName( int source, int deck ) const; // "A", or "DJ-LAPTOP A" with more than one transmitter
+	std::map< int, LinkFollow > linkFollow; // by layer
+	void UpdateNimsLink( double dt );
+	// The deck (transmitter index in linkSources, deck) whose loaded track `clip` belongs to; false when none.
+	bool LinkDeckFor( const Clip& clip, int& source, int& deck ) const;
+	std::string LinkDeckName( int source, int deck ) const; // "A", or "DJ-LAPTOP A" with more than one transmitter
 	void ReleaseStuckMouse(); // clears a mouse button left held when its window closed mid-press
 	void RestartAudioInput() { audioInput.Stop(); audioInputTried = -1e9; }
 	bool learning  = false; // mapping mode: a click picks a control, the next key or MIDI message maps it

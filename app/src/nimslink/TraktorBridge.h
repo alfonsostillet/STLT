@@ -4,12 +4,12 @@
 #include <mutex>
 #include <string>
 #include <thread>
-#include "nilink/Protocol.h"
+#include "nimslink/Protocol.h"
 
-namespace nilink
+namespace nimslink
 {
 // The transmitter's ear inside the DJ's computer: the QML script added to Traktor's mapping posts the decks, as
-// JSON, to http://127.0.0.1:9125/traktor about 33 times a second (resources/nilink/qml/TraktorNILink.qml):
+// JSON, to http://127.0.0.1:9125/traktor about 33 times a second (resources/nimslink/qml/TraktorNIMSLink.qml):
 //   { v, session, seq, t, fast: [4 x [loaded, play, pos, rate, beatphase, beat, bpm, loopOn, loopStart, loopLen,
 //                                     stem1, stem2, stem3, stem4, level, volume]],
 //     info: [4 x { title, artist, key, file, entry, length, bpm, stems, hotcues: [8 x [type, start, length, name] | null] }] }

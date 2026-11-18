@@ -1,13 +1,13 @@
-# NI LINK
+# NIMS PRO LINK
 
-NI LINK sends a DJ's decks from Traktor to the VJ's program on another computer, as Pioneer's Pro DJ Link and Denon's StageLinQ do for their players. When the DJ starts a track, the clip linked to it starts on its layer, at the track's place, and follows it: pause, cue, hotcues, loops and the pitch fader. The deck that is on leads the tempo, and its stems (drums, bass, other, vocals) can move any parameter.
+NIMS PRO LINK sends a DJ's decks from Traktor to the VJ's program on another computer, as Pioneer's Pro DJ Link and Denon's StageLinQ do for their players. When the DJ starts a track, the clip linked to it starts on its layer, at the track's place, and follows it: pause, cue, hotcues, loops and the pitch fader. The deck that is on leads the tempo, and its stems (drums, bass, other, vocals) can move any parameter.
 
-It is a prototype, made to show Native Instruments. Traktor itself is not changed. NI LINK adds a small script of its own to the mapping of the Kontrol D2 controller, the same way Traktor draws its controllers' screens.
+It is a prototype, made to show Native Instruments. Traktor itself is not changed. NIMS PRO LINK adds a small script of its own to the mapping of the Kontrol D2 controller, the same way Traktor draws its controllers' screens.
 
 ## The parts
 
-- **The transmitter** runs on the DJ's computer, next to Traktor. It is `NILink.exe` on Windows and `NI LINK.app` on macOS. It has a small window and no settings: three lights (Traktor, the network, the VJs listening) and the four decks.
-- **The script in Traktor** reads the decks about 33 times a second and posts them to the transmitter on the same computer. It is two files, `TraktorNILink.qml` and `NILinkDeck.qml`, plus one line added to the D2's `D2.qml`. The transmitter installs it and can remove it. The sources are in `app/resources/nilink/qml`.
+- **The transmitter** runs on the DJ's computer, next to Traktor. It is `NIMSProLink.exe` on Windows and `NIMS PRO LINK.app` on macOS. It has a small window and no settings: three lights (Traktor, the network, the VJs listening) and the four decks.
+- **The script in Traktor** reads the decks about 33 times a second and posts them to the transmitter on the same computer. It is two files, `TraktorNIMSLink.qml` and `NIMSLinkDeck.qml`, plus one line added to the D2's `D2.qml`. The transmitter installs it and can remove it. The sources are in `app/resources/nimslink/qml`.
 - **The receiver** is built into STLT. It finds the transmitters on its networks by itself.
 
 ## Setting up
@@ -19,28 +19,28 @@ It is a prototype, made to show Native Instruments. Traktor itself is not change
 3. In Traktor, go to *Preferences > Controller Manager*, press *Add... > Native Instruments > Kontrol D2*, then restart Traktor. No D2 hardware is needed: the mapping is what loads the script.
 4. The TRAKTOR light turns green, showing *Traktor connected, 33 updates/s*.
 
-A Traktor that has the earlier prototype's script (`TraktorVJLink.qml`, from the *traktor_modulare* folder) is updated in the same step: its files go, and its copy of Traktor's own `D2.qml` is kept as the original.
+A Traktor that has the earlier prototype's script (`TraktorVJLink.qml` from the *traktor_modulare* folder, or `TraktorNILink.qml`) is updated in the same step: its files go, and its copy of Traktor's own `D2.qml` is kept as the original.
 
-**Remove from Traktor** (bottom right of the window) puts Traktor's own `D2.qml` back and deletes the script. The original `D2.qml` is kept as `D2.qml.nilink-backup` while NI LINK is installed.
+**Remove from Traktor** (bottom right of the window) puts Traktor's own `D2.qml` back and deletes the script. The original `D2.qml` is kept as `D2.qml.nimslink-backup` while NIMS PRO LINK is installed.
 
 The same can be done from a command line:
 
-- `NILink --install` puts the script in and quits; the exit code is 0 when it worked and 3 when permission was refused.
-- `NILink --uninstall` takes it out and quits.
+- `NIMSLink --install` puts the script in and quits; the exit code is 0 when it worked and 3 when permission was refused.
+- `NIMSLink --uninstall` takes it out and quits.
 
 ### On the VJ's computer
 
-Open STLT. Nothing needs setting: NI LINK is on by default (*Preferences > Sync*). The first time, Windows asks whether STLT may use the network; allow it on private networks.
+Open STLT. Nothing needs setting: NIMS PRO LINK is on by default (*Preferences > Sync*). The first time, Windows asks whether STLT may use the network; allow it on private networks.
 
 ### The network
 
 - **Best**: a direct Ethernet cable between the two computers, or both on the same wired switch. Without a router, both computers give themselves an address (169.254.x.x) and find each other all the same.
 - **Wi-Fi works**, with more jitter. The receiver measures the network and takes most of it out (see *Measurements*).
-- **When broadcasts don't get through** (some venue networks), enter the DJ computer's address in STLT's *Preferences > Sync > NI LINK addresses*, for example `192.168.1.14`.
+- **When broadcasts don't get through** (some venue networks), enter the DJ computer's address in STLT's *Preferences > Sync > NIMS PRO LINK addresses*, for example `192.168.1.14`.
 
 ### Trying the network before Traktor
 
-`NILink --demo` sends four made-up decks:
+`NIMSLink --demo` sends four made-up decks:
 
 - deck A plays "Kerala" by Bonobo;
 - deck B has "Kong" loaded and paused;
@@ -64,7 +64,7 @@ In STLT, link a clip to deck A in the Traktor panel: it starts on its layer at o
 
 ## Measurements
 
-From the tests (`app/tests/nilink_test.cpp`, which print them). The real thing on two computers should be measured too: see *Still to do*.
+From the tests (`app/tests/nimslink_test.cpp`, which print them). The real thing on two computers should be measured too: see *Still to do*.
 
 | Case | Error in the position shown | A jump followed in |
 |---|---|---|
@@ -80,7 +80,7 @@ How the jitter comes out:
 
 ## The protocol
 
-UDP and IPv4. Every value is little-endian. A string is one length byte followed by UTF-8. A packet starts with `NILK`, the version (1), its type, two spare bytes and the sender's id. The id is random and new each time a program starts.
+UDP and IPv4. Every value is little-endian. A string is one length byte followed by UTF-8. A packet starts with `NIMS`, the version (1), its type, two spare bytes and the sender's id. The id is random and new each time a program starts.
 
 | Type | Direction | What it carries |
 |---|---|---|

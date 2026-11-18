@@ -1,9 +1,9 @@
-// NI LINK: posts Traktor's four decks to the NI LINK transmitter on this computer (http://127.0.0.1:9125),
+// NIMS PRO LINK: posts Traktor's four decks to the NIMS PRO LINK transmitter on this computer (http://127.0.0.1:9125),
 // as Traktor updates them: about 33 times a second. Each post has positions and levels; the tracks and hotcues
 // go with every 15th (about twice a second).
 // "fast" per deck: [loaded, play, pos, rate, beatphase, beat, bpm, loopOn, loopStart, loopLen,
 //                   stem1, stem2, stem3, stem4, level, volume]
-// Installed by the NI LINK transmitter into the Kontrol D2's mapping; do not edit there.
+// Installed by the NIMS PRO LINK transmitter into the Kontrol D2's mapping; do not edit there.
 import QtQuick 2.0
 import CSI 1.0
 
@@ -16,10 +16,10 @@ Module {
   property double pendingAt: 0
   property double sentAt: 0
 
-  NILinkDeck { id: d1; deckId: 1; onMoved: link.soon() }
-  NILinkDeck { id: d2; deckId: 2; onMoved: link.soon() }
-  NILinkDeck { id: d3; deckId: 3; onMoved: link.soon() }
-  NILinkDeck { id: d4; deckId: 4; onMoved: link.soon() }
+  NIMSLinkDeck { id: d1; deckId: 1; onMoved: link.soon() }
+  NIMSLinkDeck { id: d2; deckId: 2; onMoved: link.soon() }
+  NIMSLinkDeck { id: d3; deckId: 3; onMoved: link.soon() }
+  NIMSLinkDeck { id: d4; deckId: 4; onMoved: link.soon() }
 
   // A deck moved: post once the other decks have their new values too (they change in the same update).
   function soon() {
