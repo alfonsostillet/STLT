@@ -8,8 +8,42 @@
 #include "audio/AudioInput.h"
 #include "media/AudioDecoder.h"
 #include "media/FrameSource.h"
+#ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 using namespace stltvj;
+
+// Where the test is, told before each step (unbuffered): a crash shows where it happened.
+static void Step( const char* what )
+{
+	std::fprintf( stderr, "audio_test: %s\n", what );
+	std::fflush( stderr );
+}
+
+#ifdef _WIN32
+// A crash on Windows: its code and the address, as an offset into the module it is in (to find with the map or
+// a debugger), instead of a bare SEGFAULT.
+static LONG WINAPI Crashed( EXCEPTION_POINTERS* info )
+{
+	void* at        = info->ExceptionRecord->ExceptionAddress;
+	HMODULE module  = nullptr;
+	char name[ MAX_PATH ] = "?";
+	if( GetModuleHandleExA( GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCSTR)at, &module ) )
+		GetModuleFileNameA( module, name, MAX_PATH );
+	std::fprintf( stderr, "audio_test: crash 0x%08lX at %p = %s+0x%llx", info->ExceptionRecord->ExceptionCode, at, name,
+	              (unsigned long long)( (char*)at - (char*)module ) );
+	if( info->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION && info->ExceptionRecord->NumberParameters >= 2 )
+		std::fprintf( stderr, " (%s address %p)", info->ExceptionRecord->ExceptionInformation[ 0 ] ? "writing" : "reading",
+		              (void*)info->ExceptionRecord->ExceptionInformation[ 1 ] );
+	std::fprintf( stderr, ", thread %lu\n", GetCurrentThreadId() );
+	std::fflush( stderr );
+	return EXCEPTION_CONTINUE_SEARCH;
+}
+#endif
 
 static int failures = 0;
 
@@ -50,6 +84,7 @@ static void TestDecoder()
 {
 	AudioDecoder none;
 	CHECK( !none.Open( Fixture( "ramp_h264.mp4" ), 48000 ) ); // no sound in it
+	Step( "decoder: the tone" );
 
 	// tone_aac.mp4: 2 s of a 440 Hz sine in mono AAC at 44.1 kHz, with a small picture.
 	AudioDecoder tone;
@@ -91,7 +126,9 @@ static void Settle( AudioVoice& voice )
 
 static void TestVoices()
 {
+	Step( "voices: a file without sound" );
 	CHECK( AudioVoice::Open( Fixture( "ramp_h264.mp4" ), 48000 ) == nullptr );
+	Step( "voices: the engine" );
 	AudioEngine engine;
 	engine.StartHeadless( 48000 );
 	std::shared_ptr< AudioVoice > voice = AudioVoice::Open( Fixture( "tone_aac.mp4" ), 48000 );
@@ -99,6 +136,7 @@ static void TestVoices()
 	if( !voice )
 		return;
 	std::vector< float > out( 48000 * 2 );
+	Step( "voices: playing" );
 
 	// Playing from 0.5 s: the sound plays and the playhead moves with it.
 	voice->Follow( 0.5, 1.0, 1.0f );
@@ -198,14 +236,22 @@ static void TestInputBands()
 
 int main()
 {
+#ifdef _WIN32
+	SetUnhandledExceptionFilter( Crashed );
+	std::fprintf( stderr, "audio_test: main thread %lu\n", GetCurrentThreadId() );
+#endif
+	Step( "input bands" );
 	TestInputBands();
 	if( !HasFfmpeg() )
 	{
 		std::printf( "built without FFmpeg: no clip sound to test\n" );
 		return failures ? 1 : 0;
 	}
+	Step( "decoder" );
 	TestDecoder();
+	Step( "voices" );
 	TestVoices();
+	Step( "done" );
 	if( failures )
 	{
 		std::fprintf( stderr, "%d check(s) failed\n", failures );
