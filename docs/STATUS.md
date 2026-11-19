@@ -1,8 +1,20 @@
-# Where the work on STLT stands (13 November 2026)
+# Where the work on STLT stands (19 November 2026)
 
 This is a handover. It says where the project is, how work is done on it and what is left, so a new chat can start from here without the whole history.
 
 ## In short
+
+- **STLT 2.0.1 is out** (19 November): https://github.com/alfonsostillet/STLT/releases/tag/v2.0.1, from `d9fe392` on `main`.
+  - It fixes the random crash after a jump in a clip with sound: an uninitialised `AVChannelLayout` in `AudioDecoder`.
+  - It brings **NIMS PRO LINK** in preview: Traktor's decks drive linked clips over the network. See [NIMSLINK.md](NIMSLINK.md).
+  - It adds two more assets, the transmitter `NIMSProLink-v2.0.1-windows.zip` and `NIMSProLink-v2.0.1-macos.zip`.
+- **NIMS PRO LINK** has been tested only with simulated decks; it still has to be tried with Traktor on two real computers.
+  - The code is in `app/src/nimslink`, `app/transmitter` and `app/src/ui/TraktorUi.cpp`; the QML for Traktor is in `app/resources/nimslink/qml`.
+  - The prototype it comes from (`traktor_modulare`) is on the owner's Google Drive.
+- **The website**: the STLT page on sud-studio.com (alfonsostillet/site, `stlt/index.html` on `main`) has a NIMS PRO LINK section and 2.0.1.
+
+The rest of this file was written for 2.0.0.
+
 
 - **STLT 2.0.0 is out**: https://github.com/alfonsostillet/STLT/releases/tag/v2.0.0, built from `a265f4a` on `main`. Three packages, each with STLT-CHASER inside:
   - Windows: `STLT-v2.0.0-windows.zip`, about 178 MB;
