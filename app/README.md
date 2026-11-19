@@ -94,6 +94,23 @@ STLT-CHASER comes with STLT: the same editor and the same three effects as for R
 - The release folder holds them: the effects in `plugins`, the editor in `chaser`. STLT loads its own copies first, before any installed for Resolume.
 - The sequences live in STLT's settings folder (`chaser`), apart from a Resolume setup's; *File → Load* in the editor opens one made for Resolume and moves it onto STLT's slices by name.
 
+## NIMS PRO LINK (Traktor)
+
+The decks of the DJ's Traktor, on another computer, drive the clips linked to their tracks (preview, since 2.0.1):
+
+- **The transmitter.** `NIMSProLink.exe` or `NIMS PRO LINK.app` runs next to Traktor and sets up its script in Traktor with **Set up Traktor**. Traktor then needs a Kontrol D2 in its Controller Manager; no D2 hardware is needed.
+- **The Traktor panel** (*View → Traktor*) shows each DJ's decks: track, time left, BPM, key, hotcues, stems, fader and the linked clip.
+- **Linking a clip.** Drag a deck onto a clip, or right-click a clip and choose *Link to a Traktor track*. A linked clip shows its deck's letter.
+- **The Clip panel's Traktor section** shows the track, the deck it is on, an offset in seconds, and *Unlink*.
+- **Playing.**
+  - A layer plays its linked clip when the track plays with its fader up, at the track's place: it follows pause, cues, loops and the pitch.
+  - Its opacity follows the channel's fader.
+  - The tempo follows the deck on air, unless *Preferences → Sync → Follow Traktor's tempo* is off.
+- **Stems.** *Animate → Traktor Drums / Bass / Other / Vocals / Level*.
+- **Settings.** *Preferences → Sync → NIMS PRO LINK*: *Receive*, *Follow Traktor's tempo*, and *Addresses* for networks without broadcast.
+
+[docs/NIMSLINK.md](../docs/NIMSLINK.md) has the setup, the measurements and the protocol.
+
 ## Performance: HAP or not
 
 HAP is the format to use for a show. Other formats work, but every one of them costs more, in several ways:

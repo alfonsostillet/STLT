@@ -15,6 +15,11 @@ Si passa dall'una all'altra con le due icone in alto a destra (o col tasto Tab).
 
 > **Cercasi utenti Mac.** La versione per macOS viene compilata in automatico ma **non è mai stata provata su un Mac vero**. Se puoi provarla, ogni riscontro è molto gradito, anche solo "si apre" o "non si apre": [apri una segnalazione](https://github.com/alfonsostillet/STLT/issues).
 
+## Le novità della 2.0.1
+
+- **NIMS PRO LINK** (anteprima): il Traktor del DJ guida le tue clip da un altro computer. Quando il DJ fa partire una traccia, la sua clip parte nel suo layer e la segue; il tempo segue il deck in onda, e gli stem di Traktor possono muovere qualsiasi parametro. [Come si usa](#nims-pro-link-traktor-guida-le-tue-clip-anteprima).
+- **Un crash corretto**: una clip con l'audio poteva far chiudere STLT dopo un salto (un cue, un loop, un rilancio), a caso e soprattutto su Windows.
+
 ## Le novità della 2.0
 
 - **Una nuova interfaccia**, scura e calda (il look *Ember*), con il deck disegnato a blocchi e tutta l'interfaccia che si può ingrandire.
@@ -98,6 +103,37 @@ Così è lo show ad aspettare chi è sul palco, e non il contrario. Ogni blocco 
 - **Timecode**: la timeline segue **LTC**, **MTC** e **Art-Net**, parte, si ferma e salta con lui, da un banco audio, un DAW o una console luci.
 - **Tempo**: **Ableton Link** e **MIDI clock**, con un ritardo regolabile per i proiettori e i LED che mostrano l'immagine in ritardo. I CDJ Pioneer si agganciano attraverso PRO DJ LINK Bridge di Pioneer.
 
+## NIMS PRO LINK: Traktor guida le tue clip (anteprima)
+
+![STLT con il pannello Traktor a destra: i quattro deck del DJ con tracce, stem e fader; nella griglia le clip collegate alle tracce portano la lettera del loro deck, e la clip di Kerala suona nel layer 2](docs/images/stlt-nimslink.webp)
+
+Come Pro DJ Link di Pioneer e StageLinQ di Denon, ma per **Traktor**: i deck del DJ arrivano via rete a STLT, sul computer del VJ.
+
+- **Il visual segue la traccia.** Quando il DJ fa partire una traccia, la clip collegata parte nel suo layer, nel punto in cui è la traccia. Segue pausa, cue, hotcue, loop e pitch.
+- **Il mix del DJ è il mix dei visual.** L'opacità di una clip collegata segue il fader del canale della sua traccia. Finché il DJ ascolta una traccia solo in cuffia (fader giù), il suo visual aspetta.
+- **Tempo.** BPM e beat di STLT seguono il deck in onda (in play, con il fader più alto), con le battute sulla griglia di Traktor.
+- **Gli stem su qualsiasi parametro.** Nel menu *Animate* di qualsiasi parametro scegli *Traktor Drums*, *Bass*, *Other*, *Vocals* o *Level*.
+
+<img src="docs/images/nimslink-transmitter.webp" alt="Il trasmettitore NIMS PRO LINK: le spie di Traktor, della rete e dei VJ collegati, poi i quattro deck, con Kerala in play e il suo visual in onda" width="440" align="right">
+
+**Come si usa**
+
+1. **Il computer del DJ.** Scarica il trasmettitore dall'[ultima release](https://github.com/alfonsostillet/STLT/releases/latest): `NIMSProLink` per Windows o per macOS. Aprilo e premi **Set up Traktor**; chiede la password di amministratore.
+2. **Traktor.** In *Preferences → Controller Manager* scegli *Add… → Native Instruments → Kontrol D2*, poi riavvia Traktor. Non serve un D2 vero. La spia TRAKTOR del trasmettitore diventa verde.
+3. **La rete.** Collega i due computer con un cavo Ethernet (meglio), oppure mettili sulla stessa rete.
+4. **STLT.** Apri il pannello **Traktor** (*View → Traktor*): i deck del DJ compaiono da soli. La prima volta Windows chiede se STLT può usare la rete: consentilo.
+5. **Collega le clip.** Trascina un deck su una clip della griglia, oppure tasto destro su una clip e scegli una traccia. La clip prende la lettera del deck. Il collegamento resta salvato nella composizione, per titolo, artista e durata: funziona su qualsiasi deck e anche la sera dopo.
+
+Da lì in poi non c'è niente da fare: il DJ suona, i visual seguono. Il trasmettitore mostra al DJ quali tracce hanno un visual e quale è in onda.
+
+- **Senza Traktor.** Per provare prima la rete, avvia il trasmettitore con `--demo`: manda quattro deck finti.
+- **Se STLT non trova il DJ.** Sulle reti che bloccano i broadcast, scrivi l'indirizzo del computer del DJ in *Preferences → Sync → NIMS PRO LINK → Addresses*.
+- **Se l'immagine arriva in ritardo.** *Preferences → Sync → Latency* imposta il ritardo del proiettore o del LED. *Offset*, nel pannello Clip, sposta una sola clip rispetto alla sua traccia.
+
+Il trasmettitore aggiunge un piccolo script suo alla mappatura del Kontrol D2. Traktor in sé non viene modificato, e **Remove from Traktor** nel trasmettitore rimette tutto com'era. Altri dettagli in **[docs/NIMSLINK.md](docs/NIMSLINK.md)** (in inglese).
+
+> **Anteprima.** NIMS PRO LINK è stato provato con deck simulati (le prove misurano circa 1-2 ms di errore sulla posizione della traccia), non ancora con Traktor su due computer veri. Ogni riscontro è gradito: [apri una segnalazione](https://github.com/alfonsostillet/STLT/issues).
+
 ## E poi
 
 - **Riproduzione veloce**: HAP e DXV 3 vanno direttamente alla scheda video, con salti istantanei a qualsiasi frame. Suonano anche H.264, HEVC, ProRes, DNxHD, VP9, PNG, JPEG, GIF e altri, con la decodifica hardware dove c'è; il pannello Clip indica il codec e suggerisce HAP o DXV quando una clip pesa sul processore.
@@ -114,6 +150,7 @@ Scarica il file per il tuo sistema dall'**[ultima release](https://github.com/al
 - **Windows**: estrai tutta la cartella e avvia `STLT.exe`. Se Windows ti avvisa, scegli *Ulteriori informazioni → Esegui comunque*.
 - **macOS** (Apple Silicon, per ora non provato): estrai e sposta `STLT.app` dove vuoi. La prima volta aprila col tasto destro → *Apri*, oppure da *Impostazioni di Sistema → Privacy e sicurezza → Apri comunque*.
 - **Linux** (compilato su Ubuntu 24.04): estrai e avvia `stlt`. Usa le librerie FFmpeg, GLEW e GTK 3 del sistema.
+- **Trasmettitore NIMS PRO LINK**, per il computer del DJ (Windows o macOS): `NIMSProLink-…-windows.zip` contiene `NIMSProLink.exe`, e `NIMSProLink-…-macos.zip` contiene `NIMS PRO LINK.app`.
 
 ## Compilare
 
@@ -136,10 +173,10 @@ STLT è gratuito. Se il progetto ti è piaciuto e vuoi sostenermi per i progetti
 
 Questo progetto è stato creato anche grazie all'utilizzo di [Claude](https://claude.ai), l'AI di Anthropic.
 
-STLT è un progetto indipendente. Non è affiliato a Resolume né ai produttori di altri prodotti, né approvato da loro.
+STLT è un progetto indipendente. Non è affiliato a Resolume, a Native Instruments né ai produttori di altri prodotti, né approvato da loro. Traktor è un marchio di Native Instruments.
 
 GPL-3.0: vedi [LICENSE](LICENSE) e [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ## Su questa versione
 
-Questa è la versione 2.0: una nuova interfaccia e un Advanced Output ricostruito intorno al luogo su cui proietti. Avrà sicuramente ancora dei bug. Non sono riuscito a provare la versione per Mac; so per certo che quella per Windows funziona. Se qualcuno volesse mandarmi un feedback ne sarei contento: [apri una segnalazione](https://github.com/alfonsostillet/STLT/issues). L'interfaccia della 1.x resta sul branch [`classic-ui`](https://github.com/alfonsostillet/STLT/tree/classic-ui).
+Questa è la versione 2.0.1: la 2.0 con un crash corretto e NIMS PRO LINK in anteprima. La 2.0 ha portato una nuova interfaccia e un Advanced Output ricostruito intorno al luogo su cui proietti. Avrà sicuramente ancora dei bug. Non sono riuscito a provare la versione per Mac; so per certo che quella per Windows funziona. Se qualcuno volesse mandarmi un feedback ne sarei contento: [apri una segnalazione](https://github.com/alfonsostillet/STLT/issues). L'interfaccia della 1.x resta sul branch [`classic-ui`](https://github.com/alfonsostillet/STLT/tree/classic-ui).

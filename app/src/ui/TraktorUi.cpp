@@ -388,13 +388,19 @@ void DrawTraktorPanel( App& app )
 		draw->AddText( ImVec2( h0.x + Ui( 18 ), h0.y + Ui( 5 ) ), theme::Text, src.name.c_str() );
 		char info[ 96 ];
 		std::snprintf( info, sizeof( info ), "%s \xC2\xB7 %.1f ms", sending ? src.program.c_str() : "Traktor not sending", src.roundTrip * 1000 / 2 );
-		draw->AddText( ImVec2( h0.x + Ui( 26 ) + ImGui::CalcTextSize( src.name.c_str() ).x, h0.y + Ui( 5 ) ), theme::TextDim, info );
+		float infoX = h0.x + Ui( 26 ) + ImGui::CalcTextSize( src.name.c_str() ).x;
+		draw->AddText( ImVec2( infoX, h0.y + Ui( 5 ) ), theme::TextDim, info );
 		if( app.linkLeadDeck >= 0 && app.linkLeadSource == src.id && app.tempoSync.Following() == TempoSync::Source::Traktor )
 		{
 			char tempo[ 64 ];
 			std::snprintf( tempo, sizeof( tempo ), "tempo from deck %c \xC2\xB7 %.2f", 'A' + app.linkLeadDeck, app.composition.bpm );
 			float tw = ImGui::CalcTextSize( tempo ).x;
-			draw->AddText( ImVec2( h0.x + width - tw - Ui( 6 ), h0.y + Ui( 5 ) ), theme::TextDim, tempo );
+			// On the same line when there is room, under it otherwise (a narrow panel).
+			bool below = infoX + ImGui::CalcTextSize( info ).x + Ui( 16 ) > h0.x + width - tw - Ui( 6 );
+			ImVec2 at  = below ? ImVec2( h0.x + Ui( 18 ), h0.y + hh ) : ImVec2( h0.x + width - tw - Ui( 6 ), h0.y + Ui( 5 ) );
+			draw->AddText( at, theme::TextDim, tempo );
+			if( below )
+				hh += ImGui::GetTextLineHeight() + Ui( 4 );
 		}
 		ImGui::Dummy( ImVec2( width, hh ) );
 		for( int d = 0; d < nimslink::kDecks; ++d )
