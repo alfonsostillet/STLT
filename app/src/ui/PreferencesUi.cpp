@@ -132,6 +132,11 @@ bool General( App& app )
 	Help( "The size of the whole interface, on top of the display's own scaling: smaller to fit more on a small laptop, "
 	      "bigger to read it from further on a large monitor. Also View > Zoom In and Zoom Out (Ctrl + and Ctrl -), Ctrl 0 "
 	      "for 100 %. Kept on this computer, whatever the workspace." );
+	Caption( "Faders in a layer's header" );
+	changed |= ImGui::Checkbox( "Master (M)", &p.showLayerMasterFader );
+	changed |= ImGui::Checkbox( "Audio (A)", &p.showLayerAudioFader );
+	Help( "A hidden fader keeps its value and its MIDI and OSC, and the Layer panel still has it. The Video fader (V) is "
+	      "always there." );
 	Caption( "Settings folder" );
 	ImGui::TextDisabled( "%s", app.configDir.c_str() );
 	Help( "Preferences, shortcuts and their presets, workspaces, output presets and the last session are kept here." );

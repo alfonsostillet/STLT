@@ -16,6 +16,10 @@ struct Preferences
 	// The S fader in a layer's header (and its MIDI/OSC): false sets the layer's speed, which multiplies the clip's own;
 	// true sets the speed of the clip playing on the layer, as in Resolume.
 	bool layerSpeedIsClipSpeed = false;
+	// The M and A faders in a layer's header; hidden, the others take their room. Their values, their MIDI/OSC and
+	// the Layer panel's sliders stay.
+	bool showLayerMasterFader = true;
+	bool showLayerAudioFader  = true;
 	// The size of the whole interface (View > Zoom In/Out, Ctrl + and Ctrl -), on top of the display's own scale:
 	// smaller on a small laptop, bigger on a large monitor. Kept per computer, not per workspace.
 	float interfaceScale = 1.0f;

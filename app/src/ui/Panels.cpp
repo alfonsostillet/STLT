@@ -1993,26 +1993,38 @@ static void DrawDeck( App& app, bool layersPart )
 				}
 			}
 
-			// FADERS: video, audio, master (the most used first); the crossfader group under them.
+			// FADERS: video, audio, master (the most used first), audio and master hidden by a preference; the crossfader
+			// group under them.
 			{
 				const float fx = x1 + g.pad, fwAll = g.fadersW - 2 * g.pad, fy = y + g.pad;
 				const float abH = Ui( 18 ), fh = g.row - 2 * g.pad - abH - Ui( 4 );
-				const float fw = ( fwAll - 2 * Ui( 4 ) ) / 3;
+				const bool showAudio = app.prefs.showLayerAudioFader, showMaster = app.prefs.showLayerMasterFader;
+				const int faders     = 1 + ( showAudio ? 1 : 0 ) + ( showMaster ? 1 : 0 );
+				const float fw       = ( fwAll - ( faders - 1 ) * Ui( 4 ) ) / faders;
+				float xFader         = fx;
 				char shown[ 16 ];
 				float shownOpacity = layer.ShownOpacity( comp.beat ); // moving with the beat: shown, not edited
 				float* opacity     = layer.opacityAnimation.mode == AnimMode::Off ? &layer.opacity : &shownOpacity;
 				std::snprintf( shown, sizeof( shown ), "%.0f", *opacity * 100 );
-				VerticalFader( "##video", ImVec2( fx, fy ), ImVec2( fw, fh ), opacity, "V", shown, "Video", learning, off );
+				VerticalFader( "##video", ImVec2( xFader, fy ), ImVec2( fw, fh ), opacity, "V", shown, "Video", learning, off );
 				MapTarget( app, layerAddress + "/video/opacity" );
-				if( layer.volume <= 0.0001f )
-					std::snprintf( shown, sizeof( shown ), "\xE2\x88\x92\xE2\x88\x9E" ); // minus infinity
-				else
-					std::snprintf( shown, sizeof( shown ), "%.1f", 20 * std::log10( layer.volume ) );
-				VerticalFader( "##audio", ImVec2( fx + fw + Ui( 4 ), fy ), ImVec2( fw, fh ), &layer.volume, "A", shown, "Audio", learning, off );
-				MapTarget( app, layerAddress + "/audio/volume" );
-				std::snprintf( shown, sizeof( shown ), "%.0f", layer.master * 100 );
-				VerticalFader( "##master", ImVec2( fx + 2 * ( fw + Ui( 4 ) ), fy ), ImVec2( fw, fh ), &layer.master, "M", shown, "Master (video and sound)", learning, off );
-				MapTarget( app, layerAddress + "/master" );
+				xFader += fw + Ui( 4 );
+				if( showAudio )
+				{
+					if( layer.volume <= 0.0001f )
+						std::snprintf( shown, sizeof( shown ), "\xE2\x88\x92\xE2\x88\x9E" ); // minus infinity
+					else
+						std::snprintf( shown, sizeof( shown ), "%.1f", 20 * std::log10( layer.volume ) );
+					VerticalFader( "##audio", ImVec2( xFader, fy ), ImVec2( fw, fh ), &layer.volume, "A", shown, "Audio", learning, off );
+					MapTarget( app, layerAddress + "/audio/volume" );
+					xFader += fw + Ui( 4 );
+				}
+				if( showMaster )
+				{
+					std::snprintf( shown, sizeof( shown ), "%.0f", layer.master * 100 );
+					VerticalFader( "##master", ImVec2( xFader, fy ), ImVec2( fw, fh ), &layer.master, "M", shown, "Master (video and sound)", learning, off );
+					MapTarget( app, layerAddress + "/master" );
+				}
 				float half = ( fwAll - Ui( 4 ) ) / 2, ay = fy + fh + Ui( 4 );
 				if( BoxButton( "##groupA", ImVec2( fx, ay ), ImVec2( half, abH ), "A", layer.crossfader == 1, theme::Edge, tip( "Crossfader group A" ), nullptr, BoxStyle::Outline,
 				               Fonts().small ) )
