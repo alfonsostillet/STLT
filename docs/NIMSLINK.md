@@ -66,11 +66,13 @@ In STLT, link a clip to deck A in the Traktor panel: it starts on its layer at o
 
 From the tests (`app/tests/nimslink_test.cpp`, which print them). The real thing on two computers should be measured too: see *Still to do*.
 
-| Case | Error in the position shown | A jump followed in |
+| Case | Error in the position shown | A jump shown, from the post carrying it |
 |---|---|---|
-| The script's samples alone (each up to 30 ms late) | 1.6 ms on average, 3.9 ms at worst | one packet |
-| Transmitter and receiver on one computer | 0.9 to 2 ms on average | about 30 ms |
-| A bad network: 1 to 8 ms each way, 5% lost | 1.6 ms on average, 3.9 ms at worst | 35 to 70 ms |
+| The script's samples alone (each up to 30 ms late) | 1.6 ms on average, 3.9 ms at worst | at that post |
+| Transmitter and receiver on one computer | 0.9 to 2 ms on average | 5 to 15 ms |
+| A bad network: 1 to 8 ms each way, 5% lost | 1.6 ms on average, 3.9 ms at worst | 5 to 15 ms |
+
+Traktor itself adds to a jump up to one update (about 30 ms) before its script posts it.
 
 How the jitter comes out:
 

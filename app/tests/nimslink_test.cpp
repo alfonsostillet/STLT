@@ -461,7 +461,8 @@ struct FakeTraktor
 	Sender& sender;
 	std::atomic< bool > running{ true };
 	std::atomic< double > origin{ 0 };
-	std::atomic< double > jumpAt{ -1 }; // a jump to hotcue 1 at this time
+	std::atomic< double > jumpAt{ -1 };   // a jump to hotcue 1 at this time
+	std::atomic< double > jumpSent{ -1 }; // when the first post carrying it went out (Traktor reads late, and posts every 30 ms)
 	std::thread thread;
 	explicit FakeTraktor( Sender& to ) : sender( to )
 	{
@@ -479,11 +480,15 @@ struct FakeTraktor
 				d[ 0 ].loaded   = true;
 				d[ 0 ].playing  = true;
 				d[ 0 ].bpm      = 62.5f;
-				d[ 0 ].position = Truth( now - stale( random ) );
+				double read     = now - stale( random );
+				d[ 0 ].position = Truth( read );
 				d[ 0 ].beat     = d[ 0 ].position * 62.5 / 60;
 				d[ 0 ].volume   = 1;
 				d[ 0 ].stems[ 0 ] = 0.5f;
 				sender.Publish( d, now );
+				double j = jumpAt;
+				if( j > 0 && read >= j && jumpSent < 0 )
+					jumpSent = now;
 				Sleep( 0.030 );
 			}
 		} );
@@ -545,8 +550,11 @@ static Measured Watch( Receiver& receiver, FakeTraktor& traktor, double seconds,
 			m.lost      = s[ 0 ].lost;
 			double error = std::fabs( s[ 0 ].decks[ 0 ].position - traktor.Truth( now ) );
 			bool nearJump = jump && now > jumpTime - 0.01 && now < jumpTime + 0.2;
-			if( jump && m.followJump < 0 && now > jumpTime && s[ 0 ].decks[ 0 ].jumps > 0 && error < 0.05 )
-				m.followJump = now - jumpTime;
+			// How long the link takes from the post carrying the jump to the receiver showing it (Traktor's own delay, up
+			// to a post late, is not the link's).
+			double sentAt = traktor.jumpSent;
+			if( jump && m.followJump < 0 && sentAt > 0 && s[ 0 ].decks[ 0 ].jumps > 0 && error < 0.05 )
+				m.followJump = now - sentAt;
 			if( !nearJump )
 			{
 				sum += error;
