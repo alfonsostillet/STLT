@@ -11,6 +11,7 @@ This is a handover. It says where the project is, how work is done on it and wha
 - **NIMS PRO LINK** has been tested only with simulated decks; it still has to be tried with Traktor on two real computers.
   - The code is in `app/src/nimslink`, `app/transmitter` and `app/src/ui/TraktorUi.cpp`; the QML for Traktor is in `app/resources/nimslink/qml`.
   - The prototype it comes from (`traktor_modulare`) is on the owner's Google Drive.
+- **NIMS PRO LINK, the NIMS switch and Track Links** (after 2.0.1, branch `claude/vibrant-meitner-we0ik4`): the layer is no longer locked while a linked track plays. A **NIMS** button next to LINK turns it on and off like Ableton Link; a clip launched or stopped by hand on a layer NIMS plays turns it off, and NIMS on again brings every linked clip back at its track's place (`/composition/nims`). Linked clips start from any deck of clips. One clip per track, an X to unlink, and a **Track Links** panel with every track the decks have had (`traktor-tracks.json` in the settings folder). See [NIMSLINK.md](NIMSLINK.md); tests in `nimslink_test` and `nimslink_smoke.py`; to try with Traktor in [DA-PROVARE.md](DA-PROVARE.md).
 - **The website**: the STLT page on sud-studio.com (alfonsostillet/site, `stlt/index.html` on `main`) has a NIMS PRO LINK section and 2.0.1.
 
 The rest of this file was written for 2.0.0.

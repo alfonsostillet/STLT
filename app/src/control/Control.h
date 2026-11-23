@@ -33,6 +33,7 @@ namespace stltvj
 //   /composition/tempocontroller/resync
 //   /composition/pause                               pause on or off
 //   /composition/stop                                stop every layer
+//   /composition/nims                                NIMS PRO LINK on or off (the toolbar's NIMS switch)
 //   [scope]/video/effects/S/params/NAME              an effect parameter, 0..1 over its range; the scope is
 //                                                    /composition, /composition/layers/L or
 //                                                    /composition/layers/L/clips/C
@@ -81,6 +82,7 @@ struct ControlTarget
 		Resync,
 		Pause,
 		Stop,
+		Nims, // a switch: NIMS PRO LINK drives the linked clips
 		EffectParam,
 	};
 	Kind kind  = Kind::None;

@@ -2,8 +2,13 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <cstring>
+#include <imgui_stdlib.h>
+#include <unordered_map>
 #include <string>
 #include "App.h"
+#include "ui/ControlUi.h"
+#include "ui/Panels.h"
 #include "ui/Theme.h"
 #include "ui/Widgets.h"
 #include "ui/Workspaces.h"
@@ -66,36 +71,72 @@ void LinkSign( ImDrawList* draw, ImVec2 c, float s, ImU32 colour )
 	draw->AddRect( ImVec2( c.x - w * 0.2f, c.y - h + s * 0.08f ), ImVec2( c.x + w, c.y + h + s * 0.08f ), colour, r, 0, std::max( 1.0f, s * 0.11f ) );
 }
 
-// The clips of the grid linked to `track` (the deck on show), as layer/column.
-std::vector< std::pair< int, int > > LinkedClips( App& app, const nimslink::TrackInfo& track )
+// A cell of the grid, in any deck of clips.
+struct Cell
 {
-	std::vector< std::pair< int, int > > found;
-	nimslink::TrackId id = nimslink::IdOf( track );
-	for( int l = 0; l < (int)app.composition.layers.size(); ++l )
-	{
-		const Layer& layer = app.composition.layers[ l ];
-		for( int c = 0; c < (int)layer.clips.size(); ++c )
-			if( !layer.clips[ c ].track.Empty() && nimslink::SameTrack( layer.clips[ c ].track, id ) )
-				found.emplace_back( l, c );
-	}
+	int deck, row, column;
+};
+
+// The clips linked to `track`, in every deck of clips (the deck on show first).
+std::vector< Cell > LinkedClips( App& app, const nimslink::TrackId& id )
+{
+	std::vector< Cell > found;
+	app.composition.ForEachClip( [ & ]( Clip& clip, int d, int r, int c ) {
+		if( !clip.track.Empty() && nimslink::SameTrack( clip.track, id ) )
+			found.push_back( { d, r, c } );
+	} );
+	std::stable_partition( found.begin(), found.end(), [ & ]( const Cell& c ) { return c.deck == app.composition.deck; } );
 	return found;
 }
+
+// "L1 · C2", with the deck of clips when it is not the one on show ("L1 · C2 · Deck 2"); "+" when there are more.
+std::string Where( const App& app, const Cell& cell, bool more )
+{
+	std::string text = "L" + std::to_string( cell.row + 1 ) + " \xC2\xB7 C" + std::to_string( cell.column + 1 );
+	if( cell.deck != app.composition.deck && cell.deck < (int)app.composition.decks.size() )
+		text += " \xC2\xB7 " + app.composition.decks[ cell.deck ].name;
+	return text + ( more ? " +" : "" );
+}
+
+// A clip's picture, framed in the accent while it is on air.
+void Thumbnail( ImDrawList* draw, const Clip& clip, ImVec2 i0, ImVec2 i1, bool onAir )
+{
+	draw->AddRectFilled( i0, i1, IM_COL32( 0, 0, 0, 255 ) );
+	GLuint texture = clip.player ? clip.player->Thumbnail().Texture() : 0;
+	if( texture )
+		draw->AddImage( (ImTextureID)(intptr_t)texture, i0, i1, ImVec2( 0, 1 ), ImVec2( 1, 0 ) );
+	else if( clip.generatorThumbnail )
+		draw->AddImage( (ImTextureID)(intptr_t)clip.generatorThumbnail->Texture(), i0, i1, ImVec2( 0, 1 ), ImVec2( 1, 0 ) );
+	if( onAir )
+		draw->AddRect( ImVec2( i0.x - Ui( 1 ), i0.y - Ui( 1 ) ), ImVec2( i1.x + Ui( 1 ), i1.y + Ui( 1 ) ), theme::Accent, 0, 0, Ui( 2 ) );
+}
+
+// A small X at `at` (its top left); true when clicked.
+bool UnlinkButton( const char* id, ImVec2 at, const char* tip )
+{
+	ImVec2 keep = ImGui::GetCursorScreenPos();
+	ImGui::SetCursorScreenPos( at );
+	bool clicked = IconButton( id, Icon::Close, false, Ui( 18 ) );
+	if( ImGui::IsItemHovered() )
+		ImGui::SetTooltip( "%s", tip );
+	ImGui::SetCursorScreenPos( keep );
+	return clicked;
+}
+
+void DrawDeckBody( App& app, int s, int d, float width, ImVec2 p0, float h, bool hovered );
 
 void DrawDeck( App& app, int s, int d, float width )
 {
 	const nimslink::Source& src  = app.linkSources[ s ];
 	const nimslink::DeckNow& now = src.decks[ d ];
-	const nimslink::DeckState& st = now.state;
-	const UiFonts& f           = Fonts();
-	ImDrawList* draw           = ImGui::GetWindowDrawList();
-	bool loaded                = now.present && st.loaded;
+	bool loaded                  = now.present && now.state.loaded;
 	const nimslink::TrackInfo* t = loaded && src.hasTrack[ d ] ? &src.tracks[ d ] : nullptr;
 	// Narrow (the panel docked among others): the linked clip on a line of its own under the meters.
-	bool narrow                = width < Ui( 600 );
-	float h                    = !loaded ? Ui( 34 ) : narrow ? Ui( 114 ) : Ui( 92 );
-	ImVec2 p0                  = ImGui::GetCursorScreenPos();
-	ImVec2 p1( p0.x + width, p0.y + h );
+	bool narrow = width < Ui( 600 );
+	float h     = !loaded ? Ui( 34 ) : narrow ? Ui( 114 ) : Ui( 92 );
+	ImVec2 p0   = ImGui::GetCursorScreenPos();
 	ImGui::PushID( s * 8 + d );
+	ImGui::SetNextItemAllowOverlap(); // the X that unlinks the track's clip sits on it
 	ImGui::InvisibleButton( "deck", ImVec2( width, h ) );
 	bool hovered = ImGui::IsItemHovered();
 	// Dragged onto a clip of the grid: the clip is linked to this deck's track.
@@ -108,9 +149,23 @@ void DrawDeck( App& app, int s, int d, float width )
 		ImGui::Text( "%s%s%s", t->title.c_str(), t->artist.empty() ? "" : "  -  ", t->artist.c_str() );
 		ImGui::EndDragDropSource();
 	}
-	ImGui::PopID();
 	if( hovered && t && !ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
 		ImGui::SetTooltip( "Drag onto a clip to link the clip to this track" );
+	DrawDeckBody( app, s, d, width, p0, h, hovered );
+	ImGui::PopID();
+}
+
+void DrawDeckBody( App& app, int s, int d, float width, ImVec2 p0, float h, bool hovered )
+{
+	const nimslink::Source& src   = app.linkSources[ s ];
+	const nimslink::DeckNow& now  = src.decks[ d ];
+	const nimslink::DeckState& st = now.state;
+	const UiFonts& f              = Fonts();
+	ImDrawList* draw              = ImGui::GetWindowDrawList();
+	bool loaded                   = now.present && st.loaded;
+	const nimslink::TrackInfo* t  = loaded && src.hasTrack[ d ] ? &src.tracks[ d ] : nullptr;
+	bool narrow                   = width < Ui( 600 );
+	ImVec2 p1( p0.x + width, p0.y + h );
 	draw->AddRectFilled( p0, p1, hovered && t ? theme::Raised : theme::Panel );
 	draw->AddLine( ImVec2( p0.x, p1.y - 0.5f ), ImVec2( p1.x, p1.y - 0.5f ), theme::Line );
 	draw->AddRectFilled( p0, ImVec2( p0.x + Ui( 3 ), p1.y ), loaded ? DeckColour( d ) : theme::Line );
@@ -187,7 +242,7 @@ void DrawDeck( App& app, int s, int d, float width )
 	if( sx + Ui( 4 ) + TextWidth( small, fader ) <= x1 )
 		draw->AddText( small, small->FontSize, ImVec2( sx + Ui( 4 ), y ), theme::TextFaint, fader );
 	sx += TextWidth( small, fader ) + Ui( 14 );
-	std::vector< std::pair< int, int > > linked = t ? LinkedClips( app, *t ) : std::vector< std::pair< int, int > >();
+	std::vector< Cell > linked = t ? LinkedClips( app, nimslink::IdOf( *t ) ) : std::vector< Cell >();
 	float ly = y - Ui( 3 );
 	if( narrow )
 	{
@@ -200,27 +255,49 @@ void DrawDeck( App& app, int s, int d, float width )
 		draw->AddText( ImVec2( narrow ? sx : x1 - TextWidth( ImGui::GetFont(), hint.c_str() ), ly ), theme::TextFaint, hint.c_str() );
 		return;
 	}
-	auto [ l, c ]   = linked[ 0 ];
-	const Clip& clip = app.composition.layers[ l ].clips[ c ];
-	bool onAir      = app.composition.layers[ l ].Plays( app.composition.deck, l, c );
-	char where[ 32 ];
-	std::snprintf( where, sizeof( where ), "L%d \xC2\xB7 C%d%s", l + 1, c + 1, linked.size() > 1 ? " +" : "" );
-	float ww = TextWidth( ImGui::GetFont(), where );
-	float nameRoom   = std::max( 0.0f, x1 - ww - Ui( 8 ) - ( narrow ? x0 : sx ) - Ui( 42 ) );
-	std::string name = Fit( ImGui::GetFont(), clip.name, nameRoom );
-	float nw         = TextWidth( ImGui::GetFont(), name.c_str() );
-	float nx         = narrow ? sx + Ui( 42 ) : x1 - ww - Ui( 8 ) - nw;
+	// The linked clip and its place; at the end the X that unlinks it.
+	Cell cell        = linked[ 0 ];
+	const Clip* clip = app.composition.ClipIn( cell.deck, cell.row, cell.column );
+	if( !clip )
+		return;
+	bool onAir       = app.composition.LayerShowingIn( cell.deck, cell.row, cell.column ) >= 0;
+	float xw         = Ui( 18 ) * 1.3f + Ui( 6 );
+	float rightEdge  = x1 - xw;
+	std::string where = Where( app, cell, linked.size() > 1 );
+	float ww          = TextWidth( ImGui::GetFont(), where.c_str() );
+	float nameRoom    = std::max( 0.0f, rightEdge - ww - Ui( 8 ) - ( narrow ? x0 : sx ) - Ui( 42 ) );
+	std::string name  = Fit( ImGui::GetFont(), clip->name, nameRoom );
+	float nw          = TextWidth( ImGui::GetFont(), name.c_str() );
+	float nx          = narrow ? sx + Ui( 42 ) : rightEdge - ww - Ui( 8 ) - nw;
 	draw->AddText( ImVec2( nx, ly ), onAir ? theme::Text : theme::TextSoft, name.c_str() );
-	draw->AddText( ImVec2( narrow ? nx + nw + Ui( 8 ) : x1 - ww, ly ), theme::TextDim, where );
-	// Its picture, framed in the accent while it is on air.
-	GLuint thumbnail = clip.player ? clip.player->Thumbnail().Texture() : 0;
-	ImVec2 i0( nx - Ui( 40 ), ly - Ui( 1 ) ), i1( nx - Ui( 6 ), ly + Ui( 19 ) );
-	draw->AddRectFilled( i0, i1, IM_COL32( 0, 0, 0, 255 ) );
-	if( thumbnail )
-		draw->AddImage( (ImTextureID)(intptr_t)thumbnail, i0, i1, ImVec2( 0, 1 ), ImVec2( 1, 0 ) );
-	if( onAir )
-		draw->AddRect( ImVec2( i0.x - Ui( 1 ), i0.y - Ui( 1 ) ), ImVec2( i1.x + Ui( 1 ), i1.y + Ui( 1 ) ), theme::Accent, 0, 0, Ui( 2 ) );
+	draw->AddText( ImVec2( nx + nw + Ui( 8 ), ly ), theme::TextDim, where.c_str() );
+	Thumbnail( draw, *clip, ImVec2( nx - Ui( 40 ), ly - Ui( 1 ) ), ImVec2( nx - Ui( 6 ), ly + Ui( 19 ) ), onAir );
+	if( UnlinkButton( "##unlink", ImVec2( x1 - Ui( 18 ) * 1.3f, ly - Ui( 1 ) ), "Unlink: this track has no clip any more (link another by dragging the deck onto it)" ) )
+		app.UnlinkTrack( nimslink::IdOf( *t ) );
 }
+
+}
+
+void DrawNimsSwitch( App& app )
+{
+	bool on = app.nimsActive;
+	if( on )
+	{
+		ImGui::PushStyleColor( ImGuiCol_Button, ImGui::ColorConvertU32ToFloat4( theme::AccentDim ) );
+		ImGui::PushStyleColor( ImGuiCol_ButtonHovered, ImGui::ColorConvertU32ToFloat4( theme::AccentHover ) );
+	}
+	ImGui::PushFont( Fonts().bold );
+	if( ImGui::Button( "NIMS###nims" ) )
+		app.SetNimsActive( !on );
+	ImGui::PopFont();
+	if( on )
+		ImGui::PopStyleColor( 2 );
+	MapTarget( app, "/composition/nims" );
+	if( ImGui::IsItemHovered() && !app.learning )
+		ImGui::SetTooltip( on ? "NIMS PRO LINK on: each layer plays the clip linked to the track the DJ plays, at its place, with the "
+		                        "fader.\nLaunch or stop a clip by hand on such a layer and NIMS goes off: the layers are yours."
+		                      : "NIMS PRO LINK off: the layers are yours, Traktor launches nothing.\nPress to give them back: every "
+		                        "linked clip comes back at its track's place." );
 }
 
 ImU32 DeckColour( int deck )
@@ -235,10 +312,7 @@ bool LinkClipToDeck( App& app, Clip& clip, const DeckRef& ref )
 	int s = SourceIndex( app, ref.source );
 	if( s < 0 || ref.deck < 0 || ref.deck >= nimslink::kDecks || !app.linkSources[ s ].hasTrack[ ref.deck ] || clip.Empty() )
 		return false;
-	const nimslink::TrackInfo& t = app.linkSources[ s ].tracks[ ref.deck ];
-	clip.track                 = nimslink::IdOf( t );
-	clip.trackOffset           = 0;
-	app.SetStatus( "Linked " + clip.name + " to " + clip.track.title + ( clip.track.artist.empty() ? "" : " (" + clip.track.artist + ")" ) );
+	app.LinkClipToTrack( clip, nimslink::IdOf( app.linkSources[ s ].tracks[ ref.deck ] ) );
 	return true;
 }
 
@@ -345,6 +419,279 @@ void TrackSection( App& app, Clip& clip )
 	}
 }
 
+bool LinkClipToDraggedTrack( App& app, Clip& clip, const void* data, int size )
+{
+	if( size != (int)sizeof( TrackDrag ) || clip.Empty() )
+		return false;
+	TrackDrag drag;
+	std::memcpy( &drag, data, sizeof( drag ) );
+	drag.title[ sizeof( drag.title ) - 1 ]   = 0;
+	drag.artist[ sizeof( drag.artist ) - 1 ] = 0;
+	nimslink::TrackId id;
+	id.title  = drag.title;
+	id.artist = drag.artist;
+	id.length = drag.length;
+	if( id.Empty() )
+		return false;
+	app.LinkClipToTrack( clip, id );
+	return true;
+}
+
+namespace
+{
+// A line of the Track Links panel: a track, the clips linked to it, the deck that has it now.
+struct LinkRow
+{
+	nimslink::TrackId id;
+	std::string key; // nimslink::TrackKey
+	double bpm = 0;
+	std::string musicKey;
+	bool remembered = false; // in the list of tracks seen (else only linked in this composition)
+	std::vector< Cell > clips;
+	int source = -1, deck = -1; // a deck that has it now
+	bool playing = false;
+};
+
+bool Lengths( double a, double b )
+{
+	return a <= 0 || b <= 0 || std::fabs( a - b ) < 1.0; // as nimslink::SameTrack
+}
+
+std::string Lower( const std::string& text )
+{
+	std::string out = text;
+	for( char& c : out )
+		c = (char)std::tolower( (unsigned char)c );
+	return out;
+}
+
+std::vector< LinkRow > BuildRows( App& app )
+{
+	std::vector< LinkRow > rows;
+	for( const nimslink::LibraryTrack& t : app.trackLibrary.Tracks() )
+	{
+		LinkRow row;
+		row.id         = t.id;
+		row.key        = nimslink::TrackKey( t.id );
+		row.bpm        = t.bpm;
+		row.musicKey   = t.key;
+		row.remembered = true;
+		rows.push_back( std::move( row ) );
+	}
+	// The lines by key, to find a track's line at once among thousands.
+	std::unordered_multimap< std::string, size_t > byKey;
+	for( size_t i = 0; i < rows.size(); ++i )
+		byKey.emplace( rows[ i ].key, i );
+	auto find = [ & ]( const std::string& key, double length ) -> LinkRow* {
+		auto [ from, to ] = byKey.equal_range( key );
+		for( auto it = from; it != to; ++it )
+			if( Lengths( rows[ it->second ].id.length, length ) )
+				return &rows[ it->second ];
+		return nullptr;
+	};
+	// The composition's links: on their track's line, or on one of their own (a track linked elsewhere, or forgotten).
+	app.composition.ForEachClip( [ & ]( Clip& clip, int d, int r, int c ) {
+		if( clip.track.Empty() || clip.Empty() )
+			return;
+		std::string key = nimslink::TrackKey( clip.track );
+		if( LinkRow* row = find( key, clip.track.length ) )
+		{
+			row->clips.push_back( { d, r, c } );
+			return;
+		}
+		LinkRow row;
+		row.id  = clip.track;
+		row.key = key;
+		row.clips.push_back( { d, r, c } );
+		rows.push_back( std::move( row ) );
+		byKey.emplace( key, rows.size() - 1 );
+	} );
+	// The decks that have them now (one playing first).
+	for( int s = 0; s < (int)app.linkSources.size(); ++s )
+	{
+		const nimslink::Source& src = app.linkSources[ s ];
+		for( int d = 0; src.online && d < nimslink::kDecks; ++d )
+		{
+			if( !src.hasTrack[ d ] || !src.decks[ d ].present || !src.decks[ d ].state.loaded )
+				continue;
+			nimslink::TrackId id = nimslink::IdOf( src.tracks[ d ] );
+			LinkRow* row         = find( nimslink::TrackKey( id ), id.length );
+			if( row && ( row->deck < 0 || ( !row->playing && src.decks[ d ].state.playing ) ) )
+			{
+				row->source  = s;
+				row->deck    = d;
+				row->playing = src.decks[ d ].state.playing;
+			}
+		}
+	}
+	for( LinkRow& row : rows )
+		std::stable_partition( row.clips.begin(), row.clips.end(), [ & ]( const Cell& c ) { return c.deck == app.composition.deck; } );
+	std::sort( rows.begin(), rows.end(), []( const LinkRow& a, const LinkRow& b ) { return a.key < b.key; } );
+	return rows;
+}
+}
+
+void DrawTrackLinksPanel( App& app )
+{
+	ImGui::SetNextWindowSize( ImVec2( Ui( 620 ), Ui( 460 ) ), ImGuiCond_FirstUseEver );
+	if( !ImGui::Begin( panel::TrackLinks, &app.panels.trackLinks ) )
+	{
+		ImGui::End();
+		return;
+	}
+	static std::string query;
+	static int filter = 0; // 0 every track, 1 linked, 2 not linked
+	std::vector< LinkRow > all = BuildRows( app );
+	int linkedCount            = (int)std::count_if( all.begin(), all.end(), []( const LinkRow& r ) { return !r.clips.empty(); } );
+
+	// On one line when the panel is wide enough, else carried over to the next.
+	float lineEnd = ImGui::GetCursorScreenPos().x + ImGui::GetContentRegionAvail().x;
+	auto next     = [ & ]( float width ) {
+		ImGui::SameLine();
+		if( ImGui::GetCursorScreenPos().x + width > lineEnd )
+			ImGui::NewLine();
+	};
+	auto radioWidth = []( const char* label ) { return ImGui::GetFrameHeight() + ImGui::GetStyle().ItemInnerSpacing.x + ImGui::CalcTextSize( label ).x; };
+	ImGui::SetNextItemWidth( std::min( Ui( 260 ), ImGui::GetContentRegionAvail().x ) );
+	ImGui::InputTextWithHint( "##search", "Search title or artist", &query );
+	next( radioWidth( "All" ) );
+	ImGui::RadioButton( "All", &filter, 0 );
+	next( radioWidth( "Linked" ) );
+	ImGui::RadioButton( "Linked", &filter, 1 );
+	next( radioWidth( "Not linked" ) );
+	ImGui::RadioButton( "Not linked", &filter, 2 );
+	char count[ 64 ];
+	std::snprintf( count, sizeof( count ), "%d tracks, %d linked", (int)all.size(), linkedCount );
+	next( ImGui::CalcTextSize( count ).x );
+	ImGui::TextDisabled( "%s", count );
+
+	std::string needle = Lower( query );
+	std::vector< const LinkRow* > rows;
+	for( const LinkRow& r : all )
+	{
+		if( ( filter == 1 && r.clips.empty() ) || ( filter == 2 && !r.clips.empty() ) )
+			continue;
+		if( !needle.empty() && Lower( r.id.title ).find( needle ) == std::string::npos && Lower( r.id.artist ).find( needle ) == std::string::npos )
+			continue;
+		rows.push_back( &r );
+	}
+	if( all.empty() )
+	{
+		ImGui::Spacing();
+		ImGui::PushTextWrapPos( 0 );
+		ImGui::TextDisabled( "No tracks yet. Every track the DJ loads in Traktor (NIMS PRO LINK) is added here and kept for the next "
+		                     "time, so you can link clips to it without the DJ playing it again." );
+		ImGui::PopTextWrapPos();
+		ImGui::End();
+		return;
+	}
+	ImGui::TextDisabled( "Drag a track onto a clip to link it; the X unlinks. A track has one clip." );
+
+	const UiFonts& f = Fonts();
+	float rowH       = Ui( 40 );
+	ImGui::BeginChild( "##tracks", ImVec2( 0, 0 ) );
+	ImDrawList* draw = ImGui::GetWindowDrawList();
+	float width      = ImGui::GetContentRegionAvail().x;
+	ImGuiListClipper clipper;
+	clipper.Begin( (int)rows.size(), rowH );
+	while( clipper.Step() )
+		for( int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i )
+		{
+			const LinkRow& r = *rows[ i ];
+			ImGui::PushID( r.key.c_str() );
+			ImGui::PushID( (int)std::lround( r.id.length ) );
+			ImVec2 p0 = ImGui::GetCursorScreenPos();
+			ImVec2 p1( p0.x + width, p0.y + rowH );
+			ImGui::SetNextItemAllowOverlap(); // the X sits on it
+			ImGui::InvisibleButton( "track", ImVec2( width, rowH ) );
+			bool hovered = ImGui::IsItemHovered();
+			if( ImGui::BeginDragDropSource() )
+			{
+				TrackDrag drag{};
+				if( r.id.title.size() < sizeof( drag.title ) && r.id.artist.size() < sizeof( drag.artist ) )
+				{
+					std::memcpy( drag.title, r.id.title.c_str(), r.id.title.size() + 1 );
+					std::memcpy( drag.artist, r.id.artist.c_str(), r.id.artist.size() + 1 );
+					drag.length = r.id.length;
+					ImGui::SetDragDropPayload( kTrackPayload, &drag, sizeof( drag ) );
+				}
+				ImGui::Text( "%s%s%s", r.id.title.c_str(), r.id.artist.empty() ? "" : "  -  ", r.id.artist.c_str() );
+				ImGui::EndDragDropSource();
+			}
+			if( ImGui::BeginPopupContextItem( "menu" ) )
+			{
+				if( ImGui::MenuItem( "Unlink", nullptr, false, !r.clips.empty() ) )
+					app.UnlinkTrack( r.id );
+				if( ImGui::MenuItem( "Forget this track", nullptr, false, r.remembered ) )
+				{
+					app.trackLibrary.Forget( r.id );
+					app.SaveTrackLibrary();
+				}
+				ImGui::EndPopup();
+			}
+			if( hovered && r.clips.empty() && !ImGui::IsMouseDown( ImGuiMouseButton_Left ) )
+				ImGui::SetTooltip( "Drag onto a clip to link it to this track" );
+			draw->AddRectFilled( p0, p1, hovered ? theme::Raised : theme::Panel );
+			draw->AddLine( ImVec2( p0.x, p1.y - 0.5f ), ImVec2( p1.x, p1.y - 0.5f ), theme::Line );
+			// The deck that has it now, in its colour (filled while it plays).
+			float x = p0.x + Ui( 8 );
+			if( r.deck >= 0 )
+			{
+				char letter[ 2 ] = { (char)( 'A' + r.deck ), 0 };
+				if( r.playing )
+					TextBadge( draw, ImVec2( x, p0.y + Ui( 11 ) ), letter, DeckColour( r.deck ), IM_COL32( 17, 17, 17, 255 ) );
+				else
+					draw->AddText( f.bold, f.bold->FontSize, ImVec2( x + Ui( 3 ), p0.y + Ui( 11 ) ), DeckColour( r.deck ), letter );
+			}
+			x += Ui( 24 );
+			// On the right, the clip and the X; the title takes what is left.
+			float right = p1.x - Ui( 8 );
+			if( !r.clips.empty() )
+			{
+				const Clip* clip = app.composition.ClipIn( r.clips[ 0 ].deck, r.clips[ 0 ].row, r.clips[ 0 ].column );
+				if( clip )
+				{
+					float xb = right - Ui( 18 ) * 1.3f;
+					if( UnlinkButton( "##unlink", ImVec2( xb, p0.y + ( rowH - Ui( 18 ) ) / 2 ), "Unlink: this track has no clip any more" ) )
+						app.UnlinkTrack( r.id );
+					std::string where = Where( app, r.clips[ 0 ], r.clips.size() > 1 );
+					float ww          = TextWidth( ImGui::GetFont(), where.c_str() );
+					float room        = std::max( Ui( 40 ), ( width - Ui( 32 ) ) * 0.45f - ww - Ui( 60 ) );
+					std::string name  = Fit( ImGui::GetFont(), clip->name, room );
+					float nw          = TextWidth( ImGui::GetFont(), name.c_str() );
+					float ty          = p0.y + ( rowH - ImGui::GetTextLineHeight() ) / 2;
+					float wx          = xb - Ui( 8 ) - ww;
+					float nx          = wx - Ui( 8 ) - nw;
+					bool onAir        = app.composition.LayerShowingIn( r.clips[ 0 ].deck, r.clips[ 0 ].row, r.clips[ 0 ].column ) >= 0;
+					draw->AddText( ImVec2( wx, ty ), theme::TextDim, where.c_str() );
+					draw->AddText( ImVec2( nx, ty ), onAir ? theme::Text : theme::TextSoft, name.c_str() );
+					Thumbnail( draw, *clip, ImVec2( nx - Ui( 40 ), p0.y + ( rowH - Ui( 20 ) ) / 2 ), ImVec2( nx - Ui( 6 ), p0.y + ( rowH + Ui( 20 ) ) / 2 ), onAir );
+					right = nx - Ui( 48 );
+				}
+			}
+			float room        = std::max( 0.0f, right - x - Ui( 8 ) );
+			std::string title = Fit( f.bold, r.id.title.empty() ? "Untitled" : r.id.title, room );
+			draw->AddText( f.bold, f.bold->FontSize, ImVec2( x, p0.y + Ui( 4 ) ), theme::Text, title.c_str() );
+			std::string second = r.id.artist;
+			if( r.id.length > 0 )
+				second += ( second.empty() ? "" : "   " ) + Clock( r.id.length, false );
+			if( r.bpm > 0 )
+			{
+				char bpm[ 24 ];
+				std::snprintf( bpm, sizeof( bpm ), "%.2f BPM", r.bpm );
+				second += ( second.empty() ? "" : "   " ) + std::string( bpm );
+			}
+			if( !r.musicKey.empty() )
+				second += "   " + r.musicKey;
+			draw->AddText( ImVec2( x, p0.y + Ui( 21 ) ), theme::TextDim, Fit( ImGui::GetFont(), second, room ).c_str() );
+			ImGui::PopID();
+			ImGui::PopID();
+		}
+	clipper.End();
+	ImGui::EndChild();
+	ImGui::End();
+}
+
 void DrawTraktorPanel( App& app )
 {
 	// The first time a DJ shows up, the panel comes to the front of its tabs.
@@ -373,6 +720,11 @@ void DrawTraktorPanel( App& app )
 		ImGui::End();
 		return;
 	}
+	DrawNimsSwitch( app );
+	ImGui::SameLine();
+	ImGui::AlignTextToFramePadding();
+	ImGui::TextDisabled( app.nimsActive ? "the linked clips follow the tracks" : "off: the layers are yours" );
+	ImGui::Spacing();
 	int shown = 0;
 	for( int s = 0; s < (int)app.linkSources.size(); ++s )
 	{
@@ -422,7 +774,9 @@ void DrawTraktorPanel( App& app )
 	{
 		ImGui::PushTextWrapPos( 0 );
 		ImGui::TextDisabled( "Drag a deck onto a clip to link the clip to its track: it plays on its layer when the track plays, "
-		                     "and its opacity follows the channel's fader." );
+		                     "and its opacity follows the channel's fader. Launch or stop a clip by hand on that layer and NIMS goes "
+		                     "off; press NIMS to bring the linked clips back. Every track the decks have had is in Track Links "
+		                     "(View menu)." );
 		ImGui::PopTextWrapPos();
 	}
 	ImGui::End();

@@ -757,6 +757,7 @@ void DrawMainMenu( App& app )
 			ImGui::MenuItem( panel::Effects, nullptr, &p.effects );
 			ImGui::MenuItem( panel::Control, nullptr, &p.control );
 			ImGui::MenuItem( panel::Traktor, nullptr, &p.traktor );
+			ImGui::MenuItem( panel::TrackLinks, nullptr, &p.trackLinks );
 			ImGui::MenuItem( panel::AdvancedOutput, nullptr, &p.advancedOutput );
 			ImGui::Separator();
 			// The size of the whole interface: smaller on a small laptop, bigger on a large monitor.
@@ -1138,6 +1139,12 @@ void DrawToolbar( App& app )
 				if( ImGui::IsItemHovered() )
 					ImGui::SetTooltip( "%s\nThe tempo follows this MIDI clock (Preferences > Sync).", sync.Status().c_str() );
 			}
+		}
+		// NIMS PRO LINK, like Link: on, the clips linked to the DJ's tracks follow them; off, the layers are the VJ's.
+		if( app.prefs.nimslinkEnabled )
+		{
+			ImGui::SameLine( 0, Ui( 4 ) );
+			DrawNimsSwitch( app );
 		}
 
 		// When launched clips start: at once, on the next beat or on the next bar.
@@ -2329,6 +2336,10 @@ static void DrawDeck( App& app, bool layersPart )
 					if( !clip.Empty() )
 						if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kDeckPayload ) )
 							LinkClipToDeck( app, clip, *(const DeckRef*)payload->Data );
+					// A track from the Track Links panel: the same, for a track no deck has now.
+					if( !clip.Empty() )
+						if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kTrackPayload ) )
+							LinkClipToDraggedTrack( app, clip, payload->Data, payload->DataSize );
 					if( const ImGuiPayload* payload = ImGui::AcceptDragDropPayload( kEffectPayload ) )
 					{
 						std::string id                = (const char*)payload->Data;

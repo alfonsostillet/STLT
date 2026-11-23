@@ -113,6 +113,8 @@ Like Pioneer's Pro DJ Link and Denon's StageLinQ, but for **Traktor**: the DJ's 
 - **The DJ's mix is the visuals' mix.** A linked clip's opacity follows its track's channel fader. While the DJ only cues a track in the headphones (fader down), its visual waits.
 - **Tempo.** STLT's BPM and beat follow the deck on air (playing, highest fader), with the bars on Traktor's grid.
 - **Stems on any parameter.** In any parameter's *Animate* menu, choose *Traktor Drums*, *Bass*, *Other*, *Vocals* or *Level*.
+- **The NIMS switch.** The **NIMS** button in the toolbar, next to LINK, turns it on and off like Ableton Link: lit, the linked clips follow the DJ; off, the layers are yours. Launch or stop a clip by hand on a layer NIMS is playing and NIMS goes off by itself, so you are never locked out; press NIMS again and every linked clip comes back at its track's place. It can be mapped to a key or a MIDI pad.
+- **Track Links.** The **Track Links** panel lists every track the DJ's decks have had, remembered from one night to the next, with its clip. Drag a track onto a clip to link it without the DJ playing it; the **X** unlinks (also on each deck of the Traktor panel). A track has one clip: linking it to another clip replaces the old link.
 
 <img src="docs/images/nimslink-transmitter.webp" alt="The NIMS PRO LINK transmitter: lights for Traktor, the network and the VJs connected, then the four decks, with Kerala playing and its visual on air" width="440" align="right">
 

@@ -6,6 +6,7 @@
 #include "fx/Effect.h"
 #include "render/ClipPlayer.h"
 #include "render/Fbo.h"
+#include "nimslink/Hand.h"
 #include "nimslink/Protocol.h"
 
 namespace stltvj
@@ -214,6 +215,8 @@ struct Layer
 	int previousDeck         = 0;
 	bool cutPending          = false; // a cut: the outgoing clip stays until the new one has its first frame
 	float transitionProgress = 1;
+	// NIMS PRO LINK: whether Traktor or the VJ has the layer (AppNimsLink.cpp).
+	nimslink::LayerHand hand;
 
 	// Whether this layer plays, or fades out, the clip at deck/row/column.
 	bool Plays( int deck, int row, int column ) const { return active == column && activeRow == row && activeDeck == deck && active >= 0; }

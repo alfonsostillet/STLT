@@ -18,7 +18,8 @@ bool ControlTarget::IsButton() const
 
 bool ControlTarget::IsSwitch() const
 {
-	return kind == Kind::LayerBypass || kind == Kind::LayerSolo || kind == Kind::Pause || kind == Kind::CompositionBypass || kind == Kind::TimelinePlay;
+	return kind == Kind::LayerBypass || kind == Kind::LayerSolo || kind == Kind::Pause || kind == Kind::CompositionBypass || kind == Kind::TimelinePlay
+	       || kind == Kind::Nims;
 }
 
 namespace
@@ -130,6 +131,8 @@ bool ParseControlAddress( const std::string& address, ControlTarget& t )
 			t.kind = Kind::Pause;
 		else if( p[ 1 ] == "stop" )
 			t.kind = Kind::Stop;
+		else if( p[ 1 ] == "nims" )
+			t.kind = Kind::Nims;
 		else if( p[ 1 ] == "bypassed" )
 			t.kind = Kind::CompositionBypass;
 		else if( p[ 1 ] == "connectnextcolumn" )

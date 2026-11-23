@@ -36,6 +36,9 @@ static void TestAddresses()
 	CHECK( ParseControlAddress( "/composition/layers/1/video/opacity", t ) && t.kind == Kind::LayerOpacity && t.layer == 0 );
 	CHECK( ParseControlAddress( "/composition/layers/1/bypassed", t ) && t.kind == Kind::LayerBypass && t.IsSwitch() );
 	CHECK( ParseControlAddress( "/composition/layers/3/clear", t ) && t.kind == Kind::LayerClear && t.layer == 2 );
+	// The NIMS switch (NIMS PRO LINK on or off), like the bypass: a key flips it, a value sets it.
+	CHECK( ParseControlAddress( "/composition/nims", t ) && t.kind == Kind::Nims && t.IsSwitch() && !t.IsButton() );
+	CHECK( !ParseControlAddress( "/composition/nims/on", t ) );
 	CHECK( ParseControlAddress( "/composition/master", t ) && t.kind == Kind::Master );
 	CHECK( ParseControlAddress( "/composition/video/opacity", t ) && t.kind == Kind::Master );
 	CHECK( ParseControlAddress( "/composition/tempocontroller/tempotap", t ) && t.kind == Kind::TempoTap );

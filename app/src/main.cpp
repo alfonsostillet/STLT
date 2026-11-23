@@ -72,6 +72,15 @@ int main( int argc, char** argv )
 			else
 				std::fprintf( stderr, "Ignoring --source %s (expected LAYER,COLUMN,EFFECT-ID)\n", value.c_str() );
 		}
+		else if( arg == "--control-at" && hasValue )
+		{
+			std::string value = argv[ ++i ];
+			int frame = 0, consumed = 0;
+			if( std::sscanf( value.c_str(), "%d,%n", &frame, &consumed ) == 1 && consumed > 0 && frame > 0 && value[ consumed ] == '/' )
+				options.controlsAt.push_back( { frame, value.substr( (size_t)consumed ) } );
+			else
+				std::fprintf( stderr, "Ignoring --control-at %s (expected FRAME,/ADDRESS)\n", value.c_str() );
+		}
 		else if( arg == "--launch" && hasValue )
 		{
 			int layer = 0, column = 0;

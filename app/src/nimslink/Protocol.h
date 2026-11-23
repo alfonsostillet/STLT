@@ -88,6 +88,9 @@ struct TrackId
 TrackId IdOf( const TrackInfo& info );
 // Same title and artist (case and spaces aside) and lengths within a second (0: any length).
 bool SameTrack( const TrackId& a, const TrackId& b );
+// Title and artist as SameTrack compares them: two tracks with different keys are never the same (for sorting and
+// matching many tracks at once).
+std::string TrackKey( const TrackId& id );
 
 // ---- Packets
 

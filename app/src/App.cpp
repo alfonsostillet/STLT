@@ -542,7 +542,10 @@ void App::RemoveDeck( int deck )
 		if( layer.previous >= 0 && layer.previousDeck == deck )
 			FinishTransition( l );
 		if( layer.active >= 0 && layer.activeDeck == deck )
+		{
+			QuietLink quiet( linkQuiet ); // the deck going, not the VJ taking the layer
 			ClearLayer( l );
+		}
 	}
 	queuedLaunches.clear();
 	movePicked.clear();
@@ -559,6 +562,7 @@ void App::DeleteLayer( int layer )
 	for( int l = 0; l < (int)composition.layers.size(); ++l )
 	{
 		FinishTransition( l );
+		QuietLink quiet( linkQuiet ); // the layer going, not the VJ taking it
 		if( l == layer || ( composition.layers[ l ].active >= 0 && composition.layers[ l ].activeRow == layer ) )
 			ClearLayer( l );
 	}
@@ -664,18 +668,27 @@ bool App::MovePicked( int rows, int columns )
 	return true;
 }
 
-void App::Launch( int row, int column, bool now, int onLayer )
+void App::Launch( int row, int column, bool now, int onLayer, int fromDeck )
 {
-	if( row < 0 || row >= (int)composition.layers.size() || column < 0 || column >= composition.ColumnCount() )
+	// The deck the clip is in: the one on show, unless another is named (NIMS PRO LINK launches a linked clip wherever
+	// it is, whichever deck the VJ is looking at).
+	int deck   = fromDeck >= 0 ? fromDeck : composition.deck;
+	bool shown = deck == composition.deck;
+	Clip* cell = row >= 0 && row < (int)composition.layers.size() ? composition.ClipIn( deck, row, column ) : nullptr;
+	if( !cell )
 		return;
 	// The layer it plays on: its own row's, or the selected one ("layer based" deck).
 	int layer = onLayer >= 0 ? onLayer : composition.target == ClipTarget::SelectedLayer ? composition.selectedLayer : row;
 	if( layer < 0 || layer >= (int)composition.layers.size() )
 		return;
+	// A launch by the VJ on a layer NIMS PRO LINK has: NIMS goes off, the VJ has the layers (AppNimsLink.cpp).
+	if( !linkQuiet && composition.layers[ layer ].hand.Touched() )
+		SetNimsActive( false );
 	Layer& l   = composition.layers[ layer ];
-	Clip& clip = composition.layers[ row ].clips[ column ];
-	Select( row, column );
-	if( !now && composition.quantize != LaunchQuantize::Now && clip.Playable() )
+	Clip& clip = *cell;
+	if( shown )
+		Select( row, column );
+	if( !now && shown && composition.quantize != LaunchQuantize::Now && clip.Playable() )
 	{
 		// On the next beat or bar; a later launch on the same layer replaces it.
 		double beats = composition.quantize == LaunchQuantize::Bar ? 4.0 : 1.0;
@@ -691,10 +704,9 @@ void App::Launch( int row, int column, bool now, int onLayer )
 		return;
 	}
 	// A clip plays on one layer at a time: elsewhere it stops.
-	int showing = composition.LayerShowing( row, column );
+	int showing = composition.LayerShowingIn( deck, row, column );
 	if( showing >= 0 && showing != layer )
-		StopCell( row, column );
-	int deck  = composition.deck;
+		StopCell( row, column, deck );
 	bool same = l.Plays( deck, row, column );
 	if( l.active >= 0 && !same )
 	{
@@ -913,6 +925,9 @@ void App::ClearLayer( int layer )
 {
 	if( layer < 0 || layer >= (int)composition.layers.size() )
 		return;
+	// The VJ stopping a layer NIMS PRO LINK has: NIMS goes off, the layer stays empty.
+	if( !linkQuiet && composition.layers[ layer ].hand.Touched() )
+		SetNimsActive( false );
 	FinishTransition( layer );
 	Layer& l = composition.layers[ layer ];
 	if( Clip* clip = composition.ActiveClip( layer ); clip && clip->player )
@@ -932,14 +947,16 @@ void App::Select( int row, int column )
 		composition.selectedLayer = row;
 }
 
-void App::StopCell( int row, int column )
+void App::StopCell( int row, int column, int deck )
 {
+	if( deck < 0 )
+		deck = composition.deck;
 	for( int l = 0; l < (int)composition.layers.size(); ++l )
 	{
 		Layer& layer = composition.layers[ l ];
-		if( layer.FadesOut( composition.deck, row, column ) )
+		if( layer.FadesOut( deck, row, column ) )
 			FinishTransition( l );
-		if( layer.Plays( composition.deck, row, column ) )
+		if( layer.Plays( deck, row, column ) )
 			ClearLayer( l );
 	}
 }
@@ -1142,6 +1159,7 @@ void App::RestoreComposition( const std::string& text )
 		layer.activeRow  = kept ? cell.row : -1;
 		layer.activeDeck = kept ? cell.deck : 0;
 		layer.solo      = composition.layers[ l ].solo;
+		layer.hand      = composition.layers[ l ].hand; // whether NIMS PRO LINK has the layer is not an undo step
 	}
 	// The timeline: its playhead goes on, and the clips still there keep their players, sounds and effects.
 	{
@@ -1696,6 +1714,14 @@ bool App::ApplyControl( const std::string& address, bool hasValue, float value, 
 		if( press && layerOk )
 			ClearLayer( t.layer );
 		return layerOk;
+	case Kind::Nims:
+	{
+		bool on = nimsActive;
+		flip( on );
+		if( on != nimsActive )
+			SetNimsActive( on );
+		return true;
+	}
 	case Kind::LayerBypass:
 		if( layerOk )
 			flip( composition.layers[ t.layer ].bypass );
@@ -2667,7 +2693,10 @@ void App::UpdatePlayback( double dt )
 		Clip& clip = *playing;
 		play( clip );
 		if( clip.finished && clip.playMode == PlayMode::OnceClear )
-			ClearLayer( index ); // played once: the layer empties
+		{
+			QuietLink quiet( linkQuiet ); // the clip's own end, not the VJ
+			ClearLayer( index );          // played once: the layer empties
+		}
 	}
 }
 
@@ -2886,6 +2915,9 @@ void App::Frame()
 	glClear( GL_COLOR_BUFFER_BIT );
 	ImGui_ImplOpenGL3_RenderDrawData( ImGui::GetDrawData() );
 	frameCount++;
+	for( const auto& [ frame, address ] : options.controlsAt )
+		if( frame == frameCount && !ApplyControl( address, false, 0 ) )
+			std::fprintf( stderr, "--control-at %d: %s is not a control here\n", frame, address.c_str() );
 	if( !options.capturePath.empty() && frameCount == options.captureFrames )
 		Capture();
 
@@ -3012,8 +3044,12 @@ void App::DrawUi()
 		DrawOutputPanel( *this );
 	if( panels.performance )
 		DrawPerformancePanel( *this );
+	BeginMappable( *this ); // the NIMS switch in the Traktor panel can be mapped
 	if( panels.traktor )
 		DrawTraktorPanel( *this );
+	if( panels.trackLinks )
+		DrawTrackLinksPanel( *this );
+	EndMappable( *this );
 	if( panels.effects )
 		DrawEffectsPanel( *this );
 	DrawPreferences( *this );

@@ -35,6 +35,7 @@ const Flag kFlags[] = {
 	{ "Effects", &PanelVisibility::effects },
 	{ "Control", &PanelVisibility::control },
 	{ "Traktor", &PanelVisibility::traktor },
+	{ "TrackLinks", &PanelVisibility::trackLinks },
 	{ "AdvancedOutput", &PanelVisibility::advancedOutput },
 };
 
@@ -227,7 +228,8 @@ void Workspaces::BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size )
 		ImGui::DockBuilderDockWindow( panel::Timeline, top );
 		ImGui::DockBuilderDockWindow( panel::Clips, clipsNode );
 		ImGui::DockBuilderDockWindow( panel::CompositionMonitor, monitor );
-		for( const char* name : { panel::Effects, panel::Files, panel::Output, panel::Control, panel::Composition, panel::Performance, panel::Traktor } )
+		for( const char* name : { panel::Effects, panel::Files, panel::Output, panel::Control, panel::Composition, panel::Performance, panel::Traktor,
+		                          panel::TrackLinks } )
 			ImGui::DockBuilderDockWindow( name, browser );
 		ImGui::DockBuilderFinish( dockspace );
 		return;
@@ -261,6 +263,7 @@ void Workspaces::BuildDefaultIfNeeded( ImGuiID dockspace, ImVec2 size )
 	ImGui::DockBuilderDockWindow( panel::Performance, browser );
 	ImGui::DockBuilderDockWindow( panel::Control, browser );
 	ImGui::DockBuilderDockWindow( panel::Traktor, browser );
+	ImGui::DockBuilderDockWindow( panel::TrackLinks, clipParams ); // a tab beside the Clip panel: drag a track onto a clip
 	ImGui::DockBuilderFinish( dockspace );
 }
 

@@ -2,6 +2,19 @@
 
 Fixes already made and checked by the automatic tests, to try on a real PC before considering them closed.
 
+## NIMS PRO LINK: the NIMS switch and Track Links (new)
+
+With the DJ playing a linked track on Traktor (or the transmitter's `--demo`):
+
+- [ ] **Launch another clip by hand** on the layer Traktor is playing: it must stay. The **NIMS** button (toolbar, next to LINK) goes off and the status bar says so.
+- [ ] **A clip on a layer above** while the track plays: it must show over the linked clip, and NIMS must stay on.
+- [ ] **Press NIMS again**: the linked clip must come back at once, at the track's place, with the fader.
+- [ ] **NIMS off, the DJ starts another linked track**: nothing must start. NIMS on: its clip starts.
+- [ ] **Map NIMS** to a key and to a MIDI pad (Ctrl+K / Ctrl+M, click the NIMS button): each press flips it.
+- [ ] **The X** on a deck in the Traktor panel: the track has no clip any more. Drag the deck onto another clip: only the new clip is linked.
+- [ ] **Track Links** (tab next to Clip, or *View → Track Links*): every track the DJ loaded is there, also after restarting STLT, with its clip. Drag a track the DJ is not playing onto a clip; when the DJ plays it, the clip must start. Search by title or artist.
+- [ ] **Another deck of clips on show** (Deck 2) while the DJ starts a track linked to a clip of Deck 1: the clip must start all the same.
+
 ## From testing 0.3.0
 
 - [ ] **A project that reopens as it was.** Prepare a set with some clips playing, save it (Ctrl+S), close STLT and reopen it: the clips must start again and the output must show the picture. Also try *Composition → Open...* on a saved project, and the timeline: the playhead must go back to where you left it.

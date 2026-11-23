@@ -21,6 +21,7 @@
 #include "output/AdvancedOutput.h"
 #include "output/OutputRenderer.h"
 #include "ui/Workspaces.h"
+#include "nimslink/Library.h"
 #include "nimslink/Link.h"
 
 struct GLFWwindow;
@@ -57,6 +58,9 @@ struct LaunchOptions
 	int advancedOutputTab = -1;       // --advanced-output input|output: open the editor on that tab
 	int width = 0, height = 0;        // window size override
 	int oscPort = 0;                  // --osc PORT: listen for OSC on this port
+	// --control-at FRAME,ADDRESS: the control (an address of control/Control.h, pressed) at that frame, as if the VJ
+	// pressed its key then (for tests).
+	std::vector< std::pair< int, std::string > > controlsAt;
 };
 
 // What the outputs show, as in Resolume's Output menu: nothing, the composition in a window or fullscreen on one
@@ -156,7 +160,9 @@ public:
 	bool MovePicked( int rows, int columns );
 	// Launches the clip at row/column: on `onLayer`, else where the composition's clip target says (its own row's
 	// layer, or the selected layer). With launch quantize set it waits for the next beat or bar unless `now`.
-	void Launch( int row, int column, bool now = false, int onLayer = -1 );
+	// `fromDeck`: the deck the clip is in (-1: the one on show; another deck's clip is launched at once, unselected).
+	// A launch or a clear is the VJ's: on a layer NIMS PRO LINK has (Layer::hand), NIMS goes off unless linkQuiet.
+	void Launch( int row, int column, bool now = false, int onLayer = -1, int fromDeck = -1 );
 	void LaunchColumn( int column, bool now = false );
 	bool IsQueued( int row, int column ) const; // waiting for its beat (row -1: a column launch)
 	// Plays the clip from cue point `cue` (0..7), launching it if it is not playing; nothing if the cue is not set.
@@ -280,6 +286,32 @@ public:
 	};
 	std::map< int, LinkFollow > linkFollow; // by layer
 	void UpdateNimsLink( double dt );
+	// The NIMS switch (the toolbar's NIMS button, like Ableton Link's LINK): on, each layer plays the clip linked to the
+	// track that plays, following it and its fader; off, NIMS PRO LINK touches no clip (the decks still show, and the
+	// tempo and stems still follow Traktor as Preferences > Sync says). A clip launched or stopped by hand on a layer NIMS
+	// has (Layer::hand) turns it off, so the VJ is never locked out; on again, every linked clip comes back at its
+	// track's place. Its own launches, and clears that are nobody's doing (a deck or a layer removed), run with linkQuiet.
+	bool nimsActive = true;
+	void SetNimsActive( bool on );
+	bool linkQuiet = false;
+	struct QuietLink
+	{
+		bool& flag;
+		bool was;
+		explicit QuietLink( bool& f ) : flag( f ), was( f ) { flag = true; }
+		~QuietLink() { flag = was; }
+	};
+	// Links a clip to a track: the clip plays when the track does. A track has one clip: any other clip linked to it is
+	// unlinked (in every deck).
+	void LinkClipToTrack( Clip& clip, nimslink::TrackId track ); // by value: it may be another clip's, unlinked here
+	// Unlinks every clip linked to `track`.
+	void UnlinkTrack( nimslink::TrackId track );
+	// The tracks the decks have had, remembered between sessions (traktor-tracks.json in the settings folder) for the
+	// Track Links panel.
+	nimslink::TrackLibrary trackLibrary;
+	bool trackLibraryLoaded = false;
+	std::map< std::pair< uint32_t, int >, std::string > linkRemembered; // by transmitter and deck: what was last remembered
+	void SaveTrackLibrary();
 	// The deck (transmitter index in linkSources, deck) whose loaded track `clip` belongs to; false when none.
 	bool LinkDeckFor( const Clip& clip, int& source, int& deck ) const;
 	std::string LinkDeckName( int source, int deck ) const; // "A", or "DJ-LAPTOP A" with more than one transmitter
@@ -391,7 +423,7 @@ private:
 	// Ends a layer's transition: the outgoing clip stops.
 	void FinishTransition( int layer );
 	// Stops the clip at row/column wherever it plays or fades out.
-	void StopCell( int row, int column );
+	void StopCell( int row, int column, int deck = -1 ); // deck -1: the one on show
 	struct QueuedLaunch
 	{
 		int layer;       // the layer it goes to (-1: the whole column)

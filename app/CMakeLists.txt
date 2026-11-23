@@ -191,6 +191,10 @@ endif()
 # NIMS PRO LINK: the decks of a DJ program over the network (the protocol, the sockets, Traktor's side). No OpenGL: the
 # transmitter, STLT and the tests share it.
 add_library(stltvj-nimslink STATIC
+    src/nimslink/Hand.cpp
+    src/nimslink/Hand.h
+    src/nimslink/Library.cpp
+    src/nimslink/Library.h
     src/nimslink/Link.cpp
     src/nimslink/Link.h
     src/nimslink/Net.cpp

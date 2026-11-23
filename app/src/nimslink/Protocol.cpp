@@ -159,6 +159,11 @@ TrackId IdOf( const TrackInfo& info )
 	return id;
 }
 
+std::string TrackKey( const TrackId& id )
+{
+	return Folded( id.title ) + '\n' + Folded( id.artist ); // a folded text has no line break
+}
+
 bool SameTrack( const TrackId& a, const TrackId& b )
 {
 	if( a.Empty() || b.Empty() )

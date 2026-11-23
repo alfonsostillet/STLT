@@ -10,6 +10,8 @@
 #include <random>
 #include <thread>
 #include <vector>
+#include "nimslink/Hand.h"
+#include "nimslink/Library.h"
 #include "nimslink/Link.h"
 #include "nimslink/Net.h"
 #include "nimslink/Protocol.h"
@@ -147,6 +149,88 @@ static void TestTrackIds()
 	untagged.file = "/Users/dj/Music/03 Cirrus.aiff";
 	CHECK( IdOf( untagged ).title == "03 Cirrus" );
 	CHECK( !SameTrack( TrackId(), TrackId() ) );
+	// The key matches as SameTrack does, lengths aside.
+	TrackId c = a;
+	c.title   = "kerala!";
+	CHECK( TrackKey( a ) == TrackKey( c ) && SameTrack( a, c ) );
+	c.artist = "Bonobo feat. Someone";
+	CHECK( TrackKey( a ) != TrackKey( c ) );
+}
+
+// Whether NIMS PRO LINK has a layer: it launches the clip of the track that plays, and a launch or a stop by the VJ on a
+// layer it has is what turns NIMS off (the App does that when Touched says so).
+static void TestLayerHand()
+{
+	TrackId kerala = IdOf( Kerala() ), kong = kerala;
+	kong.title     = "Kong";
+	kong.length    = 300;
+
+	// Nothing linked plays: NIMS does nothing, and the VJ's launches leave it on.
+	LayerHand h;
+	CHECK( !h.Step( nullptr, false, true ) );
+	CHECK( !h.Touched() );
+
+	// Kerala plays: its clip is launched once, then NIMS holds the layer.
+	CHECK( h.Step( &kerala, false, false ) );
+	CHECK( h.held && SameTrack( h.track, kerala ) );
+	CHECK( !h.Step( &kerala, true, true ) );
+
+	// The DJ mixes into Kong, linked on this layer: its clip comes in.
+	CHECK( h.Step( &kong, false, true ) );
+	CHECK( !h.Step( &kong, true, true ) );
+
+	// The VJ launches something on the layer: NIMS had it, so NIMS goes off; a second touch is the VJ's alone.
+	CHECK( h.Touched() );
+	CHECK( !h.held && !h.Touched() );
+
+	// NIMS on again: Kong's clip is launched again, at once.
+	CHECK( h.Step( &kong, false, true ) );
+
+	// What NIMS put stays while no linked track plays (the clip holds its frame), and is let go when the layer empties
+	// some other way (a deck of clips removed); then the VJ's actions on it leave NIMS on.
+	CHECK( !h.Step( nullptr, false, true ) );
+	CHECK( h.held );
+	CHECK( !h.Step( nullptr, false, false ) );
+	CHECK( !h.held && !h.Touched() );
+}
+
+// The tracks the decks have had, kept from one night to the next.
+static void TestLibrary()
+{
+	TrackLibrary library;
+	TrackInfo k = Kerala();
+	CHECK( library.Remember( k, 100 ) );
+	CHECK( !library.Remember( k, 200 ) ); // the same again: only the time moves
+	CHECK( library.Tracks().size() == 1 && library.Tracks()[ 0 ].seen == 200 );
+	TrackInfo regrid = k;
+	regrid.bpm       = 125;
+	CHECK( library.Remember( regrid, 300 ) ); // new details are worth saving
+	TrackInfo cirrus;
+	cirrus.file   = "/Users/dj/Music/03 Cirrus.aiff";
+	cirrus.length = 333;
+	CHECK( library.Remember( cirrus, 400 ) );
+	CHECK( !library.Remember( TrackInfo(), 400 ) ); // an empty deck's track is no track
+	CHECK( library.Tracks().size() == 2 );
+	CHECK( library.Find( IdOf( k ) ) && library.Find( IdOf( k ) )->bpm == 125 );
+
+	// Saved and loaded: the same tracks, and a broken file loads as nothing.
+	TrackLibrary again;
+	CHECK( again.Load( library.Save() ) );
+	CHECK( again.Tracks().size() == 2 );
+	const LibraryTrack* c = again.Find( IdOf( cirrus ) );
+	CHECK( c && c->id.title == "03 Cirrus" && std::fabs( c->id.length - 333 ) < 1e-9 && c->seen == 400 );
+	CHECK( !again.Load( "{ not json" ) && again.Tracks().empty() );
+	CHECK( !again.Load( "{\"format\":\"something else\",\"tracks\":[]}" ) );
+
+	// A title that is not valid UTF-8 does not stop the save.
+	TrackInfo broken;
+	broken.title  = std::string( "Caf\xE9 Del Mar" );
+	broken.artist = "Energy 52";
+	library.Remember( broken, 500 );
+	CHECK( again.Load( library.Save() ) && again.Tracks().size() == 3 );
+
+	library.Forget( IdOf( k ) );
+	CHECK( library.Tracks().size() == 2 && !library.Find( IdOf( k ) ) );
 }
 
 // The transmitter's clock runs 20 parts per million fast and 1234.5 s ahead; round trips take 0.2..0.6 ms, and one
@@ -632,6 +716,8 @@ int main()
 {
 	TestPackets();
 	TestTrackIds();
+	TestLayerHand();
+	TestLibrary();
 	TestClock();
 	TestDeck();
 	TestLeadingDeck();

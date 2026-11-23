@@ -51,9 +51,11 @@ In STLT, link a clip to deck A in the Traktor panel: it starts on its layer at o
 
 ## How a clip follows a track
 
-- **Linking.** In the **Traktor** panel (*View*), drag a deck onto a clip of the grid. Or right-click a clip and choose a track loaded now. The clip is then linked to that track by its title, artist and length, saved with the composition. The file's path is not used, because it is the DJ computer's path.
+- **Linking.** In the **Traktor** panel (*View*), drag a deck onto a clip of the grid. Or right-click a clip and choose a track loaded now. Or, in the **Track Links** panel, drag any track the decks have had onto a clip. The clip is then linked to that track by its title, artist and length, saved with the composition. The file's path is not used, because it is the DJ computer's path.
+- **One clip per track.** Linking a track to a clip unlinks the clip it had before, in every deck of clips. The **X** next to a deck's linked clip (Traktor panel) or next to a track (Track Links) unlinks it; so does *Unlink* in the Clip panel and in a clip's right-click menu.
+- **Track Links.** Every track a deck loads is remembered in `traktor-tracks.json` in the settings folder, from one night to the next: title, artist, length, BPM and key. The panel lists them in alphabetical order with their clip, the deck that has each one now (its letter, filled while it plays), a search and *All / Linked / Not linked*. Tracks linked in the composition but never seen on a deck are listed too. Right-click a track to unlink it or to forget it.
 - **Linked clips in the grid.** A linked clip shows its deck's letter in the deck's colour while the track is loaded, and a link sign while no deck has it. The *Traktor* section of the Clip panel shows the track, where it plays, an offset in seconds and *Unlink*.
-- **Starting.** A layer plays its linked clip when the track plays with its channel fader up. While the DJ only cues a track in the headphones (fader down), the visual waits. When two linked tracks play at once, the louder one holds the layer. The clip that is on keeps the layer until another is clearly louder.
+- **Starting.** A layer plays its linked clip when the track plays with its channel fader up, whichever deck of clips (page) it is in and whichever one the VJ is looking at. While the DJ only cues a track in the headphones (fader down), the visual waits. When two linked tracks play at once, the louder one holds the layer. The clip that is on keeps the layer until another is clearly louder.
 - **The fader.** A linked clip's opacity follows its track's channel fader, so the DJ's mix is the visuals' mix.
 - **Following.** The clip's playhead is the track's position, updated every frame. Small differences are taken up over a few frames; jumps (a cue, a hotcue, a beatjump, a loop going round) are followed at once.
 - **Pausing.** When the deck pauses, the clip holds its frame.
@@ -61,6 +63,16 @@ In STLT, link a clip to deck A in the Traktor panel: it starts on its layer at o
 - **Tempo.** With *Preferences > Sync > Follow Traktor's tempo* on, the BPM and the beat come from the deck that is on: playing, with the highest fader. Bars fall on Traktor's grid. A MIDI clock coming in leads over Traktor. With Ableton Link on, Link's other peers get the tempo too.
 - **Stems.** Any parameter's *Animate* menu has *Traktor Drums*, *Traktor Bass*, *Traktor Other*, *Traktor Vocals* and *Traktor Level*: the levels of the stems (and of the channel) of the deck that is on. Stems need a Stem file in Traktor; *Traktor Level* works with any track.
 - **Latency.** *Preferences > Sync > Latency* takes the decks this much ahead, for a projector that shows late.
+
+## The NIMS switch: the VJ takes over and gives back
+
+Resolume's Pro DJ Link locks a layer while its linked track plays: *"a layer playing a Pioneer clip is locked until the song is finished, or a different linked video is started in the same layer"*, and there is no way round it during the show. STLT does it like Ableton Link instead: one switch.
+
+- **The NIMS button**, in the toolbar next to LINK and at the top of the Traktor panel. Lit: NIMS PRO LINK launches the linked clips, follows the tracks and the faders. Off: it touches no clip; the decks still show, and the tempo and the stems still follow Traktor as *Preferences > Sync* says. Off leaves what plays where it is: a linked clip that was on goes on at its own speed and at full opacity.
+- **Taking over.** Launch or stop a clip by hand (a click, a key, MIDI, OSC, a column) on a layer NIMS is playing, and NIMS goes off by itself, with a word in the status bar. Nothing fights you back. A launch on a layer NIMS is not using leaves it on.
+- **Giving back.** Press NIMS: every layer plays again the clip of the track that plays now, at the track's place, with the fader.
+- **Mapping.** The switch is `/composition/nims` (a key or a pad flips it; a value of 0 or 1 sets it), mappable like any control (Ctrl+K, Ctrl+M).
+- It is not saved: STLT starts with NIMS on. *Preferences > Sync > NIMS PRO LINK* still turns the whole receiver off.
 
 ## Measurements
 

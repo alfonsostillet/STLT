@@ -22,6 +22,7 @@ struct PanelVisibility
 	bool effects            = true;
 	bool control            = true;
 	bool traktor            = true; // NIMS PRO LINK's decks
+	bool trackLinks         = true; // NIMS PRO LINK: every track the decks have had, and its clip
 	bool advancedOutput     = false; // a big editor: floats on top when opened
 };
 
@@ -43,6 +44,7 @@ constexpr const char* Effects            = "Effects";
 constexpr const char* Control            = "Shortcuts"; // keyboard, MIDI and OSC
 constexpr const char* AdvancedOutput     = "Advanced Output";
 constexpr const char* Traktor            = "Traktor"; // NIMS PRO LINK: the DJs' decks
+constexpr const char* TrackLinks         = "Track Links"; // NIMS PRO LINK: the tracks and their clips
 }
 
 // Named workspaces: snapshots of where every panel is docked, floating, sized and shown.
